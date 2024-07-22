@@ -301,6 +301,7 @@ def gen_table(dict_files, config, title, avg_cpu, multicolumn=False):
     wiki = r"""{| class="wikitable"
 |-
 ! colspan="5"  | """ + config.replace("_list","") + """
+! colspan="2"  | OSD CPU%
 |-
 ! Iodepth !! """
     wiki += ' !! '.join(table.keys())
