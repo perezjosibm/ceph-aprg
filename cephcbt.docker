@@ -3,8 +3,9 @@ FROM artifactory.ssd.hursley.ibm.com/ceph/cephbase5
 RUN yum install python3-lxml -y
 RUN yum install python3-yaml -y
 RUN git clone https://git.kernel.dk/fio.git
+RUN git clone https://github.com/brendangregg/FlameGraph.git
 RUN git clone https://github.com/ceph/cbt
-RUN cd /cbt && git remote add cbt https://github.com/ceph/cbt.git && git fetch cbt pull/221/head:pr221 && git switch pr221
+RUN cd /cbt && git remote add cbt https://github.com/ceph/cbt.git #&& git fetch cbt pull/221/head:pr221 && git switch pr221
 RUN git clone https://github.com/andikleen/pmu-tools.git
 RUN yum install pdsh -y
 RUN yum install pdsh-rcmd-ssh -y
