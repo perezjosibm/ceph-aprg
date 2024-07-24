@@ -5,9 +5,9 @@
 # ! Run FIO according to the workload given:
 # ! rw (randomwrite), rr (randomread), sw (seqwrite), sr (seqread)
 # ! -a : run the four typical workloads with the reference I/O concurrency queue values
-# ! -c : indicate the range of OSD CPU cores 
+# ! -c : indicate the range of OSD CPU cores
 # ! -d : indicate the run directory cd to
-# ! -k : indicate whether to skip OSD dump_metrics 
+# ! -k : indicate whether to skip OSD dump_metrics
 # ! -n : only collect top measurements, no perf
 # ! -t : indicate the type of OSD (classic or crimson by default).
 # !
@@ -16,6 +16,8 @@
 # ! Ex.: ./run_fio.sh -a -s  -w  200gb # single workload -- see definition below
 # ! Ex.: ./run_fio.sh -a -s -c "0-4" -w  200gb # single workload -- see definition below
 
+# #### EXPERIMENTAL: USE UNDER YOUR OWN RISK #####
+#
 # TODO: args: block size and num mages, to pass to FIO
 # Assoc array to use the single OSD table for (iodepth x num_jobs) ref values
 
@@ -25,8 +27,8 @@ declare -A map=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread)
 # Typical values as observed during discovery sprint:
 # Single FIO instances: for sequential workloads, bs=64k fixed
 # ToDO: this could be a valid range
-declare -A m_s_iodepth=( [200gb]="1 2 4 8 16 24 32 64 128 256"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 )
-declare -A m_s_numjobs=( [200gb]="2 4 8 12 16 20" [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
+declare -A m_s_iodepth=( [hockey]="1 2 4 8 16 24 32 64 128 256"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 )
+declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
 
 # Multiple FIO instances
 declare -A m_m_iodepth=( [rw]=4 [rr]=16 [sw]=2 [sr]=3 )
@@ -155,7 +157,7 @@ fun_run_workload() {
   export BLOCK_SIZE_KB=${m_bs[${WORKLOAD}]}
 
   [ -z "${WORKLOAD_NAME}" ] && WORKLOAD_NAME=${WORKLOAD}
-  
+
   if [ "$SINGLE" = true ]; then
     NUM_PROCS=1
     RANGE_IODEPTH=${m_s_iodepth[${WORKLOAD_NAME}]}
@@ -227,6 +229,10 @@ fun_run_workload() {
   done
   # Post processing: .json
   if [ -f  ${OSD_TEST_LIST} ] && [ -f  ${OSD_CPU_AVG} ]; then
+    # Filter out any fio high latency error from the JSON, otherwise the Python script bails out
+    for x in $(cat ${OSD_TEST_LIST}); do
+      sed -i '/^fio:/d' $x
+    done
     python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_PREFIX} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
   fi
 

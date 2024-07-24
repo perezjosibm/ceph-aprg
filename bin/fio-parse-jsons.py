@@ -337,7 +337,9 @@ def gen_table(dict_files, config, title, avg_cpu, multicolumn=False):
     if num_files > 1:
         wiki += '! Avg:'
         for avg in avg.items():
-            wiki += f' || {avg:.2f} '
+            wiki += f' || {str(avg)} ' # Temporary fix
+            #wiki += f' || {avg:.2f} ' #FIXME: when running response curves, this is a tuple
+            # ! Avg: || ('iops', 7336.538936842857)  || ('clat_ns', 14.52379915213073)  || ('usr_cpu', 1.4012624857142855)  || ('sys_cpu', 0.8400403571428571)
         wiki += "\n|-\n"
 
     wiki += "|}\n"
