@@ -45,6 +45,9 @@ declare -a procs_order=( true false )
 declare -A osd_id
 declare -A fio_id
 
+# The suffixes for the individual metric charts:
+declare -a workloads_order=( rr rw sr sw )
+
 #FIO_CORES="8-15"
 FIO_CORES="0-31" # default -- unrestricted
 OSD_CORES="0-31" # range cores to monitor
@@ -57,6 +60,7 @@ RUN_ALL=false
 SINGLE=false
 NUM_SAMPLES=30
 OSD_TYPE="crimson"
+RESPONSE_CURVE=false
 
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
@@ -168,6 +172,10 @@ fun_run_workload() {
     RANGE_NUMJOBS=${m_m_numjobs[${WORKLOAD_NAME}]}
   fi
 
+  iodepth_size=$(echo $RANGE_IODEPTH | wc -w)
+  numjobs_size=$(echo $RANGE_NUMJOBS | wc -w)
+  [[ $(( iodepth_size * numjobs_size )) -gt 1 ]] && RESPONSE_CURVE=true
+
   TEST_RESULT=${TEST_PREFIX}_${NUM_PROCS}procs_${map[${WORKLOAD}]}
   OSD_TEST_LIST="${TEST_RESULT}_list"
   TOP_OUT_LIST="${TEST_RESULT}_top_list"
@@ -175,8 +183,8 @@ fun_run_workload() {
   #FIO_TOP_OUT_LIST="${TEST_RESULT}_fio_top_list"
   OSD_CPU_AVG="${TEST_RESULT}_cpu_avg.json"
 
-  for io in $RANGE_IODEPTH; do
-    for job in $RANGE_NUMJOBS; do
+  for job in $RANGE_NUMJOBS; do
+    for io in $RANGE_IODEPTH; do
       for (( i=0; i<${NUM_PROCS}; i++ )); do
         #Bail out if no OSD process is running -- TODO improve health check
         NUM_OSD=$(pgrep -c osd)
@@ -240,16 +248,43 @@ fun_run_workload() {
     gnuplot $x
   done
 
+  # generate single animated file from a timespan of FIO charts
+  #cd # location of FIO data
+ # fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280
+
+  # Need to traverse the suffix of the charts produced to know which ones we want to coalesce on a single animated .gif
+  if [ "$RESPONSE_CURVE" = true ]; then
+    # Process/threads data
+    # Identify which files and move them to the animate subdir
+    #for x in $(cat $INPUT_LIST); do
+    # mv ${TEST_PREFIX}*${TEST_SUFFIX}.png animate/
+    for pr in "FIO OSD"; do
+       for metric in "cpu mem"; do
+         # best to give the list of files os we can reuse this with the FIO timespan charts
+         input_list=$(ls $pr_${TEST_PREFIX}*${metric}.png)
+         fun_animate ${input_list} "$pr_${TEST_PREFIX}_${metric}"
+       done
+    done
+    # CPU core data
+    for metric in "us sys"; do
+      input_list=$(ls core_${TEST_PREFIX}*${metric}.png)
+      fun_animate ${input_list} "core_${TEST_PREFIX}_${metric}"
+    done
+  fi
+  /root/bin/fio_generate_plots ${TEST_PREFIX}
   # archiving:
-  zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out *_top.out *.json *.plot *.dat *.png ${TOP_OUT_LIST} osd*_threads.out ${TOP_PID_LIST}
+  zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out *_top.out *.json *.plot *.dat *.png *.log ${TOP_OUT_LIST} osd*_threads.out ${TOP_PID_LIST}
 
   # Process perf if any
   if [ "$WITH_PERF" = true ]; then
     for x in $(ls *perf.out); do
-        y=${x/perf.out/scripted.gz}
-      echo "==$(date) == Perf script $x: $y =="
+      y=${x/perf.out/scripted.gz}
+      z=${x/perf.out/fg.svg}
+       echo "==$(date) == Perf script $x: $y =="
       perf script -i $x | c++filt | gzip -9 > $y
-        rm -f $x
+      # Option whether want to keep the raw data
+      #perf script -i $x | c++filt | ./stackcollapse-perf.pl | ./flamegraph.pl > $z
+      rm -f $x
     done
   fi
 }
@@ -279,6 +314,27 @@ fun_prime() {
     RBD_NAME=fio_test_$i RBD_SIZE="64k" fio /fio/examples/rbd_prime.fio 2>&1 >/dev/null &  echo "== priming $RBD_NAME ==";
   done
   wait;
+}
+
+# Prepare a list of .png in the order expected from a list of files
+fun_prep_anim_list() {
+  local INPUT_LIST=$1
+  echo ${INPUT_LIST} | sort -n -t_ -k6 -k7 > lista
+  i=0; for x in $(cat lista); do y=$(printf "%03d.png" $i ); mv $x $y; echo $(( i++ )) >/dev/null; done
+}
+
+# When collected data over a range (eg response curves), coalesce the individual .png
+# into an animated .gif
+fun_animate() {
+  local INPUT_LIST=$1
+  local OUTPUT_NAME=$2
+
+  # Need to create a temp dir to move the .png and then use convert over the sorted list of files
+  mkdir animate
+  cd animate
+  convert -delay 100 -loop 0 *.png ../${OUTPUT_NAME}.gif
+  cd ..
+  rm -rf animate/
 }
 
 # main:

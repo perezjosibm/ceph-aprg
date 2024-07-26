@@ -427,7 +427,7 @@ sub generate_output {
     die "Could not open file $plot_script for writting" unless(open($fh, ">", $plot_script ));
 
     my $title = $outname;
-    $title =~ s/_/-/g;
+    $title =~ tr/_/-/;
     my $plot = $plot_template;
 # Apply substition for those special strings
     $plot =~ s/DAT/$dat/g;
@@ -526,7 +526,7 @@ sub generate_cores_output {
     die "Could not open file $plot_script for writting" unless(open($fh, ">", $plot_script ));
 
     my $title = $outname;
-    $title =~ s/_/-/g;
+    $title =~ tr/_/-/;
     my $plot = $plot_template;
 # Apply substition for those special strings
     $plot =~ s/DAT/$dat/g;

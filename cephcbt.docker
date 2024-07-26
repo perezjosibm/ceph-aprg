@@ -5,7 +5,6 @@ RUN yum install python3-yaml -y
 RUN git clone https://git.kernel.dk/fio.git
 RUN git clone https://github.com/brendangregg/FlameGraph.git
 RUN git clone https://github.com/ceph/cbt
-RUN cd /cbt && git remote add cbt https://github.com/ceph/cbt.git #&& git fetch cbt pull/221/head:pr221 && git switch pr221
 RUN git clone https://github.com/andikleen/pmu-tools.git
 RUN yum install pdsh -y
 RUN yum install pdsh-rcmd-ssh -y
@@ -21,6 +20,8 @@ RUN yum install iftop -y
 RUN yum install iperf3 -y
 RUN yum install chrony -y
 RUN yum install irqbalance -y
+RUN yum install smartmontools -y
+RUN yum install logrotate -y
 RUN git clone https://github.com/sharkcz/collectl
 RUN cd /collectl && ./INSTALL
 RUN rm -rf /collectl
@@ -30,13 +31,13 @@ RUN yum install gnuplot -y
 RUN yum install vim -y
 RUN yum install perl-JSON -y
 RUN yum install perl-JSON-XS -y
-#RUN echo "source /usr/bin/install_pandas_numpy" >>/etc/profile.d/ceph.sh
 
 # Add config files
 ADD bin/bashrc /root/.bashrc
 ADD bin/.gitconfig  /root/.gitconfig
 COPY bin/rbd_fio_workloads.zip /root/bin/
 ADD bin/toprc /root/.config/procps/toprc
+ADD bin/cephlog /etc/logrotate.d/ceph
 COPY --chmod=755 bin/fio-parse-jsons.py /root/bin/
 COPY --chmod=755 bin/run_fio.sh /root/bin/run_fio.sh
 COPY --chmod=755 bin/cpu-map.sh /root/bin/cpu-map.sh
