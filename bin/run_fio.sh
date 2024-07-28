@@ -196,7 +196,7 @@ fun_run_workload() {
         export TEST_NAME=${TEST_PREFIX}_${job}job_${io}io_${BLOCK_SIZE_KB}_${map[${WORKLOAD}]}_p${i};
         echo "== $(date) == ($io,$job): ${TEST_NAME} ==";
         echo fio_${TEST_NAME}.json >> ${OSD_TEST_LIST}
-        RBD_NAME=fio_test_${i} IO_DEPTH=$io NUM_JOBS=$job taskset -ac ${FIO_CORES} fio /fio/examples/rbd_${map[${WORKLOAD}]}.fio --output=fio_${TEST_NAME}.json --output-format=json 2> fio_${TEST_NAME}.err &
+        LOG_NAME=${TEST_PREFIX} RBD_NAME=fio_test_${i} IO_DEPTH=$io NUM_JOBS=$job taskset -ac ${FIO_CORES} fio /fio/examples/rbd_${map[${WORKLOAD}]}.fio --output=fio_${TEST_NAME}.json --output-format=json 2> fio_${TEST_NAME}.err &
         #FIO profiling:
         #fun_measure $! "fio_${TEST_NAME}" ${FIO_TOP_OUT_LIST} &
         # ALAS: extend this array for multiple FIO processes
@@ -249,8 +249,6 @@ fun_run_workload() {
   done
 
   # generate single animated file from a timespan of FIO charts
-  #cd # location of FIO data
- # fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280
 
   # Need to traverse the suffix of the charts produced to know which ones we want to coalesce on a single animated .gif
   if [ "$RESPONSE_CURVE" = true ]; then
@@ -271,7 +269,9 @@ fun_run_workload() {
       fun_animate ${input_list} "core_${TEST_PREFIX}_${metric}"
     done
   fi
-  /root/bin/fio_generate_plots ${TEST_PREFIX}
+  #cd # location of FIO data
+  #fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280
+  /root/bin/fio_generate_plots ${TEST_PREFIX} 650 280
   # archiving:
   zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out *_top.out *.json *.plot *.dat *.png *.log ${TOP_OUT_LIST} osd*_threads.out ${TOP_PID_LIST}
 
