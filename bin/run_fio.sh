@@ -241,6 +241,7 @@ fun_run_workload() {
     for x in $(cat ${OSD_TEST_LIST}); do
       sed -i '/^fio:/d' $x
     done
+    # Gnuplot interprets '_' for subscripts
     python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_PREFIX} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
   fi
 
