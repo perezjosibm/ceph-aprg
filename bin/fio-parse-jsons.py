@@ -31,25 +31,29 @@ import re
 predef_dict = {
           'randwrite': {
               'iops' : 'jobs/jobname=randwrite/write/iops',
-              'clat_ns' : 'jobs/jobname=randwrite/write/clat_ns',
+              'clat_ms' : 'jobs/jobname=randwrite/write/clat_ns',
+              'clat_stdev' : 'jobs/jobname=randwrite/read/clat_ns',
               'usr_cpu': 'jobs/jobname=randwrite/usr_cpu',
               'sys_cpu': 'jobs/jobname=randwrite/sys_cpu'
               },
           'randread': {
               'iops' : 'jobs/jobname=randread/read/iops',
-              'clat_ns' : 'jobs/jobname=randread/read/clat_ns',
+              'clat_ms' : 'jobs/jobname=randread/read/clat_ns',
+              'clat_stdev' : 'jobs/jobname=randread/read/clat_ns',
               'usr_cpu': 'jobs/jobname=randread/usr_cpu',
               'sys_cpu': 'jobs/jobname=randread/sys_cpu'
               },
           'seqwrite': {
               'bw' : 'jobs/jobname=seqwrite/write/bw',
-              'clat_ns' : 'jobs/jobname=seqwrite/write/clat_ns',
+              'clat_ms' : 'jobs/jobname=seqwrite/write/clat_ns',
+              'clat_stdev' : 'jobs/jobname=seqwrite/read/clat_ns',
               'usr_cpu': 'jobs/jobname=seqwrite/usr_cpu',
               'sys_cpu': 'jobs/jobname=seqwrite/sys_cpu'
               },
           'seqread': {
               'bw' : 'jobs/jobname=seqread/read/bw',
-              'clat_ns' : 'jobs/jobname=seqread/read/clat_ns',
+              'clat_ms' : 'jobs/jobname=seqread/read/clat_ns',
+              'clat_stdev' : 'jobs/jobname=seqread/read/clat_ns',
               'usr_cpu': 'jobs/jobname=seqread/usr_cpu',
               'sys_cpu': 'jobs/jobname=seqread/sys_cpu'
               }
@@ -123,11 +127,16 @@ def process_fio_item(k, next_node_list):
         sorted_dict=dict(sorted(unsorted_dict.items(), key=lambda x:x[1], reverse=True))
         firstk=list(sorted_dict.keys())[0]
         return firstk
-    if k == 'clat_ns':
+    if k == 'clat_ms':
     #    case 'clat_ns':
         unsorted_dict=next_node_list[0]
         clat_ms=unsorted_dict['mean']/1e6
         return clat_ms
+    if k == 'clat_stdev':
+    #    case 'clat_ns':
+        unsorted_dict=next_node_list[0]
+        clat_stdev=unsorted_dict['stddev']/1e6
+        return clat_stdev
 
 def process_fio_json_file(json_file, json_tree_path):
     """
@@ -182,7 +191,7 @@ def traverse_files(sdir, config, json_tree_path):
         pp.pprint(node_list)
     return dict_new
 
-def gen_plot(config, data, iod_seen, title):
+def gen_plot(config, data, list_subtables, title):
     """
     Generate a gnuplot script and .dat files -- either a new one for OSD cpu util or
     extend this same template: 'sys' is column 6, 'us' is 7
@@ -191,12 +200,17 @@ def gen_plot(config, data, iod_seen, title):
     plot_dict = {
     # Use the dict key as the suffix for the output file .png,
     # the .dat file is common across
-        'iops_vs_lat': { 'ylabel': "Latency (ms)",
-                             'column': '3'},
-        'iops_vs_cpu_sys': {'ylabel': "OSD CPU (sys)",
-                             'column': '6'},
-        'iops_vs_cpu_us': {'ylabel': "OSD CPU (us)",
-                             'column': '7'}
+    # TODO: factorise single latency column
+        'iops_vs_lat_vs_cpu_sys': { 
+            'ylabel': "Latency (ms)",
+            'ycolumn': '3',
+            'y2label': "OSD CPU (sys)", 
+            'y2column': '7'},
+        'iops_vs_lat_vs_cpu_us': {
+            'ylabel': "Latency (ms)",
+            'ycolumn': '3',
+            'y2label': "OSD CPU (us)",
+            'y2column': '8'}
     }
     header = """
 set terminal pngcairo size 650,420 enhanced font 'Verdana,10'
@@ -220,18 +234,28 @@ set style function linespoints
         for pk in plot_dict.keys():
             out_chart = config.replace("list", pk + ".png")
             ylabel = plot_dict[pk]['ylabel']
-            col = plot_dict[pk]['column']
-
+            ycol = plot_dict[pk]['ycolumn']
+            y2label = plot_dict[pk]['y2label']
+            y2col = plot_dict[pk]['y2column']
             template += f"""
 set ylabel "{ylabel}"
 set xlabel "IOPS"
+set y2label "{y2label}"
+set ytics nomirror
+set y2tics
+set tics out
+set autoscale  y
+set autoscale y2
 set output '{out_chart}'
 set title "{_title}"
 """
-            if len(iod_seen) > 0:
-                head = f"plot '{out_data}' index 0 using 2:{col} t '{iod_seen[0]} iodepth'  w lp"
-                tail = ",\\\n".join([ f"  '' index {i} using 2:{col} t '{iod_seen[i]} iodepth' w lp"
-                     for i in range(1,len(iod_seen))])
+            # To plot CPU util in the same response curve, we need the extra axis
+            # This list_subtables indicates how many sub-tables the .datfile will have
+            if len(list_subtables) > 0:
+                head = f"plot '{out_data}' index 0 using 2:{ycol}:4 t '{list_subtables[0]} iodepth' w yerr axes x1y1"
+                head += f",\\\n '' index 0 using 2:{y2col} w lp axes x1y2 t 'CPU%'"
+                tail = ",\\\n".join([ f"  '' index {i} using 2:{ycol} t '{list_subtables[i]} iodepth' w lp axes x1y1"
+                     for i in range(1,len(list_subtables))])
                 template += ",\\\n".join([head, tail])
 
         f.write(template)
@@ -307,7 +331,7 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
     """
     table, avg = initial_table_and_avg(dict_files)
     table_iters = {}
-    iod_seen = []
+    list_subtables = []
     # List of dicts, each with keys 'sys', 'us',
     # each sample with list of CPU (eg. 0-3, and 4-7)
     num_files = len(dict_files.keys())
@@ -323,6 +347,8 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
     # Note: in general the CPU measurements are global across the test time
     # for all FIO processes, so we must reduce the FIO measurements first
     # Construct headers -- this is the same for both cases
+    # For th egnuplot .dat, each subtable ranges over num_jobs(threads)
+    # wereas each row within a table ranges over iodepth
     gplot_hdr = "# iodepth "
     gplot_hdr += ' '.join(table.keys())
     gplot_hdr += "\n"
@@ -353,16 +379,17 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
     for name in dict_files.keys():
         m = re.match(r".*(?P<job>\d+)job_(?P<io>\d+)io_",name)
         if m:
-            # Note: 'job' is implicit in the table
+            # Note: 'job' (num threads) is constant within a sub-table,
+            # each row corresponds to increasing the iodepth
             job = int(m.group('job')) # m.group(1)
             io =  int(m.group('io'))  # m.group(2)
-            if io not in iod_seen:
+            if job not in list_subtables:
                 # add a gnuplot table break
-                if len(iod_seen) > 0:
+                if len(list_subtables) > 0:
                     gplot += "\n\n"
-                gplot += f"## Iodepth: {io}\n"
+                gplot += f"## num_jobs: {job}\n"
                 gplot += gplot_hdr
-                iod_seen.append(io)
+                list_subtables.append(job)
 
             gplot += f"{io:2d} "
             wiki += f'| {io:2d} '
@@ -387,7 +414,7 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
     wiki += "|}\n"
     print(f" Wiki table: {title}")
     print(wiki)
-    gen_plot(config, gplot, iod_seen, title)
+    gen_plot(config, gplot, list_subtables, title)
     print('Done')
 
 def main(directory, config, json_query):
