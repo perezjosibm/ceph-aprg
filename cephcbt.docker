@@ -3,9 +3,9 @@ FROM artifactory.ssd.hursley.ibm.com/ceph/cephbase5
 RUN yum install python3-lxml -y
 RUN yum install python3-yaml -y
 RUN git clone https://git.kernel.dk/fio.git
-RUN git clone https://github.com/brendangregg/FlameGraph.git
 RUN git clone https://github.com/ceph/cbt
 RUN git clone https://github.com/andikleen/pmu-tools.git
+RUN git clone https://github.com/brendangregg/FlameGraph.git
 RUN yum install pdsh -y
 RUN yum install pdsh-rcmd-ssh -y
 RUN yum install targetcli -y

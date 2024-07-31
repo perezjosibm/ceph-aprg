@@ -98,6 +98,7 @@ plot () {
     do
         if [ -e "$x" ]; then
             i=$((i+1))
+            # Remove filetype from the file name
             PT=$(echo $x | sed 's/\(.*\)_'$FILETYPE'\(.*\).log$/\1\2/')
             if [ ! -z "$PLOT_LINE" ]
             then

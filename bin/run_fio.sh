@@ -8,6 +8,7 @@
 # ! -c : indicate the range of OSD CPU cores
 # ! -d : indicate the run directory cd to
 # ! -k : indicate whether to skip OSD dump_metrics
+# ! -l : indicate whether to use latency_target FIO profile
 # ! -n : only collect top measurements, no perf
 # ! -t : indicate the type of OSD (classic or crimson by default).
 # !
@@ -61,12 +62,13 @@ SINGLE=false
 NUM_SAMPLES=30
 OSD_TYPE="crimson"
 RESPONSE_CURVE=false
+LATENCY_TARGET=false
 
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 
-while getopts 'ac:d:f:ksw:p:nt:' option; do
+while getopts 'ac:d:f:klsw:p:nt:' option; do
   case "$option" in
     a) RUN_ALL=true
         ;;
@@ -87,6 +89,8 @@ while getopts 'ac:d:f:ksw:p:nt:' option; do
     p) TEST_PREFIX=$OPTARG
         ;;
     t) OSD_TYPE=$OPTARG
+        ;;
+    l) LATENCY_TARGET=true
         ;;
     :) printf "missing argument for -%s\n" "$OPTARG" >&2
        usage >&2
@@ -196,7 +200,13 @@ fun_run_workload() {
         export TEST_NAME=${TEST_PREFIX}_${job}job_${io}io_${BLOCK_SIZE_KB}_${map[${WORKLOAD}]}_p${i};
         echo "== $(date) == ($io,$job): ${TEST_NAME} ==";
         echo fio_${TEST_NAME}.json >> ${OSD_TEST_LIST}
-        LOG_NAME=${TEST_PREFIX} RBD_NAME=fio_test_${i} IO_DEPTH=$io NUM_JOBS=$job taskset -ac ${FIO_CORES} fio /fio/examples/rbd_${map[${WORKLOAD}]}.fio --output=fio_${TEST_NAME}.json --output-format=json 2> fio_${TEST_NAME}.err &
+        # Decide wether use a normal profile or latency_target
+        if [ "$LATENCY_TARGET" = true ]; then
+          fio_name=/fio/examples/rbd_lt_${map[${WORKLOAD}]}.fio
+        else
+          fio_name=/fio/examples/rbd_${map[${WORKLOAD}]}.fio
+        fi
+        LOG_NAME=${TEST_PREFIX} RBD_NAME=fio_test_${i} IO_DEPTH=$io NUM_JOBS=$job taskset -ac ${FIO_CORES} fio $fio_name --output=fio_${TEST_NAME}.json --output-format=json 2> fio_${TEST_NAME}.err &
         #FIO profiling:
         #fun_measure $! "fio_${TEST_NAME}" ${FIO_TOP_OUT_LIST} &
         # ALAS: extend this array for multiple FIO processes
