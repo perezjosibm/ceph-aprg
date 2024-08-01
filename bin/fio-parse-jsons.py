@@ -197,7 +197,7 @@ def gen_plot(config, data, list_subtables, title):
     """
     Generate a gnuplot script and .dat files -- either a new one for OSD cpu util or
     extend this same template: 'sys' is column 6, 'us' is 7
-    dict with keys each variant:' iops_vs_lat, iops_vs_cpu_sys, iops_vs_cpu_usr
+    dict with keys each variant: iops_vs_cpu_sys, iops_vs_cpu_usr
     """
     plot_dict = {
     # Use the dict key as the suffix for the output file .png,
@@ -206,13 +206,13 @@ def gen_plot(config, data, list_subtables, title):
         'iops_vs_lat_vs_cpu_sys': { 
             'ylabel': "Latency (ms)",
             'ycolumn': '3',
-            'y2label': "OSD CPU (sys)", 
-            'y2column': '7'},
-        'iops_vs_lat_vs_cpu_us': {
+            'y2label': "OSD CPU system", 
+            'y2column': '8'},
+        'iops_vs_lat_vs_cpu_usr': {
             'ylabel': "Latency (ms)",
             'ycolumn': '3',
-            'y2label': "OSD CPU (us)",
-            'y2column': '8'}
+            'y2label': "OSD CPU user",
+            'y2column': '7'}
     }
     header = """
 set terminal pngcairo size 650,420 enhanced font 'Verdana,10'
@@ -254,9 +254,10 @@ set title "{_title}"
             # To plot CPU util in the same response curve, we need the extra axis
             # This list_subtables indicates how many sub-tables the .datfile will have
             if len(list_subtables) > 0:
-                head = f"plot '{out_data}' index 0 using 2:{ycol}:4 t '{list_subtables[0]} iodepth' w yerr axes x1y1"
+                head = f"plot '{out_data}' index 0 using 2:{ycol}:4 t '{list_subtables[0]} q-depth' w yerr axes x1y1"
+                head += f",\\\n '' index 0 using 2:{ycol}:4 notitle w lp axes x1y1"
                 head += f",\\\n '' index 0 using 2:{y2col} w lp axes x1y2 t 'CPU%'"
-                tail = ",\\\n".join([ f"  '' index {i} using 2:{ycol} t '{list_subtables[i]} iodepth' w lp axes x1y1"
+                tail = ",\\\n".join([ f"  '' index {i} using 2:{ycol} t '{list_subtables[i]} q-depth' w lp axes x1y1"
                      for i in range(1,len(list_subtables))])
                 template += ",\\\n".join([head, tail])
 
@@ -397,7 +398,7 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
                 item = next(table_iters[k])
                 if k == 'iodepth':
                     gplot += f" {item} "
-                    wiki += f' || {item} '
+                    wiki += f' | {item} '
                 else:
                     gplot += f" {item:.2f} "
                     wiki += f' || {item:.2f} '
