@@ -10,7 +10,7 @@ BLUESTORE_DEVS='/dev/sdf'
 declare -A test_table
 declare -A test_row
 
-test_row["title"]='== 1 OSD crimson, FIO 8 cores, Response curves =='
+test_row["title"]='== 1 OSD crimson, 1 reactor, FIO 8 cores, Response curves =='
 test_row['fio']="8-15"
 test_row['test']="crimson_1osd_8fio_rc"
 string=$(declare -p test_row)
@@ -26,8 +26,8 @@ for KEY in "${!test_table[@]}"; do
   /root/bin/cephlogoff.sh 2>&1 > /dev/null
   /root/bin/cephmkrbd.sh
   #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
-  RBD_NAME=fio_test_0 RBD_SIZE="10G" fio /fio/examples/rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -w hockey -a -c "0-31" -f "${test_row["fio"]}" -p ${test_row["test"]} -k -n # w/o osd dump_metrics
-  /ceph/src/stop.sh
+  RBD_NAME=fio_test_0 RBD_SIZE="10G" fio /fio/examples/rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -w hockey -a -c "0-31" -f "${test_row["fio"]}" -p ${test_row["test"]} -k  # w/o osd dump_metrics
+  /ceph/src/stop.sh --crimson
   sleep 60
 done
 exit

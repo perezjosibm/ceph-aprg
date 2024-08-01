@@ -31,11 +31,12 @@ import re
 # TODO: might extend to define their format (for the table its assumed as float)
 predef_dict = {
           'randwrite': {
+              'iodepth': 'global options/iodepth',
               'iops' : 'jobs/jobname=*/write/iops',
-              'clat_ms' : 'jobs/jobname=randwrite/write/clat_ns',
-              'clat_stdev' : 'jobs/jobname=randwrite/read/clat_ns',
-              'usr_cpu': 'jobs/jobname=randwrite/usr_cpu',
-              'sys_cpu': 'jobs/jobname=randwrite/sys_cpu'
+              'clat_ms' : 'jobs/jobname=*/write/clat_ns',
+              'clat_stdev' : 'jobs/jobname=*/write/clat_ns',
+              'usr_cpu': 'jobs/jobname=*/usr_cpu',
+              'sys_cpu': 'jobs/jobname=*/sys_cpu'
               },
           'randread': {
               'iodepth': 'global options/iodepth',
@@ -46,18 +47,20 @@ predef_dict = {
               'sys_cpu': 'jobs/jobname=*/sys_cpu'
               },
           'seqwrite': {
-              'bw' : 'jobs/jobname=seqwrite/write/bw',
-              'clat_ms' : 'jobs/jobname=seqwrite/write/clat_ns',
-              'clat_stdev' : 'jobs/jobname=seqwrite/read/clat_ns',
-              'usr_cpu': 'jobs/jobname=seqwrite/usr_cpu',
-              'sys_cpu': 'jobs/jobname=seqwrite/sys_cpu'
+              'iodepth': 'global options/iodepth',
+              'bw' : 'jobs/jobname=*/write/bw',
+              'clat_ms' : 'jobs/jobname=*/write/clat_ns',
+              'clat_stdev' : 'jobs/jobname=*/write/clat_ns',
+              'usr_cpu': 'jobs/jobname=*/usr_cpu',
+              'sys_cpu': 'jobs/jobname=*/sys_cpu'
               },
           'seqread': {
-              'bw' : 'jobs/jobname=seqread/read/bw',
-              'clat_ms' : 'jobs/jobname=seqread/read/clat_ns',
-              'clat_stdev' : 'jobs/jobname=seqread/read/clat_ns',
-              'usr_cpu': 'jobs/jobname=seqread/usr_cpu',
-              'sys_cpu': 'jobs/jobname=seqread/sys_cpu'
+              'iodepth': 'global options/iodepth',
+              'bw' : 'jobs/jobname=*/read/bw',
+              'clat_ms' : 'jobs/jobname=*/read/clat_ns',
+              'clat_stdev' : 'jobs/jobname=*/read/clat_ns',
+              'usr_cpu': 'jobs/jobname=*/usr_cpu',
+              'sys_cpu': 'jobs/jobname=*/sys_cpu'
               }
           }
 
