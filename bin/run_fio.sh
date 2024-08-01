@@ -9,6 +9,7 @@
 # ! -d : indicate the run directory cd to
 # ! -k : indicate whether to skip OSD dump_metrics
 # ! -l : indicate whether to use latency_target FIO profile
+# ! -g : indicate whether to prost-process existing data --requires -p (only coalescing charts atm)
 # ! -n : only collect top measurements, no perf
 # ! -t : indicate the type of OSD (classic or crimson by default).
 # !
@@ -29,7 +30,8 @@ declare -A map=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread)
 # Single FIO instances: for sequential workloads, bs=64k fixed
 # ToDO: this could be a valid range
 declare -A m_s_iodepth=( [hockey]="1 2 4 8 16 24 32 64 128 256"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 )
-declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
+declare -A m_s_numjobs=( [hockey]="1"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
+#declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
 
 # Multiple FIO instances
 declare -A m_m_iodepth=( [rw]=4 [rr]=16 [sw]=2 [sr]=3 )
@@ -63,12 +65,13 @@ NUM_SAMPLES=30
 OSD_TYPE="crimson"
 RESPONSE_CURVE=false
 LATENCY_TARGET=false
+POST_PROC=false
 
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 
-while getopts 'ac:d:f:klsw:p:nt:' option; do
+while getopts 'ac:d:f:klsw:p:nt:g' option; do
   case "$option" in
     a) RUN_ALL=true
         ;;
@@ -91,6 +94,8 @@ while getopts 'ac:d:f:klsw:p:nt:' option; do
     t) OSD_TYPE=$OPTARG
         ;;
     l) LATENCY_TARGET=true
+        ;;
+    g) POST_PROC=true
         ;;
     :) printf "missing argument for -%s\n" "$OPTARG" >&2
        usage >&2
@@ -206,7 +211,7 @@ fun_run_workload() {
         else
           fio_name=/fio/examples/rbd_${map[${WORKLOAD}]}.fio
         fi
-        LOG_NAME=${TEST_PREFIX} RBD_NAME=fio_test_${i} IO_DEPTH=$io NUM_JOBS=$job taskset -ac ${FIO_CORES} fio $fio_name --output=fio_${TEST_NAME}.json --output-format=json 2> fio_${TEST_NAME}.err &
+        LOG_NAME=${TEST_NAME} RBD_NAME=fio_test_${i} IO_DEPTH=$io NUM_JOBS=$job taskset -ac ${FIO_CORES} fio $fio_name --output=fio_${TEST_NAME}.json --output-format=json 2> fio_${TEST_NAME}.err &
         #FIO profiling:
         #fun_measure $! "fio_${TEST_NAME}" ${FIO_TOP_OUT_LIST} &
         # ALAS: extend this array for multiple FIO processes
@@ -263,26 +268,12 @@ fun_run_workload() {
 
   # Need to traverse the suffix of the charts produced to know which ones we want to coalesce on a single animated .gif
   if [ "$RESPONSE_CURVE" = true ]; then
-    # Process/threads data
-    # Identify which files and move them to the animate subdir
-    #for x in $(cat $INPUT_LIST); do
-    # mv ${TEST_PREFIX}*${TEST_SUFFIX}.png animate/
-    for pr in "FIO OSD"; do
-       for metric in "cpu mem"; do
-         # best to give the list of files os we can reuse this with the FIO timespan charts
-         input_list=$(ls $pr_${TEST_PREFIX}*${metric}.png)
-         fun_animate ${input_list} "$pr_${TEST_PREFIX}_${metric}"
-       done
-    done
-    # CPU core data
-    for metric in "us sys"; do
-      input_list=$(ls core_${TEST_PREFIX}*${metric}.png)
-      fun_animate ${input_list} "core_${TEST_PREFIX}_${metric}"
-    done
+    echo "== this is a response curve run =="
+    fun_coalesce_charts ${TEST_PREFIX}
   fi
-  #cd # location of FIO data
+  #cd # location of FIO .log data
   #fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280
-  /root/bin/fio_generate_plots ${TEST_PREFIX} 650 280
+  /root/bin/fio_generate_plots ${TEST_NAME} 650 280
   # archiving:
   zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out *_top.out *.json *.plot *.dat *.png *.log ${TOP_OUT_LIST} osd*_threads.out ${TOP_PID_LIST}
 
@@ -327,30 +318,65 @@ fun_prime() {
   wait;
 }
 
+# coalesce the .png individual top charts into a single animated .gif
+fun_coalesce_charts() {
+  local TEST_PREFIX=$1
+  # Process/threads data
+  # Identify which files and move them to the animate subdir
+  #for x in $(cat $INPUT_LIST); do
+  # mv ${TEST_PREFIX}*${TEST_SUFFIX}.png animate/
+  for proc in FIO OSD; do
+    for metric in cpu mem; do
+      # best to give the list of files os we can reuse this with the FIO timespan charts
+      prefix="${proc}_${TEST_PREFIX}"
+      postfix="_top_${metric}.png"
+      fun_animate ${prefix} ${postfix} "${proc}_${TEST_PREFIX}_${metric}"
+    done
+  done
+  # CPU core data
+  for metric in us sys; do
+    prefix="core_${TEST_PREFIX}"
+    postfix="_${metric}.png"
+    fun_animate ${prefix} ${postfix} "core_${TEST_PREFIX}_${metric}"
+  done
+}
+
 # Prepare a list of .png in the order expected from a list of files
 fun_prep_anim_list() {
-  local INPUT_LIST=$1
-  echo ${INPUT_LIST} | sort -n -t_ -k6 -k7 > lista
-  i=0; for x in $(cat lista); do y=$(printf "%03d.png" $i ); mv $x $y; echo $(( i++ )) >/dev/null; done
+  local PREFIX=$1
+  local POSTFIX=$2
+  local OUT_DIR=$3
+  cmd="ls ${PREFIX}*${POSTFIX}"
+  echo "$cmd"
+  eval $cmd | sort -n -t_ -k6 -k7 > lista
+  i=0; for x in $(cat lista); do echo $x; y=$(printf "%03d.png" $i ); mv $x ${OUT_DIR}/$y; echo $(( i++ )) >/dev/null; done
 }
 
 # When collected data over a range (eg response curves), coalesce the individual .png
 # into an animated .gif
 fun_animate() {
-  local INPUT_LIST=$1
-  local OUTPUT_NAME=$2
+  local PREFIX=$1
+  local POSTFIX=$2
+  local OUTPUT_NAME=$3
 
   # Need to create a temp dir to move the .png and then use convert over the sorted list of files
   mkdir animate
+  fun_prep_anim_list ${PREFIX} ${POSTFIX} animate
   cd animate
   convert -delay 100 -loop 0 *.png ../${OUTPUT_NAME}.gif
   cd ..
   rm -rf animate/
 }
 
-# main:
-pushd $RUN_DIR
 
+# main:
+if [ "$POST_PROC" = true ]; then
+  fun_coalesce_charts $TEST_PREFIX
+  echo "$(date)== Done =="
+  exit
+fi
+
+pushd $RUN_DIR
 fun_set_osd_pids $TEST_PREFIX
 
 if [ "$RUN_ALL" = true ]; then
