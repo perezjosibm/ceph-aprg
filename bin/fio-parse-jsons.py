@@ -28,20 +28,22 @@ import argparse
 import re
 
 # Predefined dictionary of metrics (query paths on the .json) for typical workloads
+# TODO: might extend to define their format (for the table its assumed as float)
 predef_dict = {
           'randwrite': {
-              'iops' : 'jobs/jobname=randwrite/write/iops',
+              'iops' : 'jobs/jobname=*/write/iops',
               'clat_ms' : 'jobs/jobname=randwrite/write/clat_ns',
               'clat_stdev' : 'jobs/jobname=randwrite/read/clat_ns',
               'usr_cpu': 'jobs/jobname=randwrite/usr_cpu',
               'sys_cpu': 'jobs/jobname=randwrite/sys_cpu'
               },
           'randread': {
-              'iops' : 'jobs/jobname=randread/read/iops',
-              'clat_ms' : 'jobs/jobname=randread/read/clat_ns',
-              'clat_stdev' : 'jobs/jobname=randread/read/clat_ns',
-              'usr_cpu': 'jobs/jobname=randread/usr_cpu',
-              'sys_cpu': 'jobs/jobname=randread/sys_cpu'
+              'iodepth': 'global options/iodepth',
+              'iops' : 'jobs/jobname=*/read/iops',
+              'clat_ms' : 'jobs/jobname=*/read/clat_ns',
+              'clat_stdev' : 'jobs/jobname=*/read/clat_ns',
+              'usr_cpu': 'jobs/jobname=*/usr_cpu',
+              'sys_cpu': 'jobs/jobname=*/sys_cpu'
               },
           'seqwrite': {
               'bw' : 'jobs/jobname=seqwrite/write/bw',
@@ -117,7 +119,7 @@ def process_fio_item(k, next_node_list):
     """
     #    match k: # Python version on the SV1 node does not support 'match'
     #    case 'iops' | 'usr_cpu' | 'sys_cpu':
-    if re.search('iops|usr_cpu|sys_cpu', k):
+    if re.search('iops|usr_cpu|sys_cpu|iodepth', k):
         return next_node_list[0]
     if k == 'bw':
         return next_node_list[0]/1000
@@ -264,12 +266,14 @@ set title "{_title}"
         f.write(data)
         f.close()
 
-def initial_table_and_avg(dict_files):
+def initial_fio_table(dict_files, multi):
     """
-    Construct a table from the input mesurements, and calculate the arith avg
+    Construct a table from the input mesurements FIO json
+    If multi=True, the avg list reduces the samples from dict_files into a single row
     """
     table = {}
     avg = {}
+    # Traverse each json: sample
     for name in dict_files.keys():
         item = dict_files[name]
         jobname = item['jobname']
@@ -278,10 +282,11 @@ def initial_table_and_avg(dict_files):
         for k in subdict.keys():
             if not k in table:
                 table[k] = []
-                avg[k] = 0.0
             table[k].append(item[k])
-            avg[k] += item[k]
-
+            if multi:
+                if not k in table:
+                    avg[k] = 0.0
+                avg[k] += item[k]
     # TODO: we might have some other  rather than arithmetic avg
     # For a sinlge data point, table == avg
     # For multiple FIO, we always want to coalesce the table into avg
@@ -290,15 +295,17 @@ def initial_table_and_avg(dict_files):
         avg[k] /= len(table[k])
     return table, avg
 
-def aggregate_cpu_avg(avg, avg_cpu):
+def aggregate_cpu_avg(avg, table, avg_cpu):
     """
     Depending of whether this set of results are from a Multi FIO or a typical
     response curve, aggregate the OSD CPU avg measurements into the main table 
     """
+    # if num_files  > len(avg_cpu): this is a MultiFIO
     if len(avg_cpu):
         print(f" avg_cpu list has: {len(avg_cpu)} items")
         #avg_iter = iter(avg_cpu)
         #cpu_item = next(avg_iter)
+        # The number of CPU items should be the same as the number of dict_files.keys()
         for cpu_item in avg_cpu:
             for k in cpu_item.keys(): # 'sys', 'us' normally from the OSD
                 cpu_avg_k = 0
@@ -310,9 +317,14 @@ def aggregate_cpu_avg(avg, avg_cpu):
                 if not k in avg:
                     avg[k] = 0
                 avg[k] += cpu_avg_k
+                # Aggregate the CPU values in the FIO table
+                if not k in table:
+                    table[k] = []
+                table[k].append(cpu_avg_k)
 
-        print("Avg after aggregating CPU avg data:\n")
         pp = pprint.PrettyPrinter(width=41, compact=True)
+        pp.pprint(table)
+        print("Avg after aggregating CPU avg data:\n")
         pp.pprint(avg)
 
 def gen_table(dict_files, config, title, avg_cpu, multi=False):
@@ -329,27 +341,21 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
     as opposed to a response curve run which also involve
     several json files but within its own timespan
     """
-    table, avg = initial_table_and_avg(dict_files)
+    table, avg = initial_fio_table(dict_files, multi)
     table_iters = {}
     list_subtables = []
+    num_files = len(dict_files.keys())
     # List of dicts, each with keys 'sys', 'us',
     # each sample with list of CPU (eg. 0-3, and 4-7)
-    num_files = len(dict_files.keys())
-    aggregate_cpu_avg(avg, avg_cpu)
-    
-    if multi:
-        # Multiple FIO: reduce the table, but first show it
-        print("MultiFIO table:\n")
-        pp = pprint.PrettyPrinter(width=41, compact=True)
-        pp.pprint(table)
-
     # Aggregate osd_cpu_us and osd_cpu_sys
+    aggregate_cpu_avg(avg, table, avg_cpu)
+    
     # Note: in general the CPU measurements are global across the test time
     # for all FIO processes, so we must reduce the FIO measurements first
     # Construct headers -- this is the same for both cases
     # For th egnuplot .dat, each subtable ranges over num_jobs(threads)
     # wereas each row within a table ranges over iodepth
-    gplot_hdr = "# iodepth "
+    gplot_hdr = "# "
     gplot_hdr += ' '.join(table.keys())
     gplot_hdr += "\n"
     gplot = ""
@@ -359,23 +365,16 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
 ! colspan="5"  | """ + config.replace("_list","") + """
 ! colspan="2"  | OSD CPU%
 |-
-! Iodepth !! """
-    wiki += ' !! '.join(avg.keys()) # This is so since we aggregated OSD CPU util
+! """
+    wiki += ' !! '.join(table.keys()) # This is so since we aggregated OSD CPU util
     wiki += "\n|-\n"
-
-    if not multi:
-        # aggregate the CPU avg into the table
-        for k in avg.keys():
-            if not k in table:
-                table[k] = []
-            table[k].append(avg[k])
 
     for k in table.keys():
         table_iters[k] = iter(table[k])
     # Construct the wiki table: the order given by the file names is important here,
     # we need to identify where a block break in the data table is needed
     # fio_crimson_1osd_default_8img_fio_unrest_2job_16io_4k_randread_p5.json
-    # TODO: differentiate between MultiFIO vs response curve increasing sequence
+
     for name in dict_files.keys():
         m = re.match(r".*(?P<job>\d+)job_(?P<io>\d+)io_",name)
         if m:
@@ -391,12 +390,17 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
                 gplot += gplot_hdr
                 list_subtables.append(job)
 
-            gplot += f"{io:2d} "
-            wiki += f'| {io:2d} '
+            # No longer needed since using the info from FIO json
+            #gplot += f"{io:2d} "
+            #wiki += f'| {io:2d} '
             for k in table.keys():
                 item = next(table_iters[k])
-                gplot += f" {item:.2f} "
-                wiki += f' || {item:.2f} '
+                if k == 'iodepth':
+                    gplot += f" {item} "
+                    wiki += f' || {item} '
+                else:
+                    gplot += f" {item:.2f} "
+                    wiki += f' || {item:.2f} '
             gplot += "\n"
             wiki += "\n|-\n"
     if multi:
