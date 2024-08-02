@@ -26,7 +26,7 @@ for KEY in "${!test_table[@]}"; do
   /root/bin/cephlogoff.sh 2>&1 > /dev/null
   /root/bin/cephmkrbd.sh
   #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
-  RBD_NAME=fio_test_0 RBD_SIZE="10G" fio /fio/examples/rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -w classic -a -c "0-31" -f "${test_row["fio"]}" -p ${test_row["test"]} -k -n # w/o osd dump_metrics
+  RBD_NAME=fio_test_0 RBD_SIZE="10G" fio /fio/examples/rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -w hockey -a -c "0-31" -f "${test_row["fio"]}" -p ${test_row["test"]} -k -n # w/o osd dump_metrics
   /ceph/src/stop.sh
   sleep 60
 done
