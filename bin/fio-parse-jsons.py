@@ -4,15 +4,20 @@
 # FIO in JSON format
 #
 # Input parameters:
+#
 # -c <file_name>- a file name containing a list of JSONs FIO output
-# result files, each following the naming convention:
-# <prefix>_\d+job_d+io_<suffix>
+#  result files, each following the naming convention:
+#  <prefix>_\d+job_d+io_<suffix>
 #
 # -t <title> - a string describning the Title for the chart, eg.
 # 'Crimson 4k Random Write (Single 200GB OSD)'
 #
 # -a <file_name> - a JSON filename with the CPU average list, normally
 # produced by the parse-top.pl script.
+#
+# -d <dir> - cd to th edirectory
+#
+# -m - flag to indicate whether the run is for MultiFIO
 #
 # Example:
 # python3 fio-parse-jsons.py -c \
@@ -27,8 +32,8 @@ import json
 import argparse
 import re
 
-# Predefined dictionary of metrics (query paths on the .json) for typical workloads
-# TODO: might extend to define their format (for the table its assumed as float)
+# Predefined dictionary of metrics (query paths on the ouput FIO .json) for typical workloads
+# Keys are metric names, vallues are the string path in the .json to seek
 predef_dict = {
           'randwrite': {
               'iodepth': 'global options/iodepth',
@@ -113,7 +118,7 @@ def process_fio_item(k, next_node_list):
     For default (empty paths) queries:
     file: { /workload-type/: wrte: iops, latency_ms: (sort list by value, get top) }
     To coalesce the results of several files:
-    use the timestamp to groups json files
+    use the timestamp to groups json files -- pending
     For IOPs or BW: sum the values together from all the json files for the
     same timestamp
     For latency: multiply this value by IOPs, sum these values from all the
@@ -198,14 +203,11 @@ def traverse_files(sdir, config, json_tree_path):
 
 def gen_plot(config, data, list_subtables, title):
     """
-    Generate a gnuplot script and .dat files -- either a new one for OSD cpu util or
-    extend this same template: 'sys' is column 6, 'us' is 7
-    dict with keys each variant: iops_vs_cpu_sys, iops_vs_cpu_usr
+    Generate a gnuplot script and .dat files -- assumes OSD CPU util only
     """
     plot_dict = {
     # Use the dict key as the suffix for the output file .png,
-    # the .dat file is common across
-    # TODO: factorise single latency column
+    # the .dat file is the same for the different charts
         'iops_vs_lat_vs_cpu_sys': { 
             'ylabel': "Latency (ms)",
             'ycolumn': '3',
@@ -232,6 +234,7 @@ set style function linespoints
     template = ""
     out_plot = config.replace("_list",".plot")
     out_data = config.replace("_list",".dat")
+    # Gnuplot quirk: '_' is interpreted as a sub-index:
     _title   = title.replace("_","-")
 
     with open(out_plot, 'w') as f:
@@ -277,7 +280,7 @@ def initial_fio_table(dict_files, multi):
     """
     table = {}
     avg = {}
-    # Traverse each json: sample
+    # Traverse each json sample
     for name in dict_files.keys():
         item = dict_files[name]
         jobname = item['jobname']
@@ -291,7 +294,7 @@ def initial_fio_table(dict_files, multi):
                 if not k in table:
                     avg[k] = 0.0
                 avg[k] += item[k]
-    # TODO: we might have some other  rather than arithmetic avg
+    # Probably might use some other avg rather than arithmetic avg
     # For a sinlge data point, table == avg
     # For multiple FIO, we always want to coalesce the table into avg
     # For response time curves, we want to have the sequence of increasing queue depth
@@ -304,11 +307,9 @@ def aggregate_cpu_avg(avg, table, avg_cpu):
     Depending of whether this set of results are from a Multi FIO or a typical
     response curve, aggregate the OSD CPU avg measurements into the main table 
     """
-    # if num_files  > len(avg_cpu): this is a MultiFIO
+    # Note: if num_files  > len(avg_cpu): this is a MultiFIO
     if len(avg_cpu):
         print(f" avg_cpu list has: {len(avg_cpu)} items")
-        #avg_iter = iter(avg_cpu)
-        #cpu_item = next(avg_iter)
         # The number of CPU items should be the same as the number of dict_files.keys()
         for cpu_item in avg_cpu:
             for k in cpu_item.keys(): # 'sys', 'us' normally from the OSD
@@ -343,22 +344,26 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
     The optional multi option is used to differentiate between multiple FIO instances,
     which involve several .json files all from a concurrent execution (within the same timespan),
     as opposed to a response curve run which also involve
-    several json files but within its own timespan
+    several json files but within its own timespan.
+
+    For a response curve over a double range (that is num_jobs and iodepth), the data for gnuplot is
+    separated into its own table, so the .dat file ends up with one table per num_job.
     """
     table, avg = initial_fio_table(dict_files, multi)
     table_iters = {}
     list_subtables = []
     num_files = len(dict_files.keys())
-    # List of dicts, each with keys 'sys', 'us',
+    # The following produces a List of dicts, each with keys 'sys', 'us',
     # each sample with list of CPU (eg. 0-3, and 4-7)
-    # Aggregate osd_cpu_us and osd_cpu_sys
+    # Aggregate osd_cpu_us and osd_cpu_sys into the main table
     aggregate_cpu_avg(avg, table, avg_cpu)
     
     # Note: in general the CPU measurements are global across the test time
-    # for all FIO processes, so we must reduce the FIO measurements first
+    # for all FIO processes, so in the MultiFIO case we need to reduce the FIO measurements first
+
     # Construct headers -- this is the same for both cases
-    # For th egnuplot .dat, each subtable ranges over num_jobs(threads)
-    # wereas each row within a table ranges over iodepth
+    # For the gnuplot .dat, each subtable ranges over num_jobs(threads)
+    # whereas each row within a table ranges over iodepth
     gplot_hdr = "# "
     gplot_hdr += ' '.join(table.keys())
     gplot_hdr += "\n"
@@ -366,40 +371,39 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
 
     wiki = r"""{| class="wikitable"
 |-
-! colspan="5"  | """ + config.replace("_list","") + """
+! colspan="6"  | """ + config.replace("_list","") + """
 ! colspan="2"  | OSD CPU%
 |-
 ! """
-    wiki += ' !! '.join(table.keys()) # This is so since we aggregated OSD CPU util
+    wiki += ' !! '.join(table.keys())
     wiki += "\n|-\n"
 
     for k in table.keys():
         table_iters[k] = iter(table[k])
     # Construct the wiki table: the order given by the file names is important here,
-    # we need to identify where a block break in the data table is needed
+    # we need to identify where a block break in the data table is needed. We use
+    # our naming convention to identify this:
     # fio_crimson_1osd_default_8img_fio_unrest_2job_16io_4k_randread_p5.json
 
     for name in dict_files.keys():
         m = re.match(r".*(?P<job>\d+)job_(?P<io>\d+)io_",name)
         if m:
-            # Note: 'job' (num threads) is constant within a sub-table,
-            # each row corresponds to increasing the iodepth
+            # Note: 'job' (num threads) is constant within  each table,
+            # each row corresponds to increasing the iodepth, that is, each
+            # sample run
             job = int(m.group('job')) # m.group(1)
             io =  int(m.group('io'))  # m.group(2)
             if job not in list_subtables:
-                # add a gnuplot table break
+                # Add a gnuplot table break (ie new block)
                 if len(list_subtables) > 0:
                     gplot += "\n\n"
                 gplot += f"## num_jobs: {job}\n"
                 gplot += gplot_hdr
                 list_subtables.append(job)
 
-            # No longer needed since using the info from FIO json
-            #gplot += f"{io:2d} "
-            #wiki += f'| {io:2d} '
             for k in table.keys():
                 item = next(table_iters[k])
-                if k == 'iodepth':
+                if k == 'iodepth': #This metric is the first column
                     gplot += f" {item} "
                     wiki += f' | {item} '
                 else:
@@ -416,7 +420,7 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
             total = avg['iops'] * num_files 
         else:
             total = avg['bw'] * num_files 
-        wiki += f'! Total: || {total:.2f} ' # Temporary hack
+        wiki += f'! Total: || {total:.2f} '
         wiki += "\n|-\n"
 
     wiki += "|}\n"
@@ -441,7 +445,8 @@ def main(directory, config, json_query):
 
 def load_avg_cpu_json(json_fname):
     """
-    Load a .json file containing the CPU avg samples
+    Load a .json file containing the CPU avg samples -- normally produced by the script
+    parse-top.pl
     """
     try:
         with open(json_fname, "r") as json_data:
@@ -458,6 +463,9 @@ def load_avg_cpu_json(json_fname):
         raise argparse.ArgumentTypeError(str(e))
 
 def parse_args():
+    """
+    As it says on the tin
+    """
     parser = argparse.ArgumentParser(description='Parse set of output json FIO results.')
     parser.add_argument(
             "-c", "--config", type=str,
