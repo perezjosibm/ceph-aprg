@@ -25,7 +25,7 @@
 declare -A map=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread)
 # Typical values as observed during discovery sprint:
 # Single FIO instances: for sequential workloads, bs=64k fixed
-# ToDO: this could be a valid range
+# Need to be valid ranges
 declare -A m_s_iodepth=( [hockey]="1 2 4 8 16 24 32 40 52 64"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 )
 declare -A m_s_numjobs=( [hockey]="1"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
 #declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
@@ -182,7 +182,7 @@ fun_run_workload() {
   for job in $RANGE_NUMJOBS; do
     for io in $RANGE_IODEPTH; do
       for (( i=0; i<${NUM_PROCS}; i++ )); do
-        #Bail out if no OSD process is running -- TODO improve health check
+        #Bail out if no OSD process is running -- improve health check
         NUM_OSD=$(pgrep -c osd)
         if [[ $NUM_OSD -le 0 ]]; then
           echo " ERROR == no OSD process running .. bailing out"
@@ -249,22 +249,18 @@ fun_run_workload() {
   # Need to traverse the suffix of the charts produced to know which ones we want to coalesce on a single animated .gif
   if [ "$RESPONSE_CURVE" = true ]; then
     echo "== this is a response curve run =="
-    fun_coalesce_charts ${TEST_PREFIX}
+    fun_coalesce_charts ${TEST_PREFIX} ${TEST_RESULT}
   fi
   #cd # location of FIO .log data
   #fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280 # Made some tweaks, so will keep it in my priv repo
   /root/bin/fio_generate_plots ${TEST_NAME} 650 280
-  # Archiving:
-  zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out *_top.out *.json *.plot *.dat *.png ${TOP_OUT_LIST} osd*_threads.out ${TOP_PID_LIST}
-  # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
-  rm -f *.log
 
   # Process perf if any
   if [ "$WITH_PERF" = true ]; then
     for x in $(ls *perf.out); do
       #y=${x/perf.out/scripted.gz}
       z=${x/perf.out/fg.svg}
-       echo "==$(date) == Perf script $x: $y =="
+      echo "==$(date) == Perf script $x: $y =="
       perf script -i $x | c++filt | /FlameGraph/stackcollapse-perf.pl | /FlameGraph/flamegraph.pl > $z
       # I needed the raw data to experiment compaction of tall lambda calls, I'll disable compression by the time being
       #perf script -i $x | c++filt | gzip -9 > $y
@@ -273,11 +269,18 @@ fun_run_workload() {
       rm -f $x
     done
   fi
+  # Generate report: use the template, integrate the tables/charts -- per workload
+  # texlive/bin/x86_64-linux/pdflatex  ${TEST_RESULT}.tex
+  # Archiving:
+  zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out *_top.out *.json *.plot *.dat *.png ${TOP_OUT_LIST} osd*_threads.out ${TOP_PID_LIST} *.svg
+  # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
+  rm -f *.log
 }
 
 fun_set_osd_pids() {
   local TEST_PREFIX=$1
-  local NUM_OSD=$(pgrep -c osd) # TODO: find a better way, eg ceph query
+  # Should be a better way, eg ceph query
+  local NUM_OSD=$(pgrep -c osd)
 
   for (( i=0; i<$NUM_OSD; i++ )); do
     iosd=/ceph/build/out/osd.${i}.pid
