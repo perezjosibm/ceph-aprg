@@ -270,9 +270,10 @@ fun_run_workload() {
     done
   fi
   # Generate report: use the template, integrate the tables/charts -- per workload
-  # texlive/bin/x86_64-linux/pdflatex  ${TEST_RESULT}.tex
+  # /root/tinytex/tools/texlive/bin/x86_64-linux/pdflatex -interaction=nonstopmode ${TEST_RESULT}.tex
+  # Run it again to get the references, TOC, etc
   # Archiving:
-  zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out *_top.out *.json *.plot *.dat *.png ${TOP_OUT_LIST} osd*_threads.out ${TOP_PID_LIST} *.svg
+  zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out *_top.out *.json *.plot *.dat *.png *.gif ${TOP_OUT_LIST} osd*_threads.out ${TOP_PID_LIST} *.svg
   # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
   rm -f *.log
 }
@@ -308,6 +309,8 @@ fun_prime() {
 # coalesce the .png individual top charts into a single animated .gif
 fun_coalesce_charts() {
   local TEST_PREFIX=$1
+  local TEST_RESULT=$2
+  [ -z "${TEST_RESULT}" ] && TEST_RESULT=${TEST_PREFIX}
   # Process/threads data
   # Identify which files and move them to the animate subdir
   for proc in FIO OSD; do
@@ -315,14 +318,14 @@ fun_coalesce_charts() {
       # Probably best to give the list of files so we can reuse this with the FIO timespan charts
       prefix="${proc}_${TEST_PREFIX}"
       postfix="_top_${metric}.png"
-      fun_animate ${prefix} ${postfix} "${proc}_${TEST_PREFIX}_${metric}"
+      fun_animate ${prefix} ${postfix} "${proc}_${TEST_RESULT}_${metric}"
     done
   done
   # CPU core data
   for metric in us sys; do
     prefix="core_${TEST_PREFIX}"
     postfix="_${metric}.png"
-    fun_animate ${prefix} ${postfix} "core_${TEST_PREFIX}_${metric}"
+    fun_animate ${prefix} ${postfix} "core_${TEST_RESULT}_${metric}"
   done
 }
 
@@ -356,6 +359,7 @@ fun_animate() {
 # main:
 
 # Standalone option to post-process a set of results previously collected
+# might need to provide extra info for the end file name
 if [ "$POST_PROC" = true ]; then
   fun_coalesce_charts $TEST_PREFIX
   echo "$(date)== Done =="

@@ -1,4 +1,9 @@
-FROM artifactory.ssd.hursley.ibm.com/ceph/cephbase5
+# Ceph container images
+# https://quay.io/repository/ceph/ceph
+FROM quay.io/centos/centos:stream9
+RUN yum update -y
+RUN yum install epel-release -y
+RUN dnf config-manager --set-enabled crb
 # Extra packages needed to run cbt
 RUN yum install python3-lxml -y
 RUN yum install python3-yaml -y
@@ -6,6 +11,8 @@ RUN git clone https://git.kernel.dk/fio.git
 RUN git clone https://github.com/ceph/cbt
 RUN git clone https://github.com/andikleen/pmu-tools.git
 RUN git clone https://github.com/brendangregg/FlameGraph.git
+RUN git clone https://github.com/rstudio/tinytex.git
+RUM cd /tinytex/tools/ && make all
 RUN yum install pdsh -y
 RUN yum install pdsh-rcmd-ssh -y
 RUN yum install targetcli -y
@@ -39,6 +46,7 @@ ADD bin/.vimrc  /root/.vimrc
 COPY bin/rbd_fio_workloads.zip /root/bin/
 ADD bin/toprc /root/.config/procps/toprc
 ADD bin/cephlog /etc/logrotate.d/ceph
+# Add toolkit
 COPY --chmod=755 bin/fio-parse-jsons.py /root/bin/
 COPY --chmod=755 bin/run_fio.sh /root/bin/run_fio.sh
 COPY --chmod=755 bin/cpu-map.sh /root/bin/cpu-map.sh
