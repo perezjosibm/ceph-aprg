@@ -43,20 +43,20 @@ RUN yum install perl-JSON-XS -y
 ADD bin/bashrc /root/.bashrc
 ADD bin/.gitconfig  /root/.gitconfig
 ADD bin/.vimrc  /root/.vimrc
-COPY bin/rbd_fio_workloads.zip /root/bin/
 ADD bin/toprc /root/.config/procps/toprc
 ADD bin/cephlog /etc/logrotate.d/ceph
-# Add toolkit
-COPY --chmod=755 bin/fio-parse-jsons.py /root/bin/
-COPY --chmod=755 bin/run_fio.sh /root/bin/run_fio.sh
-COPY --chmod=755 bin/cpu-map.sh /root/bin/cpu-map.sh
-COPY --chmod=755 bin/parse-top.pl /root/bin/parse-top.pl
-COPY --chmod=755 bin/run_batch_02.sh /root/bin/run_batch_02.sh
-COPY --chmod=755 bin/run_batch_single.sh /root/bin/run_batch_single.sh
-COPY --chmod=755 bin/run_batch_double.sh /root/bin/run_batch_double.sh
-COPY --chmod=755 bin/run_batch_range_alien.sh /root/bin/run_batch_range_alien.sh
-COPY --chmod=755 bin/cephlogoff.sh /root/bin/cephlogoff.sh
-COPY --chmod=755 bin/cephmkrbd.sh /root/bin/cephmkrbd.sh
-COPY --chmod=755 bin/cephteardown.sh /root/bin/cephteardown.sh
-COPY --chmod=755 bin/fio_generate_plots /root/bin/fio_generate_plots
-#RUN unzip -od /fio/examples /root/bin/rbd_fio_workloads.zip
+#Now part of the toolkit in src/script/aprg
+#COPY bin/rbd_fio_workloads.zip /root/bin/
+#COPY --chmod=755 bin/fio-parse-jsons.py /root/bin/
+#COPY --chmod=755 bin/run_fio.sh /root/bin/run_fio.sh
+#COPY --chmod=755 bin/cpu-map.sh /root/bin/cpu-map.sh
+#COPY --chmod=755 bin/parse-top.pl /root/bin/parse-top.pl
+#COPY --chmod=755 bin/run_batch_02.sh /root/bin/run_batch_02.sh
+#COPY --chmod=755 bin/run_batch_single.sh /root/bin/run_batch_single.sh
+#COPY --chmod=755 bin/run_batch_double.sh /root/bin/run_batch_double.sh
+#COPY --chmod=755 bin/run_batch_range_alien.sh /root/bin/run_batch_range_alien.sh
+#COPY --chmod=755 bin/cephlogoff.sh /root/bin/cephlogoff.sh
+#COPY --chmod=755 bin/cephmkrbd.sh /root/bin/cephmkrbd.sh
+#COPY --chmod=755 bin/cephteardown.sh /root/bin/cephteardown.sh
+#COPY --chmod=755 bin/fio_generate_plots /root/bin/fio_generate_plots
+###RUN unzip -od /fio/examples /root/bin/rbd_fio_workloads.zip

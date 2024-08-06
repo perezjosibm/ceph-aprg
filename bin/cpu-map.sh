@@ -1,29 +1,36 @@
 #!/bin/bash
 # !
-# ! Usage: ./cpu-map.sh -p <process_PIDs comma separated> -n <process_Name> -g (optional) <by-group>
+# ! Usage: ./cpu-map.sh -p <process_PIDs comma separated> -n <process_Name>
+# !                     -g <group-name:affinity-range>
 # !
 # ! Set the CPU affinity for a list of running processes
-# ! Ex.: ./cpu-map.sh -n scylla
-# !      ./cpu-map.sh -n scylla -g "alien:4-31"
-# !      ./cpu-map.sh -p "1362, 1049"
-# !      ./cpu-map.sh -p 32 -g "rocksdb:4-7"
-
-
+# !
+# ! Ex.: ./cpu-map.sh -n crimson -g "alien:4-31"
+# !      ./cpu-map.sh -p ($pgrep osd) -g "rocksdb:4-7"
+# !
+# !  Important: the "affinity-range" must be a vlid argument for taskset.
 ########################################################
-# The following must be valid cpu ranges for taskset
-
-# Regex to define the group of threads we want to set their affinity:
+# Please edit the following to suit your own needs
+#
+# Regex to define the group of threads names we want to set their affinity:
 proc_group_re="alien-store-tp|rocksdb|bstore|cfin"
+# Associate array to identify the group and the thread names
 declare -A thr_grp_re_name_map=([alien]="$proc_group_re")
+# Ditto for their default affinity range:
 declare -A thr_grp_range_map=([alien]="4-7")
-# Run with 4 cores on SV1, no hyperthreading
-#declare -A thr_grp_map=([alien-store-tp]="4-7" [rocksdb]="4-7" [bstore]="4-7" [cfin]="4-7" )
+# You can define further groups as needed
 
-# Expression: nprocs - rectors
+# Range of CPU cores available: i.e. nprocs - rectors
 free_cpu_avail="8-31"
 
-# Regex to ignore: do not change their affinity
+# Regex of threads to ignore: do not change their affinity
 proc_ignore_re="crimson-osd|reactor|log|syscall"
+########################################################
+# Examples:
+
+# Run with 4 cores on a dual socket 8 CPucores per socket system, no hyperthreading
+#declare -A thr_grp_map=([alien-store-tp]="4-7" [rocksdb]="4-7" [bstore]="4-7" [cfin]="4-7" )
+
 ########################################################
 # svcdev3 -- 56 cpus
 #declare -A thr_grp_map=([io_context_pool]="0-12" [msg-worker]="13-25" [ceph-osd]="26-38" )
@@ -55,6 +62,7 @@ proc_ignore_re="crimson-osd|reactor|log|syscall"
 #declare -A thr_grp_map=([msgr-worker]="0-1" [bstore_kv]="2-3" [tp_osd_tp]="4-5" [rocksdb]="6-7")
 #free_cpu_avail="8-15"
 #proc_group_re="msgr-worker|bstore_kv|tp_osd_tp|rocksdb"
+
 ########################################################
 
 # cores 16-31 are for FIO only
@@ -63,27 +71,16 @@ usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 
-# Given a thread name, find its affinity from $thr_grp_map[]
+# Given a thread name, find its affinity from $thr_grp_map[]
 getaffinity() {
     local name="$1"
     local regex="$2"
     if [ -z "$regex" ]; then
         echo ''
     fi
-   # local _items=($(echo $regex | tr '|' '\n'))
-    #for _key in "{_items[@]}"; do
-#    for _key in "${!thr_grp_map[@]}"; do
-#        if [[ "$name" == *"${_key}"* ]]; then
-#            echo "${thr_grp_map[${_key}]}";
-#        fi
-#    done
-
-    #car="${regex%|*}"
-    #if echo $name | grep -q "$car"; then echo  "${thr_grp_map[$car]}"; fi
-    #cdr="${regex#*|}"
-    #getaffinity $name $cdr
 }
 
+# process arguments
 while getopts 'p:n:g:' option; do
   case "$option" in
     p) PROCESSES=$OPTARG # this should be a , separated list of pids
@@ -111,10 +108,6 @@ done
 
 if [ $# -eq 0 ]; then usage >&2; exit 1; fi
 
-# FIXME: declare fails
-#declare -n next_avail_cpu=0
-#declare -n max_cpus=$(nproc)
-#declare -n cpu_used=1
 declare -a other=()
 next_avail_cpu=0
 max_cpus=$(nproc)
@@ -136,8 +129,6 @@ for PID in "${proc_list[@]}"; do
 			t_name=$(grep -E "$pgroup_re" /proc/$i/comm )
 			if [ -n "$t_name" ]; then
 				affinity=${cpu_grp_lst[1]}
-				#affinity=${thr_grp_range_map[${cpu_grp_lst[1]}]}
-				#affinity=$(getaffinity $t_name $pgroup_re)
 			else
 				# this thread is not in the group, check if we want to skip it
 				t_name=$(grep -E "$proc_ignore_re" /proc/$i/comm )
@@ -151,7 +142,7 @@ for PID in "${proc_list[@]}"; do
 				fi
 			fi
 		else
-			# if we use them all, rotate
+			# if we use them all CPUs, rotate
 			affinity=$(( next_avail_cpu++ % max_cpus ))
 			cpu_used=$(( cpu_used | ( 1 << $affinity )))
 			printf "cpu_used: 0x%x\n" $cpu_used
@@ -164,7 +155,7 @@ for PID in "${proc_list[@]}"; do
     fi
 done # PID
 
-# assign the affinity to the other threads on the remaining non-used cpus
+# Assign the affinity to the other threads on the remaining non-used cpus
 echo "Threads in the remaining set all with the remaining processor ids:"
 #echo "${other[@]}"
 for x in "${other[@]}"; do
