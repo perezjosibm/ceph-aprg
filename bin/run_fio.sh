@@ -7,6 +7,7 @@
 # ! -a : run the four typical workloads with the reference I/O concurrency queue values
 # ! -c : indicate the range of OSD CPU cores
 # ! -d : indicate the run directory cd to
+# ! -j : indicate whether to use multi-job FIO workload files
 # ! -k : indicate whether to skip OSD dump_metrics
 # ! -l : indicate whether to use latency_target FIO profile
 # ! -g : indicate whether to prost-process existing data --requires -p (only coalescing charts atm)
@@ -62,12 +63,13 @@ OSD_TYPE="crimson"
 RESPONSE_CURVE=false
 LATENCY_TARGET=false
 POST_PROC=false
+MULTI_VOL_FIO=false
 
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 
-while getopts 'ac:d:f:klsw:p:nt:g' option; do
+while getopts 'ac:d:f:jklsw:p:nt:g' option; do
   case "$option" in
     a) RUN_ALL=true
         ;;
@@ -82,6 +84,8 @@ while getopts 'ac:d:f:klsw:p:nt:g' option; do
     n) WITH_PERF=false
         ;;
     s) SINGLE=true
+        ;;
+    j) MULTI_VOL_FIO=true
         ;;
     k) SKIP_OSD_MON=true
         ;;
@@ -195,6 +199,8 @@ fun_run_workload() {
         # Decide wether use a normal profile or latency_target
         if [ "$LATENCY_TARGET" = true ]; then
           fio_name=/fio/examples/rbd_lt_${map[${WORKLOAD}]}.fio
+        elif [ "$MULTI_VOL_FIO" = true ]; then
+          fio_name=/fio/examples/rbd_mj_${map[${WORKLOAD}]}.fio
         else
           fio_name=/fio/examples/rbd_${map[${WORKLOAD}]}.fio
         fi
