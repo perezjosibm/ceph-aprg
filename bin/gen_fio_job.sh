@@ -11,7 +11,8 @@ usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 
-declare -A map=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread [pre]=write)
+declare -A map=([rw]=randwrite [rr]=randread [sw]=write [sr]=read [pre]=write)
+declare -A name=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread [pre]=prefill)
 declare -A bsize=([rw]="4k" [rr]="4k" [sw]="64k" [sr]="64k" [pre]="64k")
 declare -a workloads_order=( rr rw sr sw pre )
 
@@ -38,7 +39,7 @@ done
 
 # Naming convention for the output files: rbd_mj_${map[${WORKLOAD}]}.fio
 for WORKLOAD in ${workloads_order[@]}; do
-  outfilename="rbd_mj_${map[${WORKLOAD}]}.fio"
+  outfilename="rbd_mj_${name[${WORKLOAD}]}.fio"
   BLOCK_SIZE=${bsize[${WORKLOAD}]} 
   read -r -d '' head <<EOF || true
 ######################################################################
