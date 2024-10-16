@@ -52,6 +52,7 @@ ioengine=rbd
 clientname=admin
 pool=rbd
 bs=${BLOCK_SIZE}
+rw=${map[${WORKLOAD}]}
 direct=1
 runtime=5m
 time_based
@@ -82,7 +83,6 @@ EOF
 #############
 [${RBD_NAME}]
 rbdname=${RBD_NAME}
-rw=${map[${WORKLOAD}]}
 max_latency=1s
 
 EOF

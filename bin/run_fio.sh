@@ -7,9 +7,9 @@
 # ! -a : run the four typical workloads with the reference I/O concurrency queue values
 # ! -c : indicate the range of OSD CPU cores
 # ! -d : indicate the run directory cd to
-# ! -j : indicate whether to use multi-job FIO workload files
 # ! -k : indicate whether to skip OSD dump_metrics
 # ! -l : indicate whether to use latency_target FIO profile
+# ! -r : indicate whether the tests runs are intended for Response Latency Curves
 # ! -g : indicate whether to prost-process existing data --requires -p (only coalescing charts atm)
 # ! -n : only collect top measurements, no perf
 # ! -t : indicate the type of OSD (classic or crimson by default).
@@ -24,6 +24,7 @@
 # Assoc array to use the single OSD table for (iodepth x num_jobs) ref values
 
 declare -A map=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread)
+declare -A mode=([rw]=write [rr]=read [sw]=write [sr]=read)
 # Typical values as observed during discovery sprint:
 # Single FIO instances: for sequential workloads, bs=64k fixed
 # Need to be valid ranges
@@ -44,11 +45,13 @@ declare -a procs_order=( true false )
 
 declare -A osd_id
 declare -A fio_id
+fio_pids_acc="" # cummulative
 
 # The suffixes for the individual metric charts:
 declare -a workloads_order=( rr rw sr sw )
 
 # Default values that can be changed via arg options
+FIO_JOBS=/root/bin/rbd_fio_examples/
 FIO_CORES="0-31" # unrestricted
 OSD_CORES="0-31" # range of CPU cores to monitor
 NUM_PROCS=8 # num FIO processes
@@ -63,13 +66,12 @@ OSD_TYPE="crimson"
 RESPONSE_CURVE=false
 LATENCY_TARGET=false
 POST_PROC=false
-MULTI_VOL_FIO=false
 
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 
-while getopts 'ac:d:f:jklsw:p:nt:g' option; do
+while getopts 'ac:d:f:klsrw:p:nt:g' option; do
   case "$option" in
     a) RUN_ALL=true
         ;;
@@ -85,9 +87,9 @@ while getopts 'ac:d:f:jklsw:p:nt:g' option; do
         ;;
     s) SINGLE=true
         ;;
-    j) MULTI_VOL_FIO=true
-        ;;
     k) SKIP_OSD_MON=true
+        ;;
+    r) RESPONSE_CURVE=true
         ;;
     p) TEST_PREFIX=$OPTARG
         ;;
@@ -128,7 +130,7 @@ fun_measure() {
 
   #IFS=',' read -r -a pid_array <<< "$1"
   # CPU core util (global) and CPU thread util for the pid given
-  top -b -H -1 -p "${PID}" -n ${NUM_SAMPLES} > ${TEST_NAME}_top.out
+  top -b -H -1 -p "${PID}" -n ${NUM_SAMPLES} >> ${TEST_NAME}_top.out
   echo "${TEST_NAME}_top.out" >> ${TEST_TOP_OUT_LIST}
 }
 
@@ -175,12 +177,13 @@ fun_run_workload() {
   iodepth_size=$(echo $RANGE_IODEPTH | wc -w)
   numjobs_size=$(echo $RANGE_NUMJOBS | wc -w)
   # This condition might not be sufficent, since it also holds for MultiFIO instances
-  [[ $(( iodepth_size * numjobs_size )) -gt 1 ]] && RESPONSE_CURVE=true
+  #[[ $(( iodepth_size * numjobs_size )) -gt 1 ]] && RESPONSE_CURVE=true
 
   TEST_RESULT=${TEST_PREFIX}_${NUM_PROCS}procs_${map[${WORKLOAD}]}
   OSD_TEST_LIST="${TEST_RESULT}_list"
   TOP_OUT_LIST="${TEST_RESULT}_top_list"
   TOP_PID_LIST="${TEST_RESULT}_pid_list"
+  TOP_PID_JSON="${TEST_RESULT}_pid.json"
   OSD_CPU_AVG="${TEST_RESULT}_cpu_avg.json"
 
   for job in $RANGE_NUMJOBS; do
@@ -198,15 +201,18 @@ fun_run_workload() {
         echo fio_${TEST_NAME}.json >> ${OSD_TEST_LIST}
         # Decide wether use a normal profile or latency_target
         if [ "$LATENCY_TARGET" = true ]; then
-          fio_name=/fio/examples/rbd_lt_${map[${WORKLOAD}]}.fio
-        elif [ "$MULTI_VOL_FIO" = true ]; then
-          fio_name=/fio/examples/rbd_mj_${map[${WORKLOAD}]}.fio
+          fio_name=${FIO_JOBS}rbd_lt_${map[${WORKLOAD}]}.fio
         else
-          fio_name=/fio/examples/rbd_${map[${WORKLOAD}]}.fio
+          fio_name=${FIO_JOBS}rbd_${map[${WORKLOAD}]}.fio
         fi
-        LOG_NAME=${TEST_NAME} RBD_NAME=fio_test_${i} IO_DEPTH=$io NUM_JOBS=$job taskset -ac ${FIO_CORES} fio $fio_name --output=fio_${TEST_NAME}.json --output-format=json 2> fio_${TEST_NAME}.err &
+        if [ "$RESPONSE_CURVE" = true ]; then
+          log_name=${TEST_RESULT}
+        else
+          log_name=${TEST_NAME}
+        fi
+        LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} taskset -ac ${FIO_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json --output-format=json 2> fio_${TEST_NAME}.err &
         fio_id["fio_${i}"]=$!
-      done
+      done # loop NUM_PROCS
       sleep 30; # ramp up time
       # Prepare list of pid to monitor
       osd_pids=$( fun_join_by ',' ${osd_id[@]} )
@@ -217,21 +223,44 @@ fun_run_workload() {
 
       # We use this list of pid to extract the pid corresponding CPU util from the top profile
       fio_pids=$( fun_join_by ',' ${fio_id[@]} )
+      top_out_name=${TEST_NAME}
       echo "== Monitoring OSD: $osd_pids FIO: $fio_pids =="
-      echo "OSD: $osd_pids" > ${TOP_PID_LIST}
-      echo "FIO: $fio_pids" >> ${TOP_PID_LIST}
-      fun_measure "${osd_pids},${fio_pids}" ${TEST_NAME} ${TOP_OUT_LIST} &
+      if [ "$RESPONSE_CURVE" = true ]; then
+        fio_pids_acc="$fio_pids_acc,$fio_pids"
+        top_out_name=${TEST_RESULT}
+      else
+        echo "OSD: $osd_pids" > ${TOP_PID_LIST}
+        echo "FIO: $fio_pids" >> ${TOP_PID_LIST}
+        printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
+       fi
+      fun_measure "${osd_pids},${fio_pids}" ${top_out_name} ${TOP_OUT_LIST} &
 
       if [ "$SKIP_OSD_MON" = false ]; then
         fun_osd_dump ${TEST_NAME} 1 0 ${OSD_TYPE}
       fi
       wait;
-    done
-  done
-  # Post processing: single top out file with OSD and FIO cPU util
+      # Exit the loops if the latency disperses too much from the median
+      if [ "$RESPONSE_CURVE" = true ]; then
+        mop=${mode[[${WORKLOAD}]}
+        covar=$(jq ".jobs | .[] | .${mop}.clat_ns.stddev/.${mop}.clat_ns.mean < 0.5" fio_${TEST_NAME}.json)
+        if [ "$covar" != "true" ]; then
+          echo "== Latency std dev too high, exiting loops =="
+          break 2
+        fi
+      fi
+    done # loop IODEPTH
+  done # loop NUM_JOBS 
+
+  # Post processing:
+  if [ "$RESPONSE_CURVE" = true ]; then
+    echo "OSD: $osd_pids" > ${TOP_PID_LIST}
+    echo "FIO: $fio_pids_acc" >> ${TOP_PID_LIST}
+    printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids_acc" > ${TOP_PID_JSON}
+  fi
+  #  single top out file with OSD and FIO CPU util
   for x in $(cat ${TOP_OUT_LIST}); do
-    # When collecting data for response curves, you might not want to produce charts for each data point, but for the cummulative
     # CPU avg, so we might add a condttion (or option) to select which
+    # When collecting data for response curves, produce charts for the cummulative pid list
     if [ -f "$x" ]; then
       /root/bin/parse-top.pl --config=$x --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} --pids=${TOP_PID_LIST} 2>&1 > /dev/null
     # We always calculate the arithmetic avg, the perl script has got a new flag to indicate whether we skip producing individual charts
@@ -253,10 +282,10 @@ fun_run_workload() {
 
   # Generate single animated file from a timespan of FIO charts
   # Need to traverse the suffix of the charts produced to know which ones we want to coalesce on a single animated .gif
-  if [ "$RESPONSE_CURVE" = true ]; then
-    echo "== this is a response curve run =="
-    fun_coalesce_charts ${TEST_PREFIX} ${TEST_RESULT}
-  fi
+#  if [ "$RESPONSE_CURVE" = true ]; then
+#    echo "== This is a response curve run =="
+#    fun_coalesce_charts ${TEST_PREFIX} ${TEST_RESULT}
+#  fi
   #cd # location of FIO .log data
   #fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280 # Made some tweaks, so will keep it in my priv repo
   /root/bin/fio_generate_plots ${TEST_NAME} 650 280
@@ -275,6 +304,8 @@ fun_run_workload() {
       rm -f $x
     done
   fi
+  # Remove empty .err files
+  find . -type f -name "fio*.err" -size 0c -exec rm {} \;
   # Generate report: use the template, integrate the tables/charts -- per workload
   # /root/tinytex/tools/texlive/bin/x86_64-linux/pdflatex -interaction=nonstopmode ${TEST_RESULT}.tex
   # Run it again to get the references, TOC, etc
@@ -307,7 +338,7 @@ fun_set_osd_pids() {
 fun_prime() {
   local NUM_PROCS=1
   for (( i=0; i<$NUM_PROCS; i++ )); do
-    RBD_NAME=fio_test_$i RBD_SIZE="64k" fio /fio/examples/rbd_prime.fio 2>&1 >/dev/null &  echo "== priming $RBD_NAME ==";
+    RBD_NAME=fio_test_$i RBD_SIZE="64k" fio ${FIO_JOBS}rbd_prime.fio 2>&1 >/dev/null &  echo "== priming $RBD_NAME ==";
   done
   wait;
 }
@@ -372,6 +403,7 @@ if [ "$POST_PROC" = true ]; then
   exit
 fi
 
+[[ ! -d $RUN_DIR ]] && mkdir $RUN_DIR
 pushd $RUN_DIR
 fun_set_osd_pids $TEST_PREFIX
 

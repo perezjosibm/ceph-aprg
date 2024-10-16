@@ -1,6 +1,0 @@
-Thu 13 Jun 16:54:19 BST 2024 -- updated to ceph3, need to update fix from ceph3 back to the CBT repo of typo on fio-parse-jsons.py
-
-Thu 4 Jul 16:52:48 BST 2024 -- Last update running tests for Crimson basic and manual
-
-[root@sv1-ceph3 ~]# podman run --privileged -d -p 8023:22 --rm -v ceph1:/ceph -v perezjos:/tmp artifactory.ssd.hursley.ibm.com/ceph/cephcbt:latest
-[root@sv1-ceph3 ~]# ssh -p 8023 root@localhost

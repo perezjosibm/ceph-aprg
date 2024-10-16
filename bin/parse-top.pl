@@ -102,7 +102,7 @@ my @top_columns;
 # REgex for the latest toprc
 #my $CPU = qr/^\s+\d+(?#PPID)\s+\d+(?#PID)\s+\d+(?#Last CPU)\s+\d+(?# PR)\s+\d+(?# Ni)\s+(?# VIRT).*$/;
 my $CPU = qr/^\s+\d+(?#PPID)\s+\d+(?#PID)\s+.*$/;
-# Update: changed the toprc to show columns PPID, and last processor the thread run
+# Update: changed the toprc to show columns PPID, PID, and P is the last processor the thread run
 #   PPID     PID  P  PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
 #      1   76922 28  20   0   19164  11264   9472 S   0.0   0.0   0:00.01 sshd
 #  76922   76924  3  20   0   19164   6544   4864 S   0.0   0.0   0:00.11 sshd
@@ -367,7 +367,8 @@ sub generate_output {
     my $href = $g_href->{$pname};
 
     @comms = sort (keys %{$href}); # these are the commands -- thread names
-    print "Total " . scalar(@comms) . " threads\n";
+    print "Total: " . scalar(@comms) . " threads\n";
+    print "Thread names: " . join (',', @comms) . "\n";
     # Calculate the avg cpu util for each comm, then take the top ten
     foreach my $comm (@comms)
     {

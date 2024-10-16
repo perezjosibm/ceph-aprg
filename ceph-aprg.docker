@@ -1,0 +1,88 @@
+# Ceph container images
+# https://quay.io/repository/ceph/ceph
+FROM quay.io/centos/centos:stream9
+RUN yum update -y
+RUN yum install epel-release -y
+RUN dnf config-manager --set-enabled crb
+# Basic toolchain
+RUN yum group install "Development Tools" -y
+RUN yum install jq -y
+RUN yum install ccache -y
+RUN yum install iproute -y
+RUN yum install hostname -y
+RUN yum install python-bcrypt -y
+RUN yum install lldb -y
+RUN yum install pdsh -y
+RUN yum install pdsh-rcmd-ssh -y
+RUN yum install targetcli -y
+RUN yum install wget -y
+RUN yum install e2fsprogs -y
+RUN yum install blktrace -y
+RUN yum install lsof -y
+RUN yum install sysstat -y
+RUN yum install ipmitool -y
+RUN yum install dstat -y
+RUN yum install iftop -y
+RUN yum install iperf3 -y
+RUN yum install chrony -y
+RUN yum install irqbalance -y
+RUN yum install smartmontools -y
+RUN yum install logrotate -y
+RUN yum install perf -y
+# Extra packages needed to run cbt
+RUN yum install python3-lxml -y
+RUN yum install python3-yaml -y
+RUN yum install gnuplot -y
+RUN yum install vim -y
+RUN yum install perl-JSON -y
+RUN yum install perl-JSON-XS -y
+# Ceph: on its own volume as well
+RUN git clone --depth=1 https://github.com/ceph/ceph.git
+RUN cd ceph && WITH_SEASTAR=true ./install-deps.sh
+VOLUME /ceph
+# Update profile so that cmake generates build commands by default
+RUN echo "export CMAKE_EXPORT_COMPILE_COMMANDS=ON" >/etc/profile.d/cmake.sh
+# Update profile so that vstart.sh uses the same port numbers each time a ceph cluster is created
+RUN echo "export CEPH_PORT=40000" >/etc/profile.d/ceph.sh
+# Expose the dashboard port
+EXPOSE 41000/tcp
+RUN echo '[ -f "/ceph/build/vstart_environment.sh" ] && source /ceph/build/vstart_environment.sh' >>/etc/profile.d/ceph.sh
+RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >>/etc/sudoers
+# The following is needed when multiple reactors in Crimson are deployed
+RUN echo $(( 65536 * 9 )) > /proc/sys/fs/aio-max-nr
+RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >>/etc/sudoers
+## Utilities: on c_packages volume
+RUN bash -exc '[ ! -d /packages ] && mkdir /packages'; cd /packages && git clone https://git.kernel.dk/fio.git \
+  && git clone https://github.com/ceph/cbt \
+  && git clone https://github.com/andikleen/pmu-tools.git \
+  && git clone https://github.com/brendangregg/FlameGraph.git \
+  && git clone https://github.com/rstudio/tinytex.git \
+  && cd tinytex/tools/ && make all; exit 0 \
+  && cd /packages && git clone https://github.com/sharkcz/collectl \
+  && cd collectl && ./INSTALL \
+  && rm -rf /packages/collectl
+VOLUME /packages
+# Add config files
+ADD toprc /root/.config/procps/toprc
+ADD cephlog /etc/logrotate.d/ceph
+ADD bashrc /root/.bashrc
+# Add this repo: so all scripts and test plans are in place
+RUN cd /root && git clone https://github.com/perezjosibm/ceph-aprg
+#ADD gitconfig  /root/.gitconfig
+#ADD vimrc  /root/.vimrc
+#COPY --chmod=755 bin/fio-parse-jsons.py /root/bin/
+#COPY --chmod=755 bin/run_fio.sh /root/bin/run_fio.sh
+#COPY --chmod=755 bin/cpu-map.sh /root/bin/cpu-map.sh
+#COPY --chmod=755 bin/parse-top.pl /root/bin/parse-top.pl
+#COPY --chmod=755 bin/run_batch_02.sh /root/bin/run_batch_02.sh
+#COPY --chmod=755 bin/run_batch_single.sh /root/bin/run_batch_single.sh
+#COPY --chmod=755 bin/run_batch_double.sh /root/bin/run_batch_double.sh
+#COPY --chmod=755 bin/run_batch_range_alien.sh /root/bin/run_batch_range_alien.sh
+#COPY --chmod=755 bin/cephlogoff.sh /root/bin/cephlogoff.sh
+#COPY --chmod=755 bin/cephmkrbd.sh /root/bin/cephmkrbd.sh
+#COPY --chmod=755 bin/cephteardown.sh /root/bin/cephteardown.sh
+#COPY --chmod=755 bin/fio_generate_plots /root/bin/fio_generate_plots
+# This container expects separate volumes (can be mounted when creating the image):
+# c_ceph -> /ceph
+# c_packages -> /packages
+# When running the container, additional volume: c_results -> /tmp/results

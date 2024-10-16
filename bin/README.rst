@@ -12,26 +12,7 @@ https://tracker.ceph.com/issues/66525
 I was not aware of CBT at the time I started.
 I plan to port these ideas into Python for CBT, started on PR 306 and follow ups.
 
-The container image is publicly available in https://quay.io/repository/jjpalacio2000/ceph-aprg.
-
-The following are examples of the types of charts produced by the toolkit:
-
-## Response latency curves:
-
-This example compares side by side IOPs, Latency and CPU utilisation Classic vs Crimson OSD:
-the (vertical) error bars represent the stdev, so the closer they are to the FIO completion
-latency mean the better the confidence on the measured data point
-
-![crimson_1osd_8fio_rc_1procs_randread_iops_vs_lat_vs_cpu_usr](./classic_1osd_rt_4krr.png)
-
-## Single workload execution:
-
-This  example shows the response latency chart for a Classic OSD configuration, single OSD, system CPU utilisation, 4k random read workload:
-
-![classic_1osd_rt_1procs_randread_iops_vs_lat_vs_cpu_sys](./crimson_vs_classic_1osd_4krr.png)
-
-
-The toolkit has only been used in Ceph Developer mode, with `vstart.sh`. I have
+The toolkit has only been used in Ceph Developer mode, with vstart.sh. I have
 added the test scenarios for both Classic and Crimson OSD.
 
 The description of the scripts follows:
@@ -47,9 +28,6 @@ The description of the scripts follows:
   pid given as arguments
 - postproc.sh - an example of doing post processing
 - run_fio.sh - main script to drive FIO, collect measurements, and produce response charts
-
-Examples of test plans:
-
 - run_batch.sh - example of end-to-end performance run execution
 - run_batch_double.sh - example showing a configuration involving two OSD
 - run_batch_range_alien.sh - example showing a config for Crimson OSD
@@ -59,14 +37,11 @@ Examples of test plans:
 - run_hockey_crimson.sh
 - run_hockey_crimson_1osd.sh
 - run_multiple_fio.sh
-
-Examples of FIO RBD job files:
-
 - rbd_fio_examples - directory with examples of predefined FIO workload definitions
 - rg_template - templates for the report generator
-- ceph-aprg.docker - example for a container including all dependencies for the toolkit.
+- ceph-aprg.docker - example for a container including all dependencies for the toolkit
 
-## Usage:
+## Usage:
 
 In the simplest form, the following will create a cluster with Crimson OSD, single reactor, the
 FIO client running on 8 CPU cores, and will produce charts with response latency curves:
@@ -83,6 +58,7 @@ crimson_1osd_8fio_rc_1procs_randread.zip  crimson_1osd_8fio_rc_1procs_randwrite.
 each archive contains the FIO .json output results, the top output CPU measurments, as well as .png for the IOPs versus latency charts. Since the example involves
 a range of data values (for increasing iodepth), only the final chart coalescing all the data points is of interest:
 
+-- Add example charts here, might need to be edited in the github webportal
 
 The .pdf report is generated from a template, at the moment is fixed but can be changed according to a main test plan (as in CBT)
 
