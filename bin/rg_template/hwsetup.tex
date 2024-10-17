@@ -1,0 +1,129 @@
+%the Hw setup for o05 in Sepia Lab
+\chapter{Hardware setup}
+
+All the tests for this report were executed on the {\tt o05} machine in the Sepia Lab.
+
+\begin{itemize}
+  \item 10 NVME drives, from which we only used 8 drives of the same type. Each device has got 2 namespaces,
+  the smaller of less than 100GB, and the larger of ~7.1 T. Total space ~ 56T.
+  \item The processors reported by {\tt lscpu} are as follows:
+  \begin{verbatim}
+  CPU(s):                   112
+  On-line CPU(s) list:    0-111
+  Vendor ID:                GenuineIntel
+  Model name:             Intel(R) Xeon(R) Platinum 8276M CPU @ 2.20GHz
+  NUMA:
+  NUMA node(s):           2
+  NUMA node0 CPU(s):      0-27,56-83
+  NUMA node1 CPU(s):      28-55,84-111
+  \end{verbatim}
+  \item Total RAM: 394294308 kB (394 GB).
+\end{itemize}
+
+\section{Prefill and preconditioning of the NVMe drives}
+
+We use FIO for IO direct via {\tt libaio}. We exercised up to 50\% of each drive capacity. 
+To precondition the drives, we used FIO with {\tt steady state} detection flag on a similar random write 64k workload. 
+Table \ref{table:fio-libaio} shows (on the left hand side) the FIO workload file where each job exercises IO to a single drive,
+so all the drives were exercised concurrently. On the right hand side, we show the relevant information from an execution output.
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{V{0.35\textwidth}V{0.60\textwidth}}
+\toprule
+\begin{verbatim}
+# cat ./seqwrite64k.fio
+[global]
+bs=64K
+iodepth=256
+direct=1
+ioengine=libaio
+group_reporting
+name=raw-seqwrite
+rw=write
+:
+[nvme1n1p2]
+filename=/dev/nvme1n1p2
+size=3550G
+:
+[nvme3n1p2]
+filename=/dev/nvme3n1p2
+size=3550G
+:
+...
+:
+[nvme9n1p2]
+filename=/dev/nvme9n1p2
+size=3550G
+\end{verbatim}
+&
+\begin{verbatim}
+# precondition with steady state check
+# sudo fio ./randwrite64k.fio
+:
+io-3.19
+Starting 8 threads
+Jobs: 8 (f=8): [w(8)][30.9\%]
+   [w=24.3GiB/s][w=398k IOPS][eta 13m:29s]
+:
+steadystate  : attained=yes, bw=24.3GiB/s (25.5GB/s),
+    iops=398k, iops mean dev=0.238%
+:
+Run status group 0 (all jobs):
+:
+WRITE: bw=24.3GiB/s (26.1GB/s), 24.3GiB/s-24.3GiB/s
+    (26.1GB/s-26.1GB/s), io=8788GiB (9436GB),
+    run=361673-361673msec
+\end{verbatim}
+\\
+\end{tabular}
+\caption{FIO job file and example output for precondition of drives.}
+\label{table:fio-libaio}
+\end{table}
+
+
+\section{RAW IO}
+
+For comparison, the following table summarises the performance of execising direct IO using FIO with engine libaio over
+NVMe drives (baremetal).
+
+All the workloads were executed with steadystate flag intended for sustained throughput IOPs within 5\%, during 10 mins. 
+\begin{itemize}
+  \item The total IO intended on all cases is 3.5T (approx. 50\% of drive namespace capacity).
+  \item Latencies in the summary refer to the average completion latency in milliseconds (ms).
+  \item All test were run with steady state detection.
+  \item We measure IOPs for random workloads, whereas BW (MB/s) for sequential workloads.
+  \item All the drives are exercised concurrently, except for the single drive/job indicated below.
+\end{itemize}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}[t]{|l*{2}{|c|}}
+   \hline
+   \textbf{Workload} & \textbf{IOPs/BW} & \textbf{Latency (ms)} \\
+   \hline
+   randread4k & 2,522k & 0.1 \\
+   randwrite4k & 2,791k & 0.08 \\
+   seqread64k & 24.1GiB/s  & 5.2 \\
+   seqwrite64k & 24.3GiB/s & 5.14 \\
+   \hline
+\end{tabular}
+\caption{Summary of performance for direct IO.}
+\label{table:rawio}
+\end{table}
+
+For reference, the following variants of sequential workloads were executed for a single job exercising a single drive:
+
+\begin{table}[h!]
+\centering
+\begin{tabular}[t]{|l*{2}{|c|}}
+   \hline
+   \textbf{Workload} & \textbf{BW} & \textbf{Latency (ms)} \\
+   \hline
+   randread4k-single & 3066MiB/s & 5.2 \\
+   seqwrite64k-single & 3081MiB/s & 5.2 \\
+   \hline
+\end{tabular}
+\caption{Summary of performance for direct IO, sequential workloads, single drive.}
+\label{table:rawio-single}
+\end{table}

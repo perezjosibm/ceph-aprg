@@ -1,0 +1,14 @@
+\begin{abstract} 
+In this report we describe the empirical results of investigating
+the performance impact of the Manual versus Basic configurations for Crimson OSD
+using RBD volumes for Bluestore.\\
+        The report is structured as follows: we describe the hardware used and illustrate the
+        general setup. Then we describe the preconditioning and prefill of the NVMe drives previous
+        to execute the actual tests. We describe the benchmark FIO workloads and illustrate
+        the general strategies of \textbf{Latency target} (in which FIO will attempt to find
+            the max performance point that the given workload will run at while maintaining a
+            latency below this target), and confiming this with longer \textbf{Response Latency curves}
+        (in which gradually increase the IO load to a point where throughput flattens out
+         or decreases whilst latency increases, hence an indication of a saturation point).
+        We conclude the report with our analysis remarks and recommendations.
+\end{abstract}

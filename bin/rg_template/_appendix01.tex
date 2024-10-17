@@ -1,0 +1,52 @@
+The following is an example output:
+
+\begin{verbatim}
+# sudo fio ./seqwrite64k.fio
+nvme1n1p2: (g=0): rw=write, bs=(R) 64.0KiB-64.0KiB, (W) 64.0KiB-64.0KiB, (T) 64.0KiB-64.0KiB, ioengine=libaio, iodepth=256
+nvme3n1p2: (g=0): rw=write, bs=(R) 64.0KiB-64.0KiB, (W) 64.0KiB-64.0KiB, (T) 64.0KiB-64.0KiB, ioengine=libaio, iodepth=256
+nvme4n1p2: (g=0): rw=write, bs=(R) 64.0KiB-64.0KiB, (W) 64.0KiB-64.0KiB, (T) 64.0KiB-64.0KiB, ioengine=libaio, iodepth=256
+nvme2n1p2: (g=0): rw=write, bs=(R) 64.0KiB-64.0KiB, (W) 64.0KiB-64.0KiB, (T) 64.0KiB-64.0KiB, ioengine=libaio, iodepth=256
+nvme6n1p2: (g=0): rw=write, bs=(R) 64.0KiB-64.0KiB, (W) 64.0KiB-64.0KiB, (T) 64.0KiB-64.0KiB, ioengine=libaio, iodepth=256
+nvme7n1p2: (g=0): rw=write, bs=(R) 64.0KiB-64.0KiB, (W) 64.0KiB-64.0KiB, (T) 64.0KiB-64.0KiB, ioengine=libaio, iodepth=256
+nvme8n1p2: (g=0): rw=write, bs=(R) 64.0KiB-64.0KiB, (W) 64.0KiB-64.0KiB, (T) 64.0KiB-64.0KiB, ioengine=libaio, iodepth=256
+nvme9n1p2: (g=0): rw=write, bs=(R) 64.0KiB-64.0KiB, (W) 64.0KiB-64.0KiB, (T) 64.0KiB-64.0KiB, ioengine=libaio, iodepth=256
+fio-3.19
+Starting 8 processes
+Jobs: 1 (f=1): [_(7),W(1)][100.0%][w=3087MiB/s][w=49.4k IOPS][eta 00m:00s]
+nvme1n1p2: (groupid=0, jobs=8): err= 0: pid=998050: Thu Sep 12 13:47:32 2024
+  write: IOPS=328k, BW=20.0GiB/s (21.5GB/s)(27.7TiB/1418198msec); 0 zone resets
+    slat (nsec): min=1813, max=920565, avg=6707.84, stdev=3431.96
+    clat (usec): min=30, max=48923, avg=5279.45, stdev=3593.71
+     lat (usec): min=45, max=48929, avg=5286.28, stdev=3593.79
+    clat percentiles (usec):
+     |  1.00th=[  258],  5.00th=[  392], 10.00th=[  529], 20.00th=[ 1795],
+     | 30.00th=[ 2638], 40.00th=[ 3851], 50.00th=[ 5145], 60.00th=[ 6456],
+     | 70.00th=[ 7635], 80.00th=[ 8455], 90.00th=[ 9765], 95.00th=[ 9896],
+     | 99.00th=[17171], 99.50th=[19530], 99.90th=[22938], 99.95th=[24249],
+     | 99.99th=[27132]
+   bw (  MiB/s): min=14957, max=24975, per=100.00%, avg=24342.99, stdev=263.96, samples=19109
+   iops        : min=239314, max=399606, avg=389484.21, stdev=4223.32, samples=19109
+  lat (usec)   : 50=0.01%, 100=0.01%, 250=0.93%, 500=8.66%, 750=2.66%
+  lat (usec)   : 1000=1.94%
+  lat (msec)   : 2=8.39%, 4=18.58%, 10=56.14%, 20=2.32%, 50=0.38%
+  cpu          : usr=19.55%, sys=16.93%, ctx=320513651, majf=0, minf=60002
+  IO depths    : 1=0.1%, 2=0.1%, 4=0.1%, 8=0.1%, 16=0.1%, 32=0.1%, >=64=100.0%
+     submit    : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.0%
+     complete  : 0=0.0%, 4=100.0%, 8=0.0%, 16=0.0%, 32=0.0%, 64=0.0%, >=64=0.1%
+     issued rwts: total=0,465305600,0,0 short=0,0,0,0 dropped=0,0,0,0
+     latency   : target=0, window=0, percentile=100.00%, depth=256
+
+Run status group 0 (all jobs):
+  WRITE: bw=20.0GiB/s (21.5GB/s), 20.0GiB/s-20.0GiB/s (21.5GB/s-21.5GB/s), io=27.7TiB (30.5TB), run=1418198-1418198msec
+
+Disk stats (read/write):
+  nvme1n1: ios=0/58151113, merge=0/0, ticks=0/299225799, in_queue=299225800, util=100.00%
+  nvme3n1: ios=0/58152631, merge=0/0, ticks=0/298913796, in_queue=298913796, util=100.00%
+  nvme4n1: ios=0/58159277, merge=0/0, ticks=0/298820596, in_queue=298820597, util=100.00%
+  nvme2n1: ios=0/58151522, merge=0/0, ticks=0/299742537, in_queue=299742537, util=100.00%
+  nvme6n1: ios=0/58150784, merge=0/0, ticks=0/298750652, in_queue=298750653, util=100.00%
+  nvme7n1: ios=0/58153611, merge=0/0, ticks=0/298721148, in_queue=298721149, util=100.00%
+  nvme8n1: ios=0/58151903, merge=0/0, ticks=0/298586289, in_queue=298586289, util=100.00%
+  nvme9n1: ios=0/58162719, merge=0/0, ticks=0/18446744069777051973, in_queue=18446744069777051972, util=100.00%
+\end{verbatim}
+
