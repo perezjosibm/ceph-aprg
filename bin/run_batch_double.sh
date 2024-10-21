@@ -2,10 +2,11 @@
 #
 # Runs to compare the workloads across unrest, 8,4,1 cpu cores for FIO (Two OSD)
 #
+FIO_JOBS=/root/bin/rbd_fio_examples/
 # ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
 cd /ceph/build/
 #BLUESTORE_DEVS='/dev/sdc,/dev/sde,/dev/sdf'
-BLUESTORE_DEVS='/dev/sdf,/dev/sde'
+BLUESTORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2'
 #########################################
 declare -A test_table
 declare -A test_row
@@ -46,7 +47,7 @@ for KEY in "${!test_table[@]}"; do
   /root/bin/cephlogoff.sh 2>&1 > /dev/null
   /root/bin/cephmkrbd.sh
   #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
-  RBD_NAME=fio_test_0 RBD_SIZE="10G" fio /fio/examples/rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -a -c "0-31" -f "${test_row["fio"]}" -p ${test_row["test"]} -k # w/o osd dump_metrics
+  RBD_NAME=fio_test_0 RBD_SIZE="10G" fio ${FIO_JOBS}rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -a -c "0-31" -f "${test_row["fio"]}" -p ${test_row["test"]} -k # w/o osd dump_metrics
   /ceph/src/stop.sh --crimson
   sleep 60
 done

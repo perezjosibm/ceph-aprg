@@ -2,11 +2,13 @@
 #
 #Runs to compare the workloads across 8,4 cpu cores for FIO (Single OSD)
 #
+FIO_JOBS=/root/bin/rbd_fio_examples/
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
 cd /ceph/build/
 #BLUESTORE_DEVS='/dev/sdc,/dev/sde,/dev/sdf'
 BLUESTORE_DEVS='/dev/sdf'
 export NUM_RBD_IMAGES=8
+FIO_JOBS="/root/bin/rbd_fio_examples/"
 #########################################
 declare -A test_table
 declare -A test_row
@@ -27,7 +29,7 @@ test_table["1"]=${string}
 function prefill_images(){
   local NUM_RBD_IMAGES=$1
   for (( i=0; i<${NUM_RBD_IMAGES}; i++ )); do
-    RBD_NAME=fio_test_${i} RBD_SIZE="10G" fio /fio/examples/rbd_prefill.fio &
+    RBD_NAME=fio_test_${i} RBD_SIZE="10G" fio ${FIO_JOBS}rbd_prefill.fio &
   done
   wait
   rbd du

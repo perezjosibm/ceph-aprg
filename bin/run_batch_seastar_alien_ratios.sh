@@ -2,6 +2,7 @@
 #
 #Runs to compare the workloads across the seastar/alien core ratios -- I can't try these since using 8-15 for FIO
 # so would need to think an alternative
+FIO_JOBS=/root/bin/rbd_fio_examples/
 #4 : 28 (0-3,4-31);8 : 24 (0-7,8-31); 12 : 20 (0-11, 12-31); 16 : 16 (0-15,16-31) = alien all HT siblings
 #
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
@@ -51,7 +52,7 @@ for KEY in "${!test_table[@]}"; do
   /root/bin/cephlogoff.sh 2>&1 > /dev/null
   /root/bin/cephmkrbd.sh
   #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
-  RBD_NAME=fio_test_0 RBD_SIZE="10G" fio /fio/examples/rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -a -c "0-31" -f "${test_row["fio"]}" -p ${test_row["test"]} -k # w/o osd dump_metrics
+  RBD_NAME=fio_test_0 RBD_SIZE="10G" fio ${FIO_JOBS}rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -a -c "0-31" -f "${test_row["fio"]}" -p ${test_row["test"]} -k # w/o osd dump_metrics
   /root/bin/cephteardown.sh 2>&1 > /dev/null
   /ceph/src/stop.sh --crimson
   sleep 60

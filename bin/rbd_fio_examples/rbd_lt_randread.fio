@@ -39,8 +39,8 @@ iodepth=128
 #iodepth=${IO_DEPTH}
 # Set max acceptable latency to 10msec
 latency_target=10000
-# profile over a 5s window
-latency_window=5000000
+# profile over a 5m window
+latency_window=5m
 # 99.9% of IOs must be below the target
 latency_percentile=99.9
 random_generator=lfsr

@@ -1,12 +1,14 @@
 #!/usr/bin/bash
 # !
-# ! Usage: ./run_fio.sh [-a] [-c <osd-cpu-cores>]i [-k] [-d rundir] -w {workload} [-n] -p <test_prefix>, eg "4cores_8img_16io_2job_8proc"
-# !
+# ! Usage: ./run_fio.sh [-a] [-c <osd-cpu-cores>] [-k] [-j] [-d rundir]
+# !  		-w {workload} [-n] -p <test_prefix>, eg "4cores_8img_16io_2job_8proc"
+# !		 
 # ! Run FIO according to the workload given:
 # ! rw (randomwrite), rr (randomread), sw (seqwrite), sr (seqread)
 # ! -a : run the four typical workloads with the reference I/O concurrency queue values
 # ! -c : indicate the range of OSD CPU cores
 # ! -d : indicate the run directory cd to
+# ! -j : indicate whether to use multi-job FIO
 # ! -k : indicate whether to skip OSD dump_metrics
 # ! -l : indicate whether to use latency_target FIO profile
 # ! -r : indicate whether the tests runs are intended for Response Latency Curves
@@ -53,6 +55,7 @@ declare -a workloads_order=( rr rw sr sw )
 # Default values that can be changed via arg options
 FIO_JOBS=/root/bin/rbd_fio_examples/
 FIO_CORES="0-31" # unrestricted
+FIO_JOB_SPEC="rbd_"
 OSD_CORES="0-31" # range of CPU cores to monitor
 NUM_PROCS=8 # num FIO processes
 TEST_PREFIX="4cores_8img"
@@ -61,6 +64,7 @@ WITH_PERF=true
 SKIP_OSD_MON=false
 RUN_ALL=false
 SINGLE=false
+MULTI_JOB_VOL=false
 NUM_SAMPLES=30
 OSD_TYPE="crimson"
 RESPONSE_CURVE=false
@@ -88,6 +92,8 @@ while getopts 'ac:d:f:klsrw:p:nt:g' option; do
     s) SINGLE=true
         ;;
     k) SKIP_OSD_MON=true
+        ;;
+    j) MULTI_JOB_VOL=true
         ;;
     r) RESPONSE_CURVE=true
         ;;
@@ -199,12 +205,16 @@ fun_run_workload() {
         export TEST_NAME=${TEST_PREFIX}_${job}job_${io}io_${BLOCK_SIZE_KB}_${map[${WORKLOAD}]}_p${i};
         echo "== $(date) == ($io,$job): ${TEST_NAME} ==";
         echo fio_${TEST_NAME}.json >> ${OSD_TEST_LIST}
-        # Decide wether use a normal profile or latency_target
+        # Decide wether use a simple profile, or latency_target, or a multijob (job per volume)
         if [ "$LATENCY_TARGET" = true ]; then
-          fio_name=${FIO_JOBS}rbd_lt_${map[${WORKLOAD}]}.fio
-        else
-          fio_name=${FIO_JOBS}rbd_${map[${WORKLOAD}]}.fio
+	  FIO_JOB_SPEC="${FIO_JOB_SPEC}lt_"
+         # fio_name=${FIO_JOBS}rbd_lt_${map[${WORKLOAD}]}.fio
         fi
+        if [ "$MULTI_JOB_VOL" = true ]; then
+	  FIO_JOB_SPEC="${FIO_JOB_SPEC}mj_"
+	fi
+        fio_name=${FIO_JOBS}${FIO_JOB_SPEC}${map[${WORKLOAD}]}.fio
+
         if [ "$RESPONSE_CURVE" = true ]; then
           log_name=${TEST_RESULT}
         else
@@ -241,7 +251,7 @@ fun_run_workload() {
       wait;
       # Exit the loops if the latency disperses too much from the median
       if [ "$RESPONSE_CURVE" = true ]; then
-        mop=${mode[[${WORKLOAD}]}
+        mop=${mode[${WORKLOAD}]}
         covar=$(jq ".jobs | .[] | .${mop}.clat_ns.stddev/.${mop}.clat_ns.mean < 0.5" fio_${TEST_NAME}.json)
         if [ "$covar" != "true" ]; then
           echo "== Latency std dev too high, exiting loops =="

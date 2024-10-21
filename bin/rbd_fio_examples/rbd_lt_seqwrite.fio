@@ -18,11 +18,10 @@ write_lat_log=${LOG_NAME}
 ioengine=rbd
 clientname=admin
 pool=rbd
-rbdname=${RBD_NAME}
+rw=write
 bs=${BLOCK_SIZE_KB}
 direct=1
-rw=write
-runtime=5m
+runtime=15m
 time_based
 group_reporting=1
 #new_group
@@ -40,12 +39,13 @@ iodepth=128
 
 # Set max acceptable latency to 10msec
 latency_target=10000
-# profile over a 5s window
-latency_window=5000000
+# profile over a 5m window
+latency_window=5m
 # 99.9% of IOs must be below the target
 latency_percentile=99.9
 random_generator=lfsr
 
 [seqwrite]
+rbdname=${RBD_NAME}
 #loops=3
 max_latency=1s

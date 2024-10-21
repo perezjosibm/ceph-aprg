@@ -2,6 +2,7 @@
 #
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
 cd /ceph/build/
+FIO_JOBS=/root/bin/rbd_fio_examples/
 #BLUESTORE_DEVS='/dev/sdc,/dev/sde,/dev/sdf'
 BLUESTORE_DEVS='/dev/sdf'
 BEST_NUM_FIO_CORES="8-15"
@@ -43,7 +44,7 @@ for KEY in "${!test_table[@]}"; do
   /root/bin/cephmkrbd.sh
   #/root/bin/cpu-map.sh  -p $(pgrep osd) -g "alien:${test_row['alien']}"  2>&1 > /dev/null
   ps -L -o ppid,pid,psr,comm -p $(pgrep osd)
-  RBD_NAME=fio_test_0 RBD_SIZE="10G" fio /fio/examples/rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -a -c "0-31" -f "${test_row["fio"]}" -p ${test_row["test"]} -k # w/o osd dump_metrics
+  RBD_NAME=fio_test_0 RBD_SIZE="10G" fio ${FIO_JOBS}rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -a -c "0-31" -f "${test_row["fio"]}" -p ${test_row["test"]} -k # w/o osd dump_metrics
 
   /root/bin/cephteardown.sh 2>&1 > /dev/null
   /ceph/src/stop.sh --crimson
@@ -59,7 +60,7 @@ function _past_batch() {
 	MDS=0 MON=1 OSD=3  MGR=1 ../src/vstart.sh --new -x --localhost --without-dashboard --bluestore --redirect-output --bluestore-devs /dev/sdd,/dev/sde,/dev/sdf --crimson --crimson-smp 8 --crimson-alien-num-cores 4 --no-restart # Crimson 3osd 8 reactor manual 4 aliencore
 	/root/bin/cephlogoff.sh
 	#/root/bin/cpu-map.sh  -n osd -g # need to modify this to make the range an argument
-	RBD_NAME=fio_test_0 RBD_SIZE="10G" fio /fio/examples/rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -a -c "0-31" -p crimson_3osd_8reactor_4ac_manual -k # w/o osd dump_metrics
+	RBD_NAME=fio_test_0 RBD_SIZE="10G" fio ${FIO_JOBS}rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -a -c "0-31" -p crimson_3osd_8reactor_4ac_manual -k # w/o osd dump_metrics
 	/ceph/src/stop.sh --crimson
 	sleep 60
 
@@ -68,7 +69,7 @@ function _past_batch() {
 
 	/root/bin/cephlogoff.sh
 	/root/bin/cpu-map.sh  -n osd -g
-	RBD_NAME=fio_test_0 RBD_SIZE="10G" fio /fio/examples/rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -a -c "0-31" -p crimson_3osd_8reactor_4ac_manual_noht -k # w/o osd dump_metrics
+	RBD_NAME=fio_test_0 RBD_SIZE="10G" fio ${FIO_JOBS}rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -a -c "0-31" -p crimson_3osd_8reactor_4ac_manual_noht -k # w/o osd dump_metrics
 	/ceph/src/stop.sh --crimson
 	sleep 60
 }

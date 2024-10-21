@@ -15,7 +15,6 @@ write_lat_log=${LOG_NAME}
 ioengine=rbd
 clientname=admin
 pool=rbd
-rw=read
 rbdname=${RBD_NAME}
 bs=${BLOCK_SIZE_KB}
 direct=1
@@ -35,4 +34,5 @@ thread=1
 iodepth=${IO_DEPTH}
 
 [seqread]
+rw=read
 max_latency=1s

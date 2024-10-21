@@ -23,3 +23,6 @@ bin/ceph tell mgr.x config set debug_monc 0/0
 bin/ceph tell mgr.x config set debug_ms 0/0
 bin/ceph tell mgr.x config set debug_mon 0/0
 
+# Disable scrub -- didnt work
+#bin/ceph osd set noscrub set noscrub
+#bin/ceph osd set nodeep-scrub set nodeep-scrub
