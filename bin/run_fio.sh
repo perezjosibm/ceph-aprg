@@ -70,6 +70,7 @@ OSD_TYPE="crimson"
 RESPONSE_CURVE=false
 LATENCY_TARGET=false
 POST_PROC=false
+PACK_DIR="/packages/"
 
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
@@ -123,12 +124,14 @@ fun_join_by() {
   fi
 }
 
+#############################################################################################
 fun_perf() {
   local PID=$1 # , separate string of pid
   local TEST_NAME=$2
   perf record -e cycles:u --call-graph dwarf -i -p ${PID} -o ${TEST_NAME}.perf.out sleep 10 2>&1 >/dev/null
 }
 
+#############################################################################################
 fun_measure() {
   local PID=$1 #comma sep list of pids
   local TEST_NAME=$2
@@ -140,6 +143,7 @@ fun_measure() {
   echo "${TEST_NAME}_top.out" >> ${TEST_TOP_OUT_LIST}
 }
 
+#############################################################################################
 fun_osd_dump() {
   local TEST_NAME=$1
   local NUM_SAMPLES=$2
@@ -159,6 +163,18 @@ fun_osd_dump() {
   done
 }
 
+#############################################################################################
+# Decide wether use a simple profile, or latency_target, or a multijob (job per volume)
+fun_set_fio_job_spec() {
+  if [ "$LATENCY_TARGET" = true ]; then
+    FIO_JOB_SPEC="${FIO_JOB_SPEC}lt_"
+  fi
+  if [ "$MULTI_JOB_VOL" = true ]; then
+    FIO_JOB_SPEC="${FIO_JOB_SPEC}mj_"
+  fi
+}
+
+#############################################################################################
 fun_run_workload() {
   local WORKLOAD=$1
   local SINGLE=$2
@@ -205,15 +221,7 @@ fun_run_workload() {
         export TEST_NAME=${TEST_PREFIX}_${job}job_${io}io_${BLOCK_SIZE_KB}_${map[${WORKLOAD}]}_p${i};
         echo "== $(date) == ($io,$job): ${TEST_NAME} ==";
         echo fio_${TEST_NAME}.json >> ${OSD_TEST_LIST}
-        # Decide wether use a simple profile, or latency_target, or a multijob (job per volume)
-        if [ "$LATENCY_TARGET" = true ]; then
-	  FIO_JOB_SPEC="${FIO_JOB_SPEC}lt_"
-         # fio_name=${FIO_JOBS}rbd_lt_${map[${WORKLOAD}]}.fio
-        fi
-        if [ "$MULTI_JOB_VOL" = true ]; then
-	  FIO_JOB_SPEC="${FIO_JOB_SPEC}mj_"
-	fi
-        fio_name=${FIO_JOBS}${FIO_JOB_SPEC}${map[${WORKLOAD}]}.fio
+	fio_name=${FIO_JOBS}${FIO_JOB_SPEC}${map[${WORKLOAD}]}.fio
 
         if [ "$RESPONSE_CURVE" = true ]; then
           log_name=${TEST_RESULT}
@@ -285,7 +293,7 @@ fun_run_workload() {
     python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_PREFIX} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
   fi
 
-  # Produce charts fromthe scripts .plot anbd .dat files generated
+  # Produce charts from the scripts .plot and .dat files generated
   for x in $(ls *.plot); do
     gnuplot $x
   done
@@ -298,7 +306,7 @@ fun_run_workload() {
 #  fi
   #cd # location of FIO .log data
   #fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280 # Made some tweaks, so will keep it in my priv repo
-  /root/bin/fio_generate_plots ${TEST_NAME} 650 280
+  /root/bin/fio_generate_plots ${TEST_NAME} 650 280 2>&1 > /dev/null
 
   # Process perf if any
   if [ "$WITH_PERF" = true ]; then
@@ -306,7 +314,7 @@ fun_run_workload() {
       #y=${x/perf.out/scripted.gz}
       z=${x/perf.out/fg.svg}
       echo "==$(date) == Perf script $x: $y =="
-      perf script -i $x | c++filt | /FlameGraph/stackcollapse-perf.pl | /FlameGraph/flamegraph.pl > $z
+      perf script -i $x | c++filt | ${PACK_DIR}/FlameGraph/stackcollapse-perf.pl | ${PACK_DIR}/FlameGraph/flamegraph.pl > $z
       # I needed the raw data to experiment compaction of tall lambda calls, I'll disable compression by the time being
       #perf script -i $x | c++filt | gzip -9 > $y
       # Option whether want to keep the raw data
@@ -325,6 +333,7 @@ fun_run_workload() {
   rm -f *.log
 }
 
+#############################################################################################
 fun_set_osd_pids() {
   local TEST_PREFIX=$1
   # Should be a better way, eg ceph query
@@ -344,6 +353,7 @@ fun_set_osd_pids() {
   done
 }
 
+#############################################################################################
 # Priming
 fun_prime() {
   local NUM_PROCS=1
@@ -353,6 +363,7 @@ fun_prime() {
   wait;
 }
 
+#############################################################################################
 # coalesce the .png individual top charts into a single animated .gif
 fun_coalesce_charts() {
   local TEST_PREFIX=$1
@@ -376,6 +387,7 @@ fun_coalesce_charts() {
   done
 }
 
+#############################################################################################
 # Prepare a list of .png in the order expected from a list of files
 fun_prep_anim_list() {
   local PREFIX=$1
@@ -387,6 +399,7 @@ fun_prep_anim_list() {
   i=0; for x in $(cat lista); do echo $x; y=$(printf "%03d.png" $i ); mv $x ${OUT_DIR}/$y; echo $(( i++ )) >/dev/null; done
 }
 
+#############################################################################################
 # When collected data over a range (eg response curves), coalesce the individual .png
 # into an animated .gif
 fun_animate() {
@@ -402,7 +415,7 @@ fun_animate() {
   cd ..
   rm -rf animate/
 }
-
+#############################################################################################
 # main:
 
 # Standalone option to post-process a set of results previously collected
@@ -416,6 +429,7 @@ fi
 [[ ! -d $RUN_DIR ]] && mkdir $RUN_DIR
 pushd $RUN_DIR
 fun_set_osd_pids $TEST_PREFIX
+fun_set_fio_job_spec
 
 if [ "$RUN_ALL" = true ]; then
   if [ "$SINGLE" = true ]; then

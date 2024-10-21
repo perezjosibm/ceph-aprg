@@ -28,7 +28,7 @@ for NUM_OSD in 5 8; do
 	/root/bin/cephlogoff.sh 2>&1 > /dev/null
 	/root/bin/cephmkrbd.sh
 	#/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
-	RBD_NAME=fio_test_0 RBD_SIZE="10G" fio ${FIO_JOBS}rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -r -a -c "0-111" -f $FIO_CPU_CORES -p "$test_name" -n -k  # w/o osd dump_metrics
+	RBD_NAME=fio_test_0 RBD_SIZE="10G" fio ${FIO_JOBS}rbd_prefill.fio && rbd du fio_test_0 && /root/bin/run_fio.sh -s -r -w hockey -a -c "0-111" -f $FIO_CPU_CORES -p "$test_name" -n -k  # w/o osd dump_metrics
 	/ceph/src/stop.sh --crimson
 	sleep 60
 

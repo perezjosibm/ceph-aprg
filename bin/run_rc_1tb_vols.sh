@@ -26,7 +26,7 @@ function du_images(){
 #########################################
 for NUM_OSD in 1 3 5 8; do
   for NUM_REACTORS in 1 2 4; do
-     for NUM_ALIEN_THREADS in 7 14 21; do 
+     for NUM_ALIEN_THREADS in 7 14 21; do
 
 	echo "== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, $NUM_ALIEN_THREADS alien threads, fixed FIO 8 cores, huge vols, latency target =="
 
@@ -38,7 +38,7 @@ for NUM_OSD in 1 3 5 8; do
 	/root/bin/cephlogoff.sh 2>&1 > /dev/null
 	/root/bin/cephmkrbd.sh
 	#/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
-	fio ${FIO_JOBS}rbd_mj_prefill.fio && du_images ${NUM_RBD_IMAGES} && /root/bin/run_fio.sh -s -j -l -a -c "0-111" -f $FIO_CPU_CORES -p "$test_name" -n -k  # j: multijob, w/o osd dump_metrics
+	fio ${FIO_JOBS}rbd_mj_prefill.fio && du_images ${NUM_RBD_IMAGES} && /root/bin/run_fio.sh -s -j -w hockey -a -c "0-111" -f $FIO_CPU_CORES -p "$test_name" -n -k  # j: multijob, w/o osd dump_metrics
 	/ceph/src/stop.sh --crimson
 	sleep 60
 
