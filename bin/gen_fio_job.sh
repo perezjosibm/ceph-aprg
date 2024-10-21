@@ -86,7 +86,7 @@ EOF
     echo "iodepth=\${IO_DEPTH}" >> $outfilename
   fi
 
-  if [ "$LATENCY_TARGET" = true ]; then
+  if [ "$LATENCY_TARGET" = true ] && [ "$WORKLOAD" != "pre" ]; then
   read -r -d '' latarg <<EOF || true
 ########################
 # Set max acceptable latency to 10msec
@@ -101,6 +101,7 @@ EOF
 
   echo "$latarg" >> $outfilename
   fi
+
   for (( i=0; i<${NUM_VOLUMES}; i++ )); do
      RBD_NAME="${VOLNAME_PREFIX}_${i}"
 	# Body is composed of a sequence of [jobs], each associated

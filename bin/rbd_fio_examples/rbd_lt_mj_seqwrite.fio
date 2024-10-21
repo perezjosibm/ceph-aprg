@@ -7,8 +7,8 @@ write_lat_log=${LOG_NAME}
 ioengine=rbd
 clientname=admin
 pool=rbd
-bs=4k
-rw=randread
+bs=64k
+rw=write
 direct=1
 runtime=5m
 time_based
@@ -24,7 +24,15 @@ thread=1
 #numjobs=${NUM_JOBS} # num concurrent clients/processes
 
 # Number of I/O units to keep in flight
-iodepth=${IO_DEPTH}
+iodepth=128
+########################
+# Set max acceptable latency to 10msec
+latency_target=10000
+# profile over a 5m window
+latency_window=5m
+# 99.9% of IOs must be below the target
+latency_percentile=99.9
+random_generator=lfsr
 #############
 [fio_test_0]
 rbdname=fio_test_0

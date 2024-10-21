@@ -39,7 +39,9 @@ from operator import add
 # Keys are metric names, vallues are the string path in the .json to seek
 # For MultiFIO JSON files, the jobname no neccessarily matches any of the predef_dict keys,
 # so we need instead to use a separate query:
+# jobname would be associated with the volume name
 job_type='jobs/jobname=*/job options/rw'
+#job_type='global options/rw'
 # All the following should be within the path
 #  'jobs/jobname=*/read/iops'
 predef_dict = {
@@ -218,6 +220,21 @@ def reduce_result_list(result_dict, jobname):
         _res[metric] = apply_reductor(result_dict, metric)
     return _res
 
+def get_jobs_type(jobname:str):
+    """
+    Condition to get the jobname -- shouldbe deprecated since the new
+    FIO job files are follow the convention of jobtype being the
+    global "rw" attribute.
+    """
+    jobname = str(job['jobname'])
+    if jobname in predef_dict:
+      # this gives the paths to query for the metrics
+      query_dict = predef_dict[jobname]
+    else:
+      jobname = job['job options']['rw']
+      query_dict = predef_dict[jobname]
+      result_dict['jobname'] = jobname
+
 def process_fio_json_file(json_file, json_tree_path):
     """
     Collect metrics from an individual JSON file, which might
@@ -236,29 +253,24 @@ def process_fio_json_file(json_file, json_tree_path):
         # different FIO processes
         result_dict['timestamp'] = str(node['timestamp'])
         result_dict['iodepth'] = node['global options']['iodepth']
+        result_dict['jobname'] = node['global options']['rw']
         # Use the jobname to index the predef_dict for the json query
         jobs_list = node['jobs']
         print(f"Num jobs: {len(jobs_list)}")
         job_result = {}
         for _i,job in enumerate(jobs_list):
-            jobname = str(job['jobname'])
-            if jobname in predef_dict:
-                # this gives the paths to query for the metrics
-                query_dict = predef_dict[jobname]
-            else:
-                jobname = job['job options']['rw']
-                query_dict = predef_dict[jobname]
-            result_dict['jobname'] = jobname
-            for k in query_dict.keys():
-                json_tree_path = query_dict[k].split('/')
-                next_node_list = [job]
+          jobname = result_dict['jobname'] 
+          query_dict = predef_dict[jobname]
+          for k in query_dict.keys():
+            json_tree_path = query_dict[k].split('/')
+            next_node_list = [job]
 
-                for next_branch in json_tree_path:
-                    next_node_list = filter_json_node(next_branch, next_node_list)
-                item = process_fio_item(k, next_node_list)
-                if k not in job_result:
-                    job_result[k] = []
-                job_result[k].append(item)
+            for next_branch in json_tree_path:
+              next_node_list = filter_json_node(next_branch, next_node_list)
+            item = process_fio_item(k, next_node_list)
+            if k not in job_result:
+              job_result[k] = []
+            job_result[k].append(item)
 
         reduced = reduce_result_list(job_result, result_dict['jobname'])
         merged = { **result_dict, **reduced }

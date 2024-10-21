@@ -75,7 +75,7 @@ usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 
-while getopts 'ac:d:f:klsrw:p:nt:g' option; do
+while getopts 'ac:d:f:jklsrw:p:nt:g' option; do
   case "$option" in
     a) RUN_ALL=true
         ;;

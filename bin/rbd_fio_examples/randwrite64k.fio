@@ -15,8 +15,8 @@ steadystate_duration=300s
 steadystate_ramp_time=60s
 #steadystate_check_interval=30s
                             
-[nvme1n1p2]
-filename=/dev/nvme1n1p2
+[nvme0n1p2]
+filename=/dev/nvme0n1p2
 size=3550G
 
 [nvme3n1p2]
@@ -35,8 +35,8 @@ size=3550G
 filename=/dev/nvme6n1p2
 size=3550G
 
-[nvme7n1p2]
-filename=/dev/nvme7n1p2
+[nvme5n1p2]
+filename=/dev/nvmer5n1p2
 size=3550G
 
 [nvme8n1p2]
