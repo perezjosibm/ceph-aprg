@@ -1,0 +1,71 @@
+%the Hw setup for o05 in Sepia Lab
+\chapter{Configuration}
+
+All the tests for this report were executed using {\tt vstart.sh} for cluster creation. The build tag used was:
+
+\section{Test plan}
+
+A test plan is a sequence of test scenarios. A single node cluster was created on each test scenario. Each
+test scenario systematically modifies a single parameter between test configurations. 
+
+To measure performance, we use the following two strategies:
+
+\begin{itemize}
+  \item Latency target: this is a considerably short execution of a workload, where the FIO flag
+    {\tt latency target}  is used. With this flag, FIO will attempt to find
+    the maximum performance point that the given workload will run at while maintaining a
+    latency below this target.
+  \item Response latency (aka "hockey stick curves"): this involves longer execution of tests, each
+    gradually increasing the IO load, to reach a latency saturation point, exhibited by a drop in
+    throughput and higher latency. 
+\end{itemize}
+
+For each workload, we collected results for the latency target strategy, and then compared the worked out values (for IOPs, latency, utilisation) with those obtained from a longer respose latency curves.
+
+The following snippet illustrates the {\bf latency target} test plan, annotated with the meaning of
+the script options.
+
+\begin{verbatim}
+export NUM_RBD_IMAGES=28
+export RBD_SIZE=1TB
+
+for NUM_OSD in 1 3 5 8; do
+  for NUM_REACTORS in 1 2 4; do
+     for NUM_ALIEN_THREADS in 7 14 21; do 
+
+      MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 ../src/vstart.sh --new -x --localhost\
+          --without-dashboard --bluestore --redirect-output --bluestore-devs "${BLUESTORE_DEVS}"\
+          --crimson --crimson-smp ${NUM_REACTORS} --crimson-alien-num-threads ${NUM_ALIEN_THREADS}\
+          --no-restart
+
+      test_name="crimson_${NUM_OSD}osd_${NUM_REACTORS}reactor_${NUM_ALIEN_THREADS}at_8fio_1tb_lt"
+	
+      [ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
+	    /root/bin/cephlogoff.sh 2>&1 > /dev/null # limit logs
+	    /root/bin/cephmkrbd.sh                   # create RBD volumes, using num and size above
+
+      fio ${FIO_JOBS}rbd_mj_prefill.fio && \   # prefill RBD volumes
+      du_images ${NUM_RBD_IMAGES} && \
+      /root/bin/run_fio.sh -s \   # -s: single FIO instance
+          -j -l -a            \   # -j: multi volume, -l: latency_target, -a: all workloads
+          -c "0-111"          \   # -c: spec the CPU cores to monitor (all)
+          -f $FIO_CPU_CORES   \   # -f: spec FIO cpu cores
+          -p "$test_name"     \   # -p: prefix for the test result archives
+          -k                  \   # -k: skip OSD dump_metrics
+	    /ceph/src/stop.sh --crimson
+	    sleep 60
+    done
+  done
+done
+exit
+\end{verbatim}
+
+The only difference with a test plan for the Response latency strategy is the option {\tt -w hockey}
+for the test driver script {\tt run\_fio.sh}.
+
+At this stage, we restrict only the CPU cores for the client FIO, 
+we impose no restrictions to any of the OSD threads (e.g. alien threads) yet.
+
+The contents of the report is organised according to the test plan: each chapter
+corresponds to the number of OSD, within each section to the number of Crimson 
+reactors, where we compare results over the number of alien threads.
