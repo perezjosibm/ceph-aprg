@@ -23,7 +23,7 @@ parse-top.pl -- parse the data from top to produce a gnuplot chart of CPU util
    --config=<top.out> : top log input file to examine.
    --pids=<pids.out> : file containing the list of pids, in the form <NAME>:<pid_list , sep>
    --cpu=<[min-max]> : range of cpus to filter.
-   --avg=<output.json>: oputput file of CPU avg to produce
+   --avg=<output.json>: output file of CPU avg to produce (cummulative if exists)
 
    Ensure your file got '.out' suffix.
 
@@ -309,7 +309,12 @@ sub parse_files {
             #insert_sample_hr({ comm => $tokens[12], tid=> $tokens[1], cpu=> $tokens[9]} );
             #insert_sample_hr({ comm => $tokens[12], cpu=> $tokens[9], mem=> $tokens[10]} );
             # New toprc config columns
-            insert_sample_hr($href, { pid=> $tokens[2], ppid=> $tokens[1], comm => $tokens[13], cpu=> $tokens[10], mem=> $tokens[11], lastcpu=> $tokens[3]}, $pids_hr );
+            insert_sample_hr($href, { pid=> $tokens[2],
+                ppid=> $tokens[1],
+                comm => $tokens[13],
+                cpu=> $tokens[10],
+                mem=> $tokens[11],
+                lastcpu=> $tokens[3]}, $pids_hr );
             $cpu_matches++;
         }
         elsif ($line =~ /$THREADS/)
@@ -353,11 +358,12 @@ sub parse_files {
 }
 
 #=======================================================#
-# Generate the set of files: .dat. plot for the $key (cpu )
-# First arg is the metric (cpu, mem) and second is the group name (from pids input argument)
+# Generate the set of files: .dat. plot for the $metric (cpu )
+# arg metric is the metric (cpu, mem) 
+# arg pname is the group name (from pids input argument)
 # ToDO: need affinity output to filter only those threads running on those cpus
 sub generate_output {
-    my ($g_href,$key,$pname) = @_;
+    my ($g_href,$metric,$pname,$avg_process) = @_;
 
     my $yaxis = { 'cpu' => "CPU", 'mem' => "MEM" };
 
@@ -368,16 +374,24 @@ sub generate_output {
 
     @comms = sort (keys %{$href}); # these are the commands -- thread names
     print "Total " . scalar(@comms) . " threads\n";
+    # Calculate the avg cpu util for the whole $pname process
+
+    $avg_process->{$pname}->{$metric} = 0.0;
     # Calculate the avg cpu util for each comm, then take the top ten
     foreach my $comm (@comms)
     {
-        $avg->{$comm} = sum(@{$href->{$comm}->{$key}})/(scalar @{$href->{$comm}->{$key}}) if (defined $href->{$comm}->{$key});
+      if (defined $href->{$comm}->{$metric}) {
+        $avg->{$comm} = sum(@{$href->{$comm}->{$metric}})/(scalar @{$href->{$comm}->{$metric}});
+        $avg_process->{$pname}->{$metric} += $avg->{$comm};
+      }
     }
+    print "Total $pname $metric util= $avg_process\n";
+
     @sorted = ( reverse sort {
             $avg->{$a} <=> $avg->{$b}
         } keys %{$avg} );
 
-    print "${pname} : ${key} sorted: " . Dumper(\@sorted) . "\n";
+    print "${pname} : ${metric} sorted: " . Dumper(\@sorted) . "\n";
 
     if (defined $o{nochart}) # skip single charts, only produce CPU avg
     {
@@ -386,7 +400,7 @@ sub generate_output {
     }
 # Define the ouput .dat file:
     my $outname = "${pname}_$o{config}";
-    $outname =~ s/\.out/_$key/g;
+    $outname =~ s/\.out/_$metric/g;
 
     my $dat = "$outname.dat";
     my $out = "$outname.png";
@@ -409,9 +423,9 @@ sub generate_output {
         my @row = ();
         foreach my $comm (@top)
         {
-            if (defined $href->{$comm}->{$key}->[$sample])
+            if (defined $href->{$comm}->{$metric}->[$sample])
             {
-                push @row, $href->{$comm}->{$key}->[$sample];
+                push @row, $href->{$comm}->{$metric}->[$sample];
             }
             else{
                 push @row, '-';
@@ -434,11 +448,11 @@ sub generate_output {
     $plot =~ s/OUT/$out/g;
     #$plot =~ s/GOL/$outlog/g;
     #$plot =~ s/XTICS/$xtics/g;
-    #$plot =~ s/RSS/$key/g;
+    #$plot =~ s/RSS/$metric/g;
     #$plot =~ s/UNIT/$o{unit}/g;
     #$plot =~ s/XRANGE/$xrange/g;
     $plot =~ s/TITLE/$title/g;
-    $plot =~ s/METRIC/$yaxis->{$key}/g;
+    $plot =~ s/METRIC/$yaxis->{$metric}/g;
     $num_columns++;
     $plot =~ s/NUMELEM/$num_columns/g;
     $plot =~ s/TIMEFORMAT/$o{timefmt}/g;
@@ -547,6 +561,7 @@ sub generate_cores_output {
 }
 
 sub generate_cpu_avg {
+    my ($avg_process) = @_;
     # Produce a single entry in the output .json
     my $fh;
     my $data = [];
@@ -561,6 +576,7 @@ sub generate_cpu_avg {
         close $fh;
     }
     push @{$data}, $core_href_avg;
+    push @{$data}, $avg_process;
     my $output = $json->encode($data);
     {
         die "Could not open file $o{avg} for write" unless(open($fh, ">:encoding(UTF-8)", $o{avg}));
@@ -574,16 +590,17 @@ sub generate_cpu_avg {
 create_cpu_range();
 my $pids_hr = parse_pids_files();
 parse_files($ghref, $pids_hr );
+my $avg_process_hr = {};
 # Generate cpu and mem utilisation per thread:
     foreach my $k (keys %{$pids_hr})
     {
         print "Process name: $k\n";
-        generate_output($ghref,'cpu', $k);
-        generate_output($ghref, 'mem', $k);
+        generate_output($ghref,'cpu', $k,$avg_process_hr );
+        generate_output($ghref, 'mem', $k, $avg_process_hr );
     }
 
 # Generate core cpu utilisation:
 generate_cores_output('us');
 generate_cores_output('sys');
 
-generate_cpu_avg();
+generate_cpu_avg($avg_process_hr);

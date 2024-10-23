@@ -2,6 +2,18 @@
 \chapter{Configuration}
 
 All the tests for this report were executed using {\tt vstart.sh} for cluster creation. The build tag used was:
+\begin{small}
+\begin{verbatim}
+ceph version b2a220 (bb2a2208867d7bce58b9697570c83d995a1c5976) squid (dev)
+\end{verbatim}
+\end{small}
+
+In terms of storage, two main configurations were tested:
+\begin{enumerate}
+  \item A single RBD volume of 10 GB size,
+  \item Multiple RBD volumes, each 1 TB in size, for a maximum capacity storage scenario.
+\end{enumerate}
+On both cases, only a single RBD pool was explicitly created, with replication by default.
 
 \section{Test plan}
 
@@ -22,9 +34,14 @@ To measure performance, we use the following two strategies:
 
 For each workload, we collected results for the latency target strategy, and then compared the worked out values (for IOPs, latency, utilisation) with those obtained from a longer respose latency curves.
 
-The following snippet illustrates the {\bf latency target} test plan, annotated with the meaning of
+The snippet in \ref{table:test-plan} illustrates the {\bf latency target} test plan, annotated with the meaning of
 the script options.
 
+\begin{table}[h!]
+\centering
+  \begin{tabular}{V{0.95\textwidth}}
+\toprule
+    \begin{small}
 \begin{verbatim}
 export NUM_RBD_IMAGES=28
 export RBD_SIZE=1TB
@@ -48,8 +65,8 @@ for NUM_OSD in 1 3 5 8; do
       du_images ${NUM_RBD_IMAGES} && \
       /root/bin/run_fio.sh -s \   # -s: single FIO instance
           -j -l -a            \   # -j: multi volume, -l: latency_target, -a: all workloads
-          -c "0-111"          \   # -c: spec the CPU cores to monitor (all)
-          -f $FIO_CPU_CORES   \   # -f: spec FIO cpu cores
+          -c "0-111"          \   # -c: spec the CPU Cores to monitor (all)
+          -f $FIO_CPU_CORES   \   # -f: spec FIO CPU Cores
           -p "$test_name"     \   # -p: prefix for the test result archives
           -k                  \   # -k: skip OSD dump_metrics
 	    /ceph/src/stop.sh --crimson
@@ -59,13 +76,57 @@ for NUM_OSD in 1 3 5 8; do
 done
 exit
 \end{verbatim}
+    \end{small}
+\\
+\end{tabular}
+\caption{Organisation of the test plan.}
+\label{table:test-plan}
+\end{table}
 
 The only difference with a test plan for the Response latency strategy is the option {\tt -w hockey}
 for the test driver script {\tt run\_fio.sh}.
 
+\section{Test driver script}
+
+The test driver script {\tt run\_fio.sh} executes the workloads in fixed order: random read 4k, random write 4k, sequential read 64k and sequential write 64k. The client FIO uses predefined job workload .fio input files, and produces output in .JSON format. The following snippet illustrates the basic result information extracted
+from the FIO benchmark:
+
+\begin{verbatim}
+# jq -f filter_read fio_crimson_1osd_1reactor_7at_8fio_1tb_lt_16job_16io_4k_randread_p0.json
+{
+  "iops": 35972.980540,
+  "total_ios": 10792110,
+  "clat_ms": 0.7727451267659999,
+  "usr_cpu": 0.670392,
+  "sys_cpu": 0.718047,
+  "jrt": 8400013
+}
+\end{verbatim}
+
+The contents of the {\tt filter\_read} is as follows:
+\begin{verbatim}
+.jobs | .[] | { "iops": .read.iops, "total_ios": .read.total_ios,\
+  "clat_ms": (.read.clat_ns.mean/1000000), "usr_cpu": .usr_cpu,\
+  "sys_cpu": .sys_cpu, "jrt": .job_runtime }
+\end{verbatim}
+
+The structure of the FIO output .JSON files is uniform regardless of the number of volumes exercised. This is
+due to the use of the FIO flag {\tt group\_reporting}, which coalesces the results from each of the jobs
+exercising an RBD volume into a single resulting value.
+
+For the Response latency strategy, the test driver script identifies whether a saturation point has been
+reached when the {\it covar} (defined as $\frac{\sigma}{\mu}$, that is, the latency standard deviation
+divided by the latency mean) is greater than $0.5$. This indicates that the latency shows a high standard
+deviation at that IO load. 
+
+In parallel to the execution of the FIO benchmark client, the test driver script monitors the CPU and Memory
+utilisation of the OSD and FIO processes only.
+The monitoring consists on executing the Linux {\tt top} command, producing a .JSON file with the summary of
+the threads with the topmost utilisation. 
+
 At this stage, we restrict only the CPU cores for the client FIO, 
 we impose no restrictions to any of the OSD threads (e.g. alien threads) yet.
 
-The contents of the report is organised according to the test plan: each chapter
-corresponds to the number of OSD, within each section to the number of Crimson 
+The contents of the report is organised according to the test plan: each Chapter
+corresponds to the number of OSD, within each Section to the number of Crimson 
 reactors, where we compare results over the number of alien threads.

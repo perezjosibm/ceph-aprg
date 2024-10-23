@@ -1,12 +1,61 @@
 \chapter{1 OSD, 4k Random read}
-\section{1 Reactors}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}[t]{|l*{6}{|c|}}
+   \hline 
+Alien\\Threads & IOPs & clat(ms) & FIO\_usr\_cpu & FIO\_sys\_cpu & Total\_IOs & Runtime(s)\\
+\hline
+ 7 & 28472.98 & 0.56 & 0.97 & 0.84 & 8542206.00 & 4800.01\\
+ 14 & 27983.50 & 0.57 & 0.99 & 0.86 & 8395245.00 & 4800.01\\
+ 21 & 27441.76 & 0.58 & 0.91 & 0.78 & 8232776.00 & 4800.01\\
+
+   \hline
+\end{tabular}
+\caption{Performance on 1 OSD, 1 reactors.}
+\label{table:iops-1osd-1reactor}
+\end{table}
+
+
+\begin{table}[h!]
+\centering
+\begin{tabular}[t]{|l*{6}{|c|}}
+   \hline 
+Alien\\Threads & IOPs & clat(ms) & FIO\_usr\_cpu & FIO\_sys\_cpu & Total\_IOs & Runtime(s)\\
+\hline
+ 7 & 46823.09 & 0.34 & 1.25 & 0.99 & 14047911.00 & 4800.10\\
+ 14 & 45501.20 & 0.35 & 1.24 & 1.03 & 13651135.00 & 4800.08\\
+ 21 & 42624.42 & 0.37 & 1.22 & 1.04 & 12787583.00 & 4800.01\\
+
+   \hline
+\end{tabular}
+\caption{Performance on 1 OSD, 2 reactors.}
+\label{table:iops-1osd-2reactor}
+\end{table}
+
+
+\begin{table}[h!]
+\centering
+\begin{tabular}[t]{|l*{6}{|c|}}
+   \hline 
+Alien\\Threads & IOPs & clat(ms) & FIO\_usr\_cpu & FIO\_sys\_cpu & Total\_IOs & Runtime(s)\\
+\hline
+ 7 & 56406.42 & 0.28 & 1.48 & 1.16 & 16922998.00 & 4800.02\\
+ 14 & 60475.61 & 0.26 & 1.54 & 1.24 & 18143168.00 & 4800.04\\
+ 21 & 58936.25 & 0.27 & 1.52 & 1.23 & 17680933.00 & 4800.00\\
+
+   \hline
+\end{tabular}
+\caption{Performance on 1 OSD, 4 reactors.}
+\label{table:iops-1osd-4reactor}
+\end{table}
+
 
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_1osd_1reactor_7at_8fio_lt_1procs_randread/OSD_crimson_1osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_1reactor_7at_8fio_lt_1procs_randread/OSD_crimson_1osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_1osd_1reactor_14at_8fio_lt_1procs_randread/OSD_crimson_1osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_1reactor_14at_8fio_lt_1procs_randread/OSD_crimson_1osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_1osd_1reactor_21at_8fio_lt_1procs_randread/OSD_crimson_1osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_1reactor_21at_8fio_lt_1procs_randread/OSD_crimson_1osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -16,13 +65,11 @@ Alien\\threads & CPU & Mem\\
 \caption{1 OSD, 1 Reactors, 4k Random read: OSD utilisation}
 \end{table}
 
-
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_1osd_1reactor_7at_8fio_lt_1procs_randread/FIO_crimson_1osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_1reactor_7at_8fio_lt_1procs_randread/FIO_crimson_1osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_1osd_1reactor_14at_8fio_lt_1procs_randread/FIO_crimson_1osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_1reactor_14at_8fio_lt_1procs_randread/FIO_crimson_1osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_1osd_1reactor_21at_8fio_lt_1procs_randread/FIO_crimson_1osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_1reactor_21at_8fio_lt_1procs_randread/FIO_crimson_1osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -32,14 +79,12 @@ Alien\\threads & CPU & Mem\\
 \caption{1 OSD, 1 Reactors, 4k Random read: FIO utilisation}
 \end{table}
 
-\section{2 Reactors}
 
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_1osd_2reactor_7at_8fio_lt_1procs_randread/OSD_crimson_1osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_2reactor_7at_8fio_lt_1procs_randread/OSD_crimson_1osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_1osd_2reactor_14at_8fio_lt_1procs_randread/OSD_crimson_1osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_2reactor_14at_8fio_lt_1procs_randread/OSD_crimson_1osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_1osd_2reactor_21at_8fio_lt_1procs_randread/OSD_crimson_1osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_2reactor_21at_8fio_lt_1procs_randread/OSD_crimson_1osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -49,13 +94,11 @@ Alien\\threads & CPU & Mem\\
 \caption{1 OSD, 2 Reactors, 4k Random read: OSD utilisation}
 \end{table}
 
-
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_1osd_2reactor_7at_8fio_lt_1procs_randread/FIO_crimson_1osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_2reactor_7at_8fio_lt_1procs_randread/FIO_crimson_1osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_1osd_2reactor_14at_8fio_lt_1procs_randread/FIO_crimson_1osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_2reactor_14at_8fio_lt_1procs_randread/FIO_crimson_1osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_1osd_2reactor_21at_8fio_lt_1procs_randread/FIO_crimson_1osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_2reactor_21at_8fio_lt_1procs_randread/FIO_crimson_1osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -65,14 +108,12 @@ Alien\\threads & CPU & Mem\\
 \caption{1 OSD, 2 Reactors, 4k Random read: FIO utilisation}
 \end{table}
 
-\section{4 Reactors}
 
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_1osd_4reactor_7at_8fio_lt_1procs_randread/OSD_crimson_1osd_4reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_4reactor_7at_8fio_lt_1procs_randread/OSD_crimson_1osd_4reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_1osd_4reactor_14at_8fio_lt_1procs_randread/OSD_crimson_1osd_4reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_4reactor_14at_8fio_lt_1procs_randread/OSD_crimson_1osd_4reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_1osd_4reactor_21at_8fio_lt_1procs_randread/OSD_crimson_1osd_4reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_4reactor_21at_8fio_lt_1procs_randread/OSD_crimson_1osd_4reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -82,13 +123,11 @@ Alien\\threads & CPU & Mem\\
 \caption{1 OSD, 4 Reactors, 4k Random read: OSD utilisation}
 \end{table}
 
-
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_1osd_4reactor_7at_8fio_lt_1procs_randread/FIO_crimson_1osd_4reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_4reactor_7at_8fio_lt_1procs_randread/FIO_crimson_1osd_4reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_1osd_4reactor_14at_8fio_lt_1procs_randread/FIO_crimson_1osd_4reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_4reactor_14at_8fio_lt_1procs_randread/FIO_crimson_1osd_4reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_1osd_4reactor_21at_8fio_lt_1procs_randread/FIO_crimson_1osd_4reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_1osd_4reactor_21at_8fio_lt_1procs_randread/FIO_crimson_1osd_4reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -99,14 +138,63 @@ Alien\\threads & CPU & Mem\\
 \end{table}
 
 \chapter{3 OSD, 4k Random read}
-\section{1 Reactors}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}[t]{|l*{6}{|c|}}
+   \hline 
+Alien\\Threads & IOPs & clat(ms) & FIO\_usr\_cpu & FIO\_sys\_cpu & Total\_IOs & Runtime(s)\\
+\hline
+ 7 & 59967.02 & 0.26 & 1.61 & 1.30 & 17990526.00 & 4800.02\\
+ 14 & 60459.26 & 0.26 & 1.73 & 1.40 & 18137899.00 & 4800.00\\
+ 21 & 57999.75 & 0.27 & 1.79 & 1.41 & 17400272.00 & 4800.01\\
+
+   \hline
+\end{tabular}
+\caption{Performance on 3 OSD, 1 reactors.}
+\label{table:iops-3osd-1reactor}
+\end{table}
+
+
+\begin{table}[h!]
+\centering
+\begin{tabular}[t]{|l*{6}{|c|}}
+   \hline 
+Alien\\Threads & IOPs & clat(ms) & FIO\_usr\_cpu & FIO\_sys\_cpu & Total\_IOs & Runtime(s)\\
+\hline
+ 7 & 72707.56 & 0.22 & 2.03 & 1.79 & 21812922.00 & 4800.01\\
+ 14 & 71419.08 & 0.22 & 1.99 & 1.72 & 21426295.00 & 4800.01\\
+ 21 & 71460.02 & 0.22 & 1.93 & 1.68 & 21438077.00 & 4800.00\\
+
+   \hline
+\end{tabular}
+\caption{Performance on 3 OSD, 2 reactors.}
+\label{table:iops-3osd-2reactor}
+\end{table}
+
+
+\begin{table}[h!]
+\centering
+\begin{tabular}[t]{|l*{6}{|c|}}
+   \hline 
+Alien\\Threads & IOPs & clat(ms) & FIO\_usr\_cpu & FIO\_sys\_cpu & Total\_IOs & Runtime(s)\\
+\hline
+ 7 & 76380.44 & 0.21 & 2.04 & 1.84 & 22914742.00 & 4800.01\\
+ 14 & 75323.64 & 0.21 & 2.25 & 2.07 & 22597168.00 & 4800.00\\
+ 21 & 74722.12 & 0.21 & 2.36 & 2.12 & 22417907.00 & 4800.06\\
+
+   \hline
+\end{tabular}
+\caption{Performance on 3 OSD, 4 reactors.}
+\label{table:iops-3osd-4reactor}
+\end{table}
+
 
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_3osd_1reactor_7at_8fio_lt_1procs_randread/OSD_crimson_3osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_1reactor_7at_8fio_lt_1procs_randread/OSD_crimson_3osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_3osd_1reactor_14at_8fio_lt_1procs_randread/OSD_crimson_3osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_1reactor_14at_8fio_lt_1procs_randread/OSD_crimson_3osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_3osd_1reactor_21at_8fio_lt_1procs_randread/OSD_crimson_3osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_1reactor_21at_8fio_lt_1procs_randread/OSD_crimson_3osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -116,13 +204,11 @@ Alien\\threads & CPU & Mem\\
 \caption{3 OSD, 1 Reactors, 4k Random read: OSD utilisation}
 \end{table}
 
-
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_3osd_1reactor_7at_8fio_lt_1procs_randread/FIO_crimson_3osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_1reactor_7at_8fio_lt_1procs_randread/FIO_crimson_3osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_3osd_1reactor_14at_8fio_lt_1procs_randread/FIO_crimson_3osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_1reactor_14at_8fio_lt_1procs_randread/FIO_crimson_3osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_3osd_1reactor_21at_8fio_lt_1procs_randread/FIO_crimson_3osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_1reactor_21at_8fio_lt_1procs_randread/FIO_crimson_3osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -132,14 +218,12 @@ Alien\\threads & CPU & Mem\\
 \caption{3 OSD, 1 Reactors, 4k Random read: FIO utilisation}
 \end{table}
 
-\section{2 Reactors}
 
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_3osd_2reactor_7at_8fio_lt_1procs_randread/OSD_crimson_3osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_2reactor_7at_8fio_lt_1procs_randread/OSD_crimson_3osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_3osd_2reactor_14at_8fio_lt_1procs_randread/OSD_crimson_3osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_2reactor_14at_8fio_lt_1procs_randread/OSD_crimson_3osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_3osd_2reactor_21at_8fio_lt_1procs_randread/OSD_crimson_3osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_2reactor_21at_8fio_lt_1procs_randread/OSD_crimson_3osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -149,13 +233,11 @@ Alien\\threads & CPU & Mem\\
 \caption{3 OSD, 2 Reactors, 4k Random read: OSD utilisation}
 \end{table}
 
-
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_3osd_2reactor_7at_8fio_lt_1procs_randread/FIO_crimson_3osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_2reactor_7at_8fio_lt_1procs_randread/FIO_crimson_3osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_3osd_2reactor_14at_8fio_lt_1procs_randread/FIO_crimson_3osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_2reactor_14at_8fio_lt_1procs_randread/FIO_crimson_3osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_3osd_2reactor_21at_8fio_lt_1procs_randread/FIO_crimson_3osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_2reactor_21at_8fio_lt_1procs_randread/FIO_crimson_3osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -165,14 +247,12 @@ Alien\\threads & CPU & Mem\\
 \caption{3 OSD, 2 Reactors, 4k Random read: FIO utilisation}
 \end{table}
 
-\section{4 Reactors}
 
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_3osd_4reactor_7at_8fio_lt_1procs_randread/OSD_crimson_3osd_4reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_4reactor_7at_8fio_lt_1procs_randread/OSD_crimson_3osd_4reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_3osd_4reactor_14at_8fio_lt_1procs_randread/OSD_crimson_3osd_4reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_4reactor_14at_8fio_lt_1procs_randread/OSD_crimson_3osd_4reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_3osd_4reactor_21at_8fio_lt_1procs_randread/OSD_crimson_3osd_4reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_4reactor_21at_8fio_lt_1procs_randread/OSD_crimson_3osd_4reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -182,13 +262,11 @@ Alien\\threads & CPU & Mem\\
 \caption{3 OSD, 4 Reactors, 4k Random read: OSD utilisation}
 \end{table}
 
-
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_3osd_4reactor_7at_8fio_lt_1procs_randread/FIO_crimson_3osd_4reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_4reactor_7at_8fio_lt_1procs_randread/FIO_crimson_3osd_4reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_3osd_4reactor_14at_8fio_lt_1procs_randread/FIO_crimson_3osd_4reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_4reactor_14at_8fio_lt_1procs_randread/FIO_crimson_3osd_4reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_3osd_4reactor_21at_8fio_lt_1procs_randread/FIO_crimson_3osd_4reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_3osd_4reactor_21at_8fio_lt_1procs_randread/FIO_crimson_3osd_4reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -199,14 +277,63 @@ Alien\\threads & CPU & Mem\\
 \end{table}
 
 \chapter{8 OSD, 4k Random read}
-\section{1 Reactors}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}[t]{|l*{6}{|c|}}
+   \hline 
+Alien\\Threads & IOPs & clat(ms) & FIO\_usr\_cpu & FIO\_sys\_cpu & Total\_IOs & Runtime(s)\\
+\hline
+ 7 & 85672.13 & 0.18 & 2.46 & 2.51 & 25703781.00 & 4800.11\\
+ 14 & 87427.45 & 0.18 & 2.68 & 2.81 & 26229021.00 & 4800.03\\
+ 21 & 85445.87 & 0.18 & 2.58 & 2.69 & 25633847.00 & 4800.00\\
+
+   \hline
+\end{tabular}
+\caption{Performance on 8 OSD, 1 reactors.}
+\label{table:iops-8osd-1reactor}
+\end{table}
+
+
+\begin{table}[h!]
+\centering
+\begin{tabular}[t]{|l*{6}{|c|}}
+   \hline 
+Alien\\Threads & IOPs & clat(ms) & FIO\_usr\_cpu & FIO\_sys\_cpu & Total\_IOs & Runtime(s)\\
+\hline
+ 7 & 93159.24 & 0.17 & 2.66 & 2.89 & 27949541.00 & 4800.02\\
+ 14 & 90734.73 & 0.17 & 2.75 & 2.89 & 27221236.00 & 4800.02\\
+ 21 & 90466.53 & 0.17 & 2.73 & 2.90 & 27140773.00 & 4800.02\\
+
+   \hline
+\end{tabular}
+\caption{Performance on 8 OSD, 2 reactors.}
+\label{table:iops-8osd-2reactor}
+\end{table}
+
+
+\begin{table}[h!]
+\centering
+\begin{tabular}[t]{|l*{6}{|c|}}
+   \hline 
+Alien\\Threads & \\
+\hline
+ 7 & \\
+ 14 & \\
+ 21 & \\
+
+   \hline
+\end{tabular}
+\caption{Performance on 8 OSD, 4 reactors.}
+\label{table:iops-8osd-4reactor}
+\end{table}
+
 
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_8osd_1reactor_7at_8fio_lt_1procs_randread/OSD_crimson_8osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_1reactor_7at_8fio_lt_1procs_randread/OSD_crimson_8osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_8osd_1reactor_14at_8fio_lt_1procs_randread/OSD_crimson_8osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_1reactor_14at_8fio_lt_1procs_randread/OSD_crimson_8osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_8osd_1reactor_21at_8fio_lt_1procs_randread/OSD_crimson_8osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_1reactor_21at_8fio_lt_1procs_randread/OSD_crimson_8osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -216,13 +343,11 @@ Alien\\threads & CPU & Mem\\
 \caption{8 OSD, 1 Reactors, 4k Random read: OSD utilisation}
 \end{table}
 
-
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_8osd_1reactor_7at_8fio_lt_1procs_randread/FIO_crimson_8osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_1reactor_7at_8fio_lt_1procs_randread/FIO_crimson_8osd_1reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_8osd_1reactor_14at_8fio_lt_1procs_randread/FIO_crimson_8osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_1reactor_14at_8fio_lt_1procs_randread/FIO_crimson_8osd_1reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_8osd_1reactor_21at_8fio_lt_1procs_randread/FIO_crimson_8osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_1reactor_21at_8fio_lt_1procs_randread/FIO_crimson_8osd_1reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -232,14 +357,12 @@ Alien\\threads & CPU & Mem\\
 \caption{8 OSD, 1 Reactors, 4k Random read: FIO utilisation}
 \end{table}
 
-\section{2 Reactors}
 
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_8osd_2reactor_7at_8fio_lt_1procs_randread/OSD_crimson_8osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_2reactor_7at_8fio_lt_1procs_randread/OSD_crimson_8osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_8osd_2reactor_14at_8fio_lt_1procs_randread/OSD_crimson_8osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_2reactor_14at_8fio_lt_1procs_randread/OSD_crimson_8osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_8osd_2reactor_21at_8fio_lt_1procs_randread/OSD_crimson_8osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_2reactor_21at_8fio_lt_1procs_randread/OSD_crimson_8osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -249,13 +372,11 @@ Alien\\threads & CPU & Mem\\
 \caption{8 OSD, 2 Reactors, 4k Random read: OSD utilisation}
 \end{table}
 
-
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7 & \addpic{crimson_8osd_2reactor_7at_8fio_lt_1procs_randread/FIO_crimson_8osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_2reactor_7at_8fio_lt_1procs_randread/FIO_crimson_8osd_2reactor_7at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 14 & \addpic{crimson_8osd_2reactor_14at_8fio_lt_1procs_randread/FIO_crimson_8osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_2reactor_14at_8fio_lt_1procs_randread/FIO_crimson_8osd_2reactor_14at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
 21 & \addpic{crimson_8osd_2reactor_21at_8fio_lt_1procs_randread/FIO_crimson_8osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_cpu.png} & \addpic{crimson_8osd_2reactor_21at_8fio_lt_1procs_randread/FIO_crimson_8osd_2reactor_21at_8fio_lt_16job_16io_4k_randread_p0_top_mem.png}\\
@@ -265,14 +386,12 @@ Alien\\threads & CPU & Mem\\
 \caption{8 OSD, 2 Reactors, 4k Random read: FIO utilisation}
 \end{table}
 
-\section{4 Reactors}
 
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7\\
 14\\
 21\\
@@ -282,13 +401,11 @@ Alien\\threads & CPU & Mem\\
 \caption{8 OSD, 4 Reactors, 4k Random read: OSD utilisation}
 \end{table}
 
-
 \begin{table}\sffamily
 \begin{tabular}{l*2{C}@{}}
 \toprule
 Alien\\threads & CPU & Mem\\
 \midrule
-
 7\\
 14\\
 21\\

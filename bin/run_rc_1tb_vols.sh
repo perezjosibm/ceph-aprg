@@ -24,16 +24,16 @@ function du_images(){
 }
 
 #########################################
-for NUM_OSD in 1 3 5 8; do
-  for NUM_REACTORS in 1 2 4; do
-     for NUM_ALIEN_THREADS in 7 14 21; do
+for NUM_OSD in 1; do #  3 5 8
+  for NUM_REACTORS in 1; do #  2 4
+     for NUM_ALIEN_THREADS in 7; do #  14 21
 
-	echo "== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, $NUM_ALIEN_THREADS alien threads, fixed FIO 8 cores, huge vols, latency target =="
+	echo "== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, $NUM_ALIEN_THREADS alien threads, fixed FIO 8 cores, huge vols, response latency =="
 
   	echo "MDS=0 MON=1 OSD=$NUM_OSD MGR=1 ../src/vstart.sh --new -x --localhost --without-dashboard --bluestore --redirect-output --bluestore-devs ${BLUESTORE_DEVS} --crimson --crimson-smp $NUM_REACTORS --crimson-alien-num-threads $NUM_ALIEN_THREADS --no-restart"
   	MDS=0 MON=1 OSD=$NUM_OSD MGR=1 ../src/vstart.sh --new -x --localhost --without-dashboard --bluestore --redirect-output --bluestore-devs "${BLUESTORE_DEVS}" --crimson --crimson-smp $NUM_REACTORS --crimson-alien-num-threads $NUM_ALIEN_THREADS --no-restart
 
-  	test_name="crimson_${NUM_OSD}osd_${NUM_REACTORS}reactor_${NUM_ALIEN_THREADS}at_8fio_1tb_lt"
+  	test_name="crimson_${NUM_OSD}osd_${NUM_REACTORS}reactor_${NUM_ALIEN_THREADS}at_8fio_1tb_rc"
 	[ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
 	/root/bin/cephlogoff.sh 2>&1 > /dev/null
 	/root/bin/cephmkrbd.sh
