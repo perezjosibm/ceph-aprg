@@ -47,7 +47,7 @@ declare -a procs_order=( true false )
 
 declare -A osd_id
 declare -A fio_id
-fio_pids_acc="" # cummulative
+declare -a global_fio_id=()
 
 # The suffixes for the individual metric charts:
 declare -a workloads_order=( rr rw sr sw )
@@ -71,12 +71,13 @@ RESPONSE_CURVE=false
 LATENCY_TARGET=false
 POST_PROC=false
 PACK_DIR="/packages/"
+MAX_LATENCY=10 #in millisecs
 
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 
-while getopts 'ac:d:f:jklsrw:p:nt:g' option; do
+while getopts 'ac:d:f:jklrsrw:p:nt:g' option; do
   case "$option" in
     a) RUN_ALL=true
         ;;
@@ -221,15 +222,18 @@ fun_run_workload() {
         export TEST_NAME=${TEST_PREFIX}_${job}job_${io}io_${BLOCK_SIZE_KB}_${map[${WORKLOAD}]}_p${i};
         echo "== $(date) == ($io,$job): ${TEST_NAME} ==";
         echo fio_${TEST_NAME}.json >> ${OSD_TEST_LIST}
-	fio_name=${FIO_JOBS}${FIO_JOB_SPEC}${map[${WORKLOAD}]}.fio
+	      fio_name=${FIO_JOBS}${FIO_JOB_SPEC}${map[${WORKLOAD}]}.fio
 
         if [ "$RESPONSE_CURVE" = true ]; then
           log_name=${TEST_RESULT}
         else
           log_name=${TEST_NAME}
         fi
-        LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} taskset -ac ${FIO_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json --output-format=json 2> fio_${TEST_NAME}.err &
+        LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} \
+          taskset -ac ${FIO_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json \
+          --output-format=json 2> fio_${TEST_NAME}.err &
         fio_id["fio_${i}"]=$!
+        global_fio_id+=($!)
       done # loop NUM_PROCS
       sleep 30; # ramp up time
       # Prepare list of pid to monitor
@@ -244,7 +248,7 @@ fun_run_workload() {
       top_out_name=${TEST_NAME}
       echo "== Monitoring OSD: $osd_pids FIO: $fio_pids =="
       if [ "$RESPONSE_CURVE" = true ]; then
-        fio_pids_acc="$fio_pids_acc,$fio_pids"
+        #fio_pids_acc="$fio_pids_acc,$fio_pids"
         top_out_name=${TEST_RESULT}
       else
         echo "OSD: $osd_pids" > ${TOP_PID_LIST}
@@ -260,7 +264,8 @@ fun_run_workload() {
       # Exit the loops if the latency disperses too much from the median
       if [ "$RESPONSE_CURVE" = true ]; then
         mop=${mode[${WORKLOAD}]}
-        covar=$(jq ".jobs | .[] | .${mop}.clat_ns.stddev/.${mop}.clat_ns.mean < 0.5" fio_${TEST_NAME}.json)
+        covar=$(jq ".jobs | .[] | .${mop}.clat_ns.stddev/.${mop}.clat_ns.mean < 0.5 and \
+          .${mop}.clat_ns.mean < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
         if [ "$covar" != "true" ]; then
           echo "== Latency std dev too high, exiting loops =="
           break 2
@@ -272,18 +277,26 @@ fun_run_workload() {
   # Post processing:
   if [ "$RESPONSE_CURVE" = true ]; then
     echo "OSD: $osd_pids" > ${TOP_PID_LIST}
-    echo "FIO: $fio_pids_acc" >> ${TOP_PID_LIST}
-    printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids_acc" > ${TOP_PID_JSON}
-  fi
-  #  single top out file with OSD and FIO CPU util
-  for x in $(cat ${TOP_OUT_LIST}); do
-    # CPU avg, so we might add a condttion (or option) to select which
+    fio_pids=$( fun_join_by ',' ${global_fio_id[@]} )
+    echo "FIO: $fio_pids" >> ${TOP_PID_LIST}
+    printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
+   # CPU avg, so we might add a condttion (or option) to select which
     # When collecting data for response curves, produce charts for the cummulative pid list
-    if [ -f "$x" ]; then
-      /root/bin/parse-top.pl --config=$x --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} --pids=${TOP_PID_LIST} 2>&1 > /dev/null
-    # We always calculate the arithmetic avg, the perl script has got a new flag to indicate whether we skip producing individual charts
-    fi
-  done
+    /root/bin/parse-top.pl --config=${TEST_RESULT}_top.out --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+          --pids=${TOP_PID_JSON} 2>&1 > /dev/null
+  else
+    #  single top out file with OSD and FIO CPU util
+    for x in $(cat ${TOP_OUT_LIST}); do
+      # CPU avg, so we might add a condttion (or option) to select which
+      # When collecting data for response curves, produce charts for the cummulative pid list
+      if [ -f "$x" ]; then
+        /root/bin/parse-top.pl --config=$x --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+          --pids=${TOP_PID_JSON} 2>&1 > /dev/null
+                  # We always calculate the arithmetic avg, the perl script has got a new flag
+                  # to indicate whether we skip producing individual charts
+      fi
+    done
+  fi
   # Post processing: FIO .json
   if [ -f  ${OSD_TEST_LIST} ] && [ -f  ${OSD_CPU_AVG} ]; then
     # Filter out any FIO high latency error from the .json, otherwise the Python script bails out
@@ -295,11 +308,12 @@ fun_run_workload() {
 
   # Produce charts from the scripts .plot and .dat files generated
   for x in $(ls *.plot); do
-    gnuplot $x
+    gnuplot $x 2>&1 > /dev/null
   done
 
   # Generate single animated file from a timespan of FIO charts
-  # Need to traverse the suffix of the charts produced to know which ones we want to coalesce on a single animated .gif
+  # Need to traverse the suffix of the charts produced to know which ones we want to coalesce
+  # on a single animated .gif
 #  if [ "$RESPONSE_CURVE" = true ]; then
 #    echo "== This is a response curve run =="
 #    fun_coalesce_charts ${TEST_PREFIX} ${TEST_RESULT}
@@ -328,7 +342,9 @@ fun_run_workload() {
   # /root/tinytex/tools/texlive/bin/x86_64-linux/pdflatex -interaction=nonstopmode ${TEST_RESULT}.tex
   # Run it again to get the references, TOC, etc
   # Archiving:
-  zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out *_top.out *.json *.plot *.dat *.png *.gif ${TOP_OUT_LIST} osd*_threads.out ${TOP_PID_LIST} *.svg
+  zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out \
+    *_top.out *.json *.plot *.dat *.png *.gif ${TOP_OUT_LIST} \
+    osd*_threads.out ${TOP_PID_LIST} *.svg
   # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
   rm -f *.log
 }
@@ -396,7 +412,13 @@ fun_prep_anim_list() {
   cmd="ls ${PREFIX}*${POSTFIX}"
   echo "$cmd"
   eval $cmd | sort -n -t_ -k6 -k7 > lista
-  i=0; for x in $(cat lista); do echo $x; y=$(printf "%03d.png" $i ); mv $x ${OUT_DIR}/$y; echo $(( i++ )) >/dev/null; done
+  i=0;
+  for x in $(cat lista); do
+    echo $x;
+    y=$(printf "%03d.png" $i );
+    mv $x ${OUT_DIR}/$y;
+    echo $(( i++ )) >/dev/null;
+  done
 }
 
 #############################################################################################
@@ -433,13 +455,13 @@ fun_set_fio_job_spec
 
 if [ "$RUN_ALL" = true ]; then
   if [ "$SINGLE" = true ]; then
-  procs_order=( true )
+    procs_order=( true )
   fi
   for single_procs in ${procs_order[@]}; do
-  for wk in ${workloads_order[@]}; do
-    #fun_prime
-    fun_run_workload $wk $single_procs  $WITH_PERF $TEST_PREFIX $WORKLOAD
-  done
+    for wk in ${workloads_order[@]}; do
+      #fun_prime
+      fun_run_workload $wk $single_procs  $WITH_PERF $TEST_PREFIX $WORKLOAD
+    done
   done
 else
   fun_run_workload $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX

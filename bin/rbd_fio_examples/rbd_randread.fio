@@ -14,13 +14,12 @@ write_lat_log=${LOG_NAME}
 ioengine=rbd
 clientname=admin
 pool=rbd
-rbdname=${RBD_NAME}
 bs=4k
+rw=randread
 direct=1
 runtime=5m
 time_based
 group_reporting
-#new_group
 numjobs=${NUM_JOBS} # num concurrent clients/processes
 ramp_time=30s
 
@@ -33,7 +32,7 @@ thread=1
 #iodepth=128
 iodepth=${IO_DEPTH}
 
-[randread]
-rw=randread
+[fio_test_0]
+rbdname=${RBD_NAME}
 #loops=3
 max_latency=1s

@@ -252,11 +252,9 @@ sub insert_core_sample_hr {
     }
 }
 #=======================================================#
-# load the pids file, produce a hash:{name:pid_list}
-# Retuns a hashref with the list of pids per name (eg OSD, FIO)
-sub parse_pids_files {
-    die "Must provide pids file" unless ( defined $o{pids} and -f $o{pids});
-    die "Could not read file $o{pids}" unless(open($fh, "<", $o{pids} ));
+sub parse_pids_list {
+    my ($fname) = @_;
+    die "Could not read file ${fname}" unless(open($fh, "<", ${fname} ));
     my @lines = <$fh>;
     close $fh;
     die "Empty pids file" if ($#lines < 0); # no rows, empty file
@@ -279,6 +277,37 @@ sub parse_pids_files {
     }
     #print Dumper($pids_hr) . "\n";
     return $pids_hr;
+}
+
+#=======================================================#
+sub parse_pids_json {
+    my ($fname) = @_;
+    my $json = JSON::XS->new->utf8->pretty(1); #JSON->new;
+    my $data = {};
+    my $json_text = '';
+    {
+        die "Could not open file ${fname} for read" unless(open($fh, "+<:encoding(UTF-8)", ${fname}));
+        local $/;
+        $json_text = <$fh>;
+        $data = $json->decode($json_text);
+        close $fh;
+    }
+    print Dumper($data) . "\n";
+    return $data;
+}
+#=======================================================#
+# load the pids file, produce a hash:{name:pid_list}
+# Retuns a hashref with the list of pids per name (eg OSD, FIO)
+sub parse_pids_files {
+  die "Must provide pids file" unless ( defined $o{pids} and -f $o{pids});
+
+  if ( $o{pids}=~ qr/json/ )
+  {
+    return parse_pids_json($o{pids});
+  }
+  else{
+    return parse_pids_list($o{pids});
+  }
 }
 
 #=======================================================#

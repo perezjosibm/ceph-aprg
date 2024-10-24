@@ -457,6 +457,7 @@ def aggregate_proc_cpu_avg(avg, table, avg_cpu, proc):
     This function assumes that the avg .JSON file contains the OSD field
     """
     cpu_proc = {} # proc: {"mem": 0.0, "cpu": 0.0}}
+    num_entries=0
     #metrics = []
     if len(avg_cpu):
         print(f" avg_cpu list has: {len(avg_cpu)} items")
@@ -467,9 +468,11 @@ def aggregate_proc_cpu_avg(avg, table, avg_cpu, proc):
                 else:
                     for metric in cpu_item[proc]: # 'cpu', 'mem' from the OSD
                         cpu_proc[metric] += cpu_item[proc][metric]
+                        num_entries += 1
 
         for metric in cpu_proc:
-            cpu_proc[metric] /= len(avg_cpu)
+            if num_entries > 1:
+                cpu_proc[metric] /= num_entries 
             #metrics.append( f"{proc}_{metric}")
             # Aggregate the CPU values in the avg table
             mt = f"{proc}_{metric}"
@@ -532,11 +535,12 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
 
     wiki = (
         r"""{| class="wikitable"
-|-
-! colspan="7"  | """
+|- """ +
+        f"""
+ ! colspan=\"{len(table)}\"  | 
+        """
         + config.replace("_list", "")
         + """
-! colspan="2"  | OSD CPU%
 |-
 ! """
     )
