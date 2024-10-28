@@ -24,6 +24,7 @@ parse-top.pl -- parse the data from top to produce a gnuplot chart of CPU util
    --pids=<pids.out> : file containing the list of pids, in the form <NAME>:<pid_list , sep>
    --cpu=<[min-max]> : range of cpus to filter.
    --avg=<output.json>: output file of CPU avg to produce (cummulative if exists)
+   --num=<int> : number of samples to use for a period (default 30)
 
    Ensure your file got '.out' suffix.
 
@@ -45,9 +46,10 @@ $o{verbose} = 0;
 $o{sort} = "util";
 $o{timefmt} =  '"%Y-%m-%d %H:%M:%S"';
 $o{cpu_filter} = 0; # Do not filter by CPU
+$o{num_samples} = 30; # Default samples per period
 #$o{avg_summary} = 0; # Do not produce summary by CPU
 
-GetOptions ( \%o , 'config|c=s', 'cpu|u=s', 'avg|a=s', 'pids|p=s', 'help|?', 'verbose|v', 'nochart|n' )
+GetOptions ( \%o , 'config|c=s', 'cpu|u=s', 'avg|a=s', 'num|n=i', 'pids|p=s', 'help|?', 'verbose|v', 'nochart|n' )
   or pod2usage(
   -message  => "Invalid argument found\n",
   -verbose  => 99,
@@ -101,7 +103,7 @@ my @top_columns;
 
 # REgex for the latest toprc
 #my $CPU = qr/^\s+\d+(?#PPID)\s+\d+(?#PID)\s+\d+(?#Last CPU)\s+\d+(?# PR)\s+\d+(?# Ni)\s+(?# VIRT).*$/;
-my $CPU = qr/^\s+\d+(?#PPID)\s+\d+(?#PID)\s+.*$/;
+my $CPU = qr/^\s*\d+(?#PPID)\s+\d+(?#PID)\s+.*$/;
 # Update: changed the toprc to show columns PPID, and last processor the thread run
 #   PPID     PID  P  PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
 #      1   76922 28  20   0   19164  11264   9472 S   0.0   0.0   0:00.01 sshd
@@ -177,6 +179,25 @@ sub is_cpu_in_range {
 }
 
 #=======================================================#
+## Inserts regexes for the process group
+# TODO: deprecate this when the pids.json includes these regexes
+sub aggregate_regex_pids {
+    my ($pids_hr) = @_;
+
+    my $pg_regexes = {
+      "OSD" => qr/^(crimson-osd|alien-store-tp|bstore|log|cfin|rocksdb|syscall-0).*$/,
+      "FIO" =>  qr/^(fio|msgr-worker|io_context_pool|log|ceph_timer|safe_timer|taskfin_librbd|ms_dispatch).*$/, 
+    };
+    my $new_hr = {};
+    foreach my $pg (keys %$pids_hr)
+    {
+      $new_hr->{$pg}->{pids} = $pids_hr->{$pg}; 
+      $new_hr->{$pg}->{regex} = $pg_regexes->{$pg}; 
+    }
+    return $new_hr;
+}
+
+#=======================================================#
 ## Inserts the sample in a global table.
     # The table is organised as
     # (from the pids list, we have name:list)
@@ -195,9 +216,8 @@ sub is_cpu_in_range {
     # {command}->{thread_id}->{cpu_core}->[cpu_util]
     # I guess top provided the overall util regardless in which core the thread
     # is running when the sample was taken
-
 sub insert_sample_hr {
-    my ($href, $hr, $pids_hr) = @_;
+    my ($href, $hr, $pids_hr,$avg_process) = @_;
 
     # For each key in the $pids_hr (that is the process names, eg OSD, FIO)
     # if the sample PID or PPID is in the list of pids for that name, then insert the sample,
@@ -206,15 +226,18 @@ sub insert_sample_hr {
     foreach my $k (keys %$pids_hr)
     {
         #if (my ($matched) = grep $_ eq $hr->{pid} or $_ eq $hr->{ppid}, @{$pids_hr->{$k}})
-        my %_hash = map {$_ => 1} @{$pids_hr->{$k}};
-        #print Dumper(\%_hash) . "\n";
+        my %_hash = map {$_ => 1} @{$pids_hr->{$k}->{pids}};
+        #print "_hash: " .Dumper(\%_hash) . "\n";
         #print Dumper($hr) . "\n";
 
-        if (defined $_hash{$hr->{pid}} or defined $_hash{$hr->{ppid}})
+        # TODO: support regex for the thread's name (comm) so messenguers
+        # can be coalesced on a single entry
+        if ( ($hr->{comm} =~ /$pids_hr->{$k}->{regex}/) && 
+          (defined $_hash{$hr->{pid}} || defined $_hash{$hr->{ppid}}))
         {
             if (not defined $_hash{$hr->{ppid}})
             {
-                push  @{$pids_hr->{$k}}, $hr->{ppid};
+                push  @{$pids_hr->{$k}->{pids}}, $hr->{ppid};
             }
             foreach my $metric ('cpu', 'mem')
             {
@@ -225,6 +248,7 @@ sub insert_sample_hr {
                 else {
                     $href->{$k}->{$hr->{comm}}->{$metric} = [$hr->{$metric}];
                 }
+                $avg_process->{$k}->{$metric}->{total} += $hr->{$metric};
             }
         }
     }
@@ -292,7 +316,7 @@ sub parse_pids_json {
         $data = $json->decode($json_text);
         close $fh;
     }
-    print Dumper($data) . "\n";
+    print "pids: " . Dumper($data) . "\n";
     return $data;
 }
 #=======================================================#
@@ -311,10 +335,34 @@ sub parse_pids_files {
 }
 
 #=======================================================#
+# Update the avg_process_hr
+sub update_avg_process{
+  my ($pids_hr,$avg_process) = @_;
+
+  if (($num_samples % $o{num_samples}) == 0)
+  {
+    if($num_samples > 0)
+    {
+      foreach my $k (keys %$pids_hr)
+      {
+        foreach my $metric ('cpu', 'mem')
+        {
+          my $val = $avg_process->{$k}->{$metric}->{total} / $o{num_samples};
+          #push @{$avg_process->{$k}->{$metric}->{data}}, $val;
+          my $index = $avg_process->{$k}->{$metric}->{index};
+          $avg_process->{$k}->{$metric}->{data}->[$index] = $val;
+          $avg_process->{$k}->{$metric}->{index}++;
+          $avg_process->{$k}->{$metric}->{total} = 0.0;
+        }
+      }
+    }
+  }
+}
+#=======================================================#
 # load the file, get all lines in an array, (slurp?) then traverse each line to get the
 # COMMAND and %CPU entry in a hashref, then produce a gnuplot file
 sub parse_files {
-    my ($href,$pids_hr) = @_;
+    my ($href,$pids_hr,$avg_process_hr) = @_;
 
     die "Must provide config file" unless ( defined $o{config} and -f $o{config});
     die "Could not read file $o{config}" unless(open($fh, "<", $o{config} ));
@@ -324,27 +372,34 @@ sub parse_files {
 
     my $core_matches=0;
     my $cpu_matches=0;
+    #print "Before: " .Dumper($pids_hr)."\n";
+    $pids_hr = aggregate_regex_pids($pids_hr);
+    #print "After: " .Dumper($pids_hr) ."\n";
+
     foreach my $line (@lines)
     {
         if ($line =~ /$START/)
         {
             @top_columns = split /\s+/, $line unless scalar @top_columns;
             $num_samples++;
+            update_avg_process($pids_hr, $avg_process_hr);
         }
         elsif ($line =~ /$CPU/)
         {
-            my @tokens = split /\s+/, $line;
-            # keys are the comms, X-axis are the %cpu util
-            #insert_sample_hr({ comm => $tokens[12], tid=> $tokens[1], cpu=> $tokens[9]} );
-            #insert_sample_hr({ comm => $tokens[12], cpu=> $tokens[9], mem=> $tokens[10]} );
-            # New toprc config columns
-            insert_sample_hr($href, { pid=> $tokens[2],
-                ppid=> $tokens[1],
-                comm => $tokens[13],
-                cpu=> $tokens[10],
-                mem=> $tokens[11],
-                lastcpu=> $tokens[3]}, $pids_hr );
-            $cpu_matches++;
+          $line =~ s/^\s+//;
+          my @tokens = split /\s+/, $line;
+          # keys are the comms, X-axis are the %cpu util
+          #insert_sample_hr({ comm => $tokens[12], tid=> $tokens[1], cpu=> $tokens[9]} );
+          #insert_sample_hr({ comm => $tokens[12], cpu=> $tokens[9], mem=> $tokens[10]} );
+          # New toprc config columns
+          insert_sample_hr($href, {
+              ppid=> $tokens[0], 
+              pid=> $tokens[1],
+              cpu=> $tokens[9],
+              mem=> $tokens[10],
+              comm => $tokens[12],
+              lastcpu=> $tokens[2]}, $pids_hr,$avg_process_hr );
+          $cpu_matches++;
         }
         elsif ($line =~ /$THREADS/)
         {
@@ -383,9 +438,23 @@ sub parse_files {
     print "samples: $num_samples,  core samples: $num_core_samples,
         core matches: $core_matches, cpu_matches: $cpu_matches, lines: ". scalar @lines ."\n";
     print "top columns: " . join (',', @top_columns) . "\n";
-    print Dumper($href) . "\n";
+    #print Dumper($href) . "\n";
 }
 
+#=======================================================#
+# Init the avg_process according to process group:
+sub init_avg_process_grp{
+  my ($pids_hr,$avg_process) = @_;
+  foreach my $proc_grp (keys %$pids_hr)
+  {
+    foreach my $metric ('cpu', 'mem')
+    {
+      $avg_process->{$proc_grp}->{$metric}->{total} = 0.0;
+      $avg_process->{$proc_grp}->{$metric}->{index} = 0;
+      $avg_process->{$proc_grp}->{$metric}->{data} = [];
+    }
+  }
+}
 #=======================================================#
 # Generate the set of files: .dat. plot for the $metric (cpu )
 # arg metric is the metric (cpu, mem) 
@@ -403,18 +472,18 @@ sub generate_output {
 
     @comms = sort (keys %{$href}); # these are the commands -- thread names
     print "Total " . scalar(@comms) . " threads\n";
-    # Calculate the avg cpu util for the whole $pname process
 
-    $avg_process->{$pname}->{$metric} = 0.0;
+    #$avg_process->{$pname}->{$metric} = [ 0.0 ] x $step;
     # Calculate the avg cpu util for each comm, then take the top ten
     foreach my $comm (@comms)
     {
       if (defined $href->{$comm}->{$metric}) {
         $avg->{$comm} = sum(@{$href->{$comm}->{$metric}})/(scalar @{$href->{$comm}->{$metric}});
-        $avg_process->{$pname}->{$metric} += $avg->{$comm};
+        $avg_process->{$pname}->{$metric}->{total} += $avg->{$comm};
       }
     }
-    print "Total $pname $metric util= $avg_process\n";
+
+    print "Total $pname $metric util= $avg_process->{$pname}->{$metric}->{total}\n";
 
     @sorted = ( reverse sort {
             $avg->{$a} <=> $avg->{$b}
@@ -519,7 +588,7 @@ sub generate_cores_output {
         } keys %{$avg} );
     # This file CPU summary:
     $core_href_avg->{$key} = $avg;
-    print "cores sorted by $key:" . Dumper(\@sorted) . "\n";
+    #print "cores sorted by $key:" . Dumper(\@sorted) . "\n";
 
     if (defined $o{nochart})
     {
@@ -612,14 +681,16 @@ sub generate_cpu_avg {
         print $fh $output;
         close $fh;
     }
-    print "JSON:" . Dumper($output) . "\n";
+    #print "JSON:" . Dumper($output) . "\n";
+    print "avg" . Dumper($avg_process) . "\n";
 }
 
 #=======================================================#
 create_cpu_range();
-my $pids_hr = parse_pids_files();
-parse_files($ghref, $pids_hr );
+my $pids_hr = parse_pids_files();# normally FIO and OSD
 my $avg_process_hr = {};
+init_avg_process_grp($pids_hr, $avg_process_hr);
+parse_files($ghref, $pids_hr,$avg_process_hr);
 # Generate cpu and mem utilisation per thread:
     foreach my $k (keys %{$pids_hr})
     {

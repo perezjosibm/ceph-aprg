@@ -16,3 +16,7 @@ for (( i=0; i<$NUM_RBD_IMAGES; i++ )); do
   rbd du fio_test_${i}
 done
 bin/ceph status
+bin/ceph osd dump | grep 'replicated size'
+# Probably as part of monitoring after each test:
+#show a pool’s utilization statistics:
+rados df

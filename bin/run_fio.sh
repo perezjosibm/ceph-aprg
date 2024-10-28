@@ -30,8 +30,8 @@ declare -A mode=([rw]=write [rr]=read [sw]=write [sr]=read)
 # Typical values as observed during discovery sprint:
 # Single FIO instances: for sequential workloads, bs=64k fixed
 # Need to be valid ranges
-declare -A m_s_iodepth=( [hockey]="1 2 4 8 16 24 32 40 52 64"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 )
-declare -A m_s_numjobs=( [hockey]="1"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
+declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="1 2 4 8 16 24 32 40 52 64"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 )
+declare -A m_s_numjobs=( [ex8osd]="1 4 8" [hockey]="1"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
 #declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
 
 # Multiple FIO instances: results for 8 RBD images/vols
@@ -265,7 +265,7 @@ fun_run_workload() {
       if [ "$RESPONSE_CURVE" = true ]; then
         mop=${mode[${WORKLOAD}]}
         covar=$(jq ".jobs | .[] | .${mop}.clat_ns.stddev/.${mop}.clat_ns.mean < 0.5 and \
-          .${mop}.clat_ns.mean < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
+          .${mop}.clat_ns.mean/1000000 < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
         if [ "$covar" != "true" ]; then
           echo "== Latency std dev too high, exiting loops =="
           break 2

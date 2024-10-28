@@ -7,6 +7,7 @@ RUN dnf config-manager --set-enabled crb
 # Basic toolchain
 RUN yum group install "Development Tools" -y
 RUN yum install jq -y
+RUN yum install jc -y
 RUN yum install ccache -y
 RUN yum install iproute -y
 RUN yum install hostname -y
