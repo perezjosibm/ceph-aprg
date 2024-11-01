@@ -185,7 +185,7 @@ sub aggregate_regex_pids {
     my ($pids_hr) = @_;
 
     my $pg_regexes = {
-      "OSD" => qr/^(crimson-osd|alien-store-tp|bstore|log|cfin|rocksdb|syscall-0).*$/,
+      "OSD" => qr/^(crimson-osd|alien-store-tp|reactor|bstore|log|cfin|rocksdb|syscall-0).*$/,
       "FIO" =>  qr/^(fio|msgr-worker|io_context_pool|log|ceph_timer|safe_timer|taskfin_librbd|ms_dispatch).*$/, 
     };
     my $new_hr = {};

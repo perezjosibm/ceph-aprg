@@ -50,7 +50,7 @@ EXPOSE 41000/tcp
 RUN echo '[ -f "/ceph/build/vstart_environment.sh" ] && source /ceph/build/vstart_environment.sh' >>/etc/profile.d/ceph.sh
 RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >>/etc/sudoers
 # The following is needed when multiple reactors in Crimson are deployed
-RUN echo $(( 65536 * 9 )) > /proc/sys/fs/aio-max-nr
+RUN echo 2116992 > /proc/sys/fs/aio-max-nr
 RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >>/etc/sudoers
 ## Utilities: on c_packages volume
 RUN bash -exc '[ ! -d /packages ] && mkdir /packages'; cd /packages && git clone https://git.kernel.dk/fio.git \

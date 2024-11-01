@@ -208,9 +208,12 @@ fun_run_workload() {
   TOP_PID_LIST="${TEST_RESULT}_pid_list"
   TOP_PID_JSON="${TEST_RESULT}_pid.json"
   OSD_CPU_AVG="${TEST_RESULT}_cpu_avg.json"
+  DISK_STAT="${TEST_RESULT}_diskstat.json"
 
   for job in $RANGE_NUMJOBS; do
     for io in $RANGE_IODEPTH; do
+      # Take diskstats measurements before FIO instances
+      jc --pretty /proc/diskstats > ${DISK_STAT}
       for (( i=0; i<${NUM_PROCS}; i++ )); do
         #Bail out if no OSD process is running -- improve health check
         NUM_OSD=$(pgrep -c osd)
@@ -261,6 +264,9 @@ fun_run_workload() {
         fun_osd_dump ${TEST_NAME} 1 0 ${OSD_TYPE}
       fi
       wait;
+      # Measure the diskstats after the completion of FIO
+      jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT}
+
       # Exit the loops if the latency disperses too much from the median
       if [ "$RESPONSE_CURVE" = true ]; then
         mop=${mode[${WORKLOAD}]}
