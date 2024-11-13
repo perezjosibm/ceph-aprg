@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 class GnuplotTemplate(object):
     TIMEFORMAT = '"%Y-%m-%d %H:%M:%S"'
     NUMCOLS = 10 # by default, but should be set during construction
-    def __init__(self, name:str, proc_groups:dict, num_samples:int):
+    def __init__(self, name:str, proc_groups:dict, comm_sorted:dict, num_samples:int):
         """
         Constructor: expect a dictionary:
         keys: threads names, 
@@ -25,9 +25,11 @@ class GnuplotTemplate(object):
              'num_cpus': # number of CPU cores seen in last_cpu samples
         And we probably need a list of the top ten thread_id according to
         CPU and MEM util
+        Might use an existing logger from the calling script.
         """
         self.name = name
         self.proc_groups = proc_groups
+        self.comm_sorted = comm_sorted 
         self.num_samples = num_samples
 
     def __str__(self):
@@ -35,9 +37,11 @@ class GnuplotTemplate(object):
         return "Job({0})".format(self.name)
 
     def genPlot(self, metric:str, proc_name:str):
-        """Produce the output .plot and .dat for the process group proc_name with metric"""
+        """
+        Produce the output .plot and .dat for the process group proc_name with metric
+        """
         out_name = f"{proc_name}_{self.name}"
-        out_name = re.sub(r"[.]out",f"_{metric}", out_name)
+        out_name = re.sub(r"[.]json",f"_{metric}", out_name)
         dat_name = f"{out_name}.dat"
         png_name = f"{out_name}.png"
         plot_name = f"{out_name}.plot"
@@ -69,22 +73,24 @@ plot '{dat_name}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
 #plot '{dat_name}' using 1:2 title columnheader(2) w lp, for [i=3:{self.NUMCOLS}] '' using 1:i title columnheader(i) w lp
 """
         # generate dat file: order as described by self.proc_groups[pg]['sorted'][metric] 
-        print(f"== Proc grp: {proc_name}:{metric} ==")
-        comm_sorted = self.proc_groups[proc_name]['sorted'][metric]
+        print(f"== Proc grp: {proc_name}:{metric} num_samples: {self.num_samples}==")
+        #comm_sorted = self.proc_groups[proc_name]['sorted'][metric]
+        _comm_sorted = self.comm_sorted[proc_name][metric]
         #print( comm_sorted , sep=", " )
-        header ="#" +  ','.join(comm_sorted)
+        header ="#" +  ','.join(_comm_sorted)
         print(header)
         ds = {}
         # Either use num_samples or count for each comm
-        for comm in comm_sorted:
-            _data = self.proc_groups[proc_name]['threads'][comm][metric]['_data']
+        for comm in _comm_sorted:
+            _data = self.proc_groups[proc_name][comm][metric]
+            print(f"== {comm}: data len: {len(_data)} ==")
             ds[comm] = iter(_data)
 
         with open(dat_name,'w') as f:
             print(header, file=f)
             for i in range(self.num_samples):
                 row = []
-                for comm in comm_sorted:
+                for comm in _comm_sorted:
                     row.append(f"{next(ds[comm]):.2f}")
                     #catch exception if no data at that index: use a '-'
                 print( ','.join(row), file=f)

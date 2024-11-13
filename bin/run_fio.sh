@@ -15,6 +15,7 @@
 # ! -g : indicate whether to prost-process existing data --requires -p (only coalescing charts atm)
 # ! -n : only collect top measurements, no perf
 # ! -t : indicate the type of OSD (classic or crimson by default).
+# ! -x : skip the heuristic criteria for Response Latency Curves
 # !
 # ! Ex.: ./run_fio.sh -w sw
 # ! Ex.: ./run_fio.sh -a -s  -w sw # single workload
@@ -69,6 +70,7 @@ NUM_SAMPLES=30
 OSD_TYPE="crimson"
 RESPONSE_CURVE=false
 LATENCY_TARGET=false
+RC_SKIP_HEURISTIC=false
 POST_PROC=false
 PACK_DIR="/packages/"
 MAX_LATENCY=10 #in millisecs
@@ -77,7 +79,7 @@ usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 
-while getopts 'ac:d:f:jklrsrw:p:nt:g' option; do
+while getopts 'ac:d:f:jklrsrw:p:nt:gx' option; do
   case "$option" in
     a) RUN_ALL=true
         ;;
@@ -106,6 +108,8 @@ while getopts 'ac:d:f:jklrsrw:p:nt:g' option; do
     l) LATENCY_TARGET=true
         ;;
     g) POST_PROC=true
+        ;;
+    x) RC_SKIP_HEURISTIC=true
         ;;
     :) printf "missing argument for -%s\n" "$OPTARG" >&2
        usage >&2
@@ -268,7 +272,7 @@ fun_run_workload() {
       jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT}
 
       # Exit the loops if the latency disperses too much from the median
-      if [ "$RESPONSE_CURVE" = true ]; then
+      if [ "$RESPONSE_CURVE" = true ] && [ "$RC_SKIP_HEURISTIC" = false ]; then
         mop=${mode[${WORKLOAD}]}
         covar=$(jq ".jobs | .[] | .${mop}.clat_ns.stddev/.${mop}.clat_ns.mean < 0.5 and \
           .${mop}.clat_ns.mean/1000000 < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
@@ -288,7 +292,8 @@ fun_run_workload() {
     printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
    # CPU avg, so we might add a condttion (or option) to select which
     # When collecting data for response curves, produce charts for the cummulative pid list
-    /root/bin/parse-top.pl --config=${TEST_RESULT}_top.out --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+    cat ${TEST_RESULT}_top.out | jc --top --pretty > ${TEST_RESULT}_top.json
+    /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
           --pids=${TOP_PID_JSON} 2>&1 > /dev/null
   else
     #  single top out file with OSD and FIO CPU util
@@ -296,7 +301,7 @@ fun_run_workload() {
       # CPU avg, so we might add a condttion (or option) to select which
       # When collecting data for response curves, produce charts for the cummulative pid list
       if [ -f "$x" ]; then
-        /root/bin/parse-top.pl --config=$x --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+        /root/bin/parse-top.py --config=$x --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
           --pids=${TOP_PID_JSON} 2>&1 > /dev/null
                   # We always calculate the arithmetic avg, the perl script has got a new flag
                   # to indicate whether we skip producing individual charts
@@ -309,7 +314,7 @@ fun_run_workload() {
     for x in $(cat ${OSD_TEST_LIST}); do
       sed -i '/^fio:/d' $x
     done
-    python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_PREFIX} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
+    python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
   fi
 
   # Produce charts from the scripts .plot and .dat files generated
@@ -350,7 +355,7 @@ fun_run_workload() {
   # Archiving:
   zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out \
     *_top.out *.json *.plot *.dat *.png *.gif ${TOP_OUT_LIST} \
-    osd*_threads.out ${TOP_PID_LIST} *.svg
+    osd*_threads.out ${TOP_PID_LIST} *.svg *.tex
   # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
   rm -f *.log
 }

@@ -35,6 +35,8 @@ import math
 import functools
 from operator import add
 
+__author__ = 'Jose J Palacios-Perez'
+
 # Predefined dictionary of metrics (query paths on the ouput FIO .json) for typical workloads
 # Keys are metric names, vallues are the string path in the .json to seek
 # For MultiFIO JSON files, the jobname no neccessarily matches any of the predef_dict keys,
@@ -329,8 +331,9 @@ def gen_plot(config, data, list_subtables, title):
         }
     }
     # This dict might need to be extracted from the avg_cpu
+    # 8 osd cpu 9 OSD mem 10 FIO cpu 11 FIO mem
     pg_y2column = {
-        "OSD" : "9",
+        "OSD" : "8",
         "FIO": "10",
     }
     header = r"""
@@ -340,7 +343,7 @@ set datafile missing '-'
 set key outside horiz bottom center box noreverse noenhanced autotitle
 set grid
 set autoscale
-#set logscale
+set xtics border in scale 1,0.5 nomirror rotate by -45  autojustify
 # Hockey stick graph:
 set style function linespoints
 """
@@ -359,7 +362,7 @@ set style function linespoints
         #y2col = plot_dict[pk]["y2column"]
         template += f"""
 set ylabel "{ylabel}"
-set xlabel "IOPS"
+set xlabel "IOPS (thousand)"
 set y2label "{y2label}"
 set ytics nomirror
 set y2tics
@@ -373,15 +376,15 @@ set title "{_title}"
         # This list_subtables indicates how many sub-tables the .datfile will have
         # The stdev is the error column:5
         if len(list_subtables) > 0:
-            head = f"plot '{out_data}' index 0 using 2:{ycol}:5 t '{list_subtables[0]} q-depth' w yerr axes x1y1 lc 1"
-            head += f",\\\n '' index 0 using 2:{ycol} notitle w lp lc 1 axes x1y1"
+            head = f"plot '{out_data}' index 0 using ($2/1e3):{ycol}:5 t '{list_subtables[0]} q-depth' w yerr axes x1y1 lc 1"
+            head += f",\\\n '' index 0 using ($2/1e3):{ycol} notitle w lp lc 1 axes x1y1"
             for pg in pg_y2column:
                 y2col = pg_y2column[pg]
-                head += f",\\\n '' index 0 using 2:{y2col} w lp axes x1y2 t '{pg}'"
+                head += f",\\\n '' index 0 using ($2/1e3):{y2col} w lp axes x1y2 t '{pg}'"
             if len(list_subtables) > 1:
                 tail = ",\\\n".join(
                     [
-                        f"  '' index {i} using 2:{ycol} t '{list_subtables[i]} q-depth' w lp axes x1y1"
+                        f"  '' index {i} using ($2/1e3):{ycol} t '{list_subtables[i]} q-depth' w lp axes x1y1"
                         for i in range(1, len(list_subtables))
                     ]
                 )

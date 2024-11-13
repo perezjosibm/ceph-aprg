@@ -295,7 +295,6 @@ class TasksetEntry(object):
         """
         Traverses the _thread.out files given in the config
         """
-        os.chdir(self.directory)
         if self.mode == "single":
             out_files = [self.config]
         else:
@@ -346,7 +345,7 @@ def main(argv):
         "--config",
         type=str,
         required=True,
-        help="Input file: either containing a _list_ of _threads.out files, or a sinlge .out file",
+        help="Input file: either containing a _list_ of _threads.out files, or a single .out file",
         default=None,
     )
     parser.add_argument(
@@ -383,6 +382,7 @@ def main(argv):
 
     logger.debug(f"Got options: {options}")
 
+    os.chdir(options.directory)
     grid = TasksetEntry(options.config, options.directory,options.client)
     grid.run()
 

@@ -70,7 +70,7 @@ class CpuCoreAllocator(object):
 
     def get_ranges(self):
         """
-        Parse the .json
+        Parse the .json from lscpu
         (we might extend this to parse either version: normal or .json)
         """
         numa_re = re.compile(r"NUMA node\(s\):")
@@ -105,7 +105,7 @@ class CpuCoreAllocator(object):
         Produces a list of ranges to use for the ceph config set CLI.
         """
         control = []
-        cores_to_disable = []
+        cores_to_disable = set([])
         # Each OSD uses step cores from each socket
         num_sockets = self.socket_lst["num_sockets"]
         step = self.num_react // num_sockets
@@ -117,7 +117,8 @@ class CpuCoreAllocator(object):
         max_osd_num = total_phys_cores // self.num_react
 
         logger.debug(
-        f"total_phys_cores: {total_phys_cores}, max_osd_num: {max_osd_num}, step:{step}, rem:{reminder} ")
+            f"total_phys_cores: {total_phys_cores}, max_osd_num: {max_osd_num}, step:{step}, rem:{reminder} "
+        )
         assert max_osd_num > self.num_osd, "Not enough physical CPU cores"
 
         # Copy the original physical ranges to the control dict
@@ -131,28 +132,43 @@ class CpuCoreAllocator(object):
                 # If there is a reminder, use a round-robin technique so all
                 # sockets are candidate for it
                 _candidate = osd % num_sockets
-                if _candidate == socket["socket"]:
+                _so_id = socket["socket"]
+                if _candidate == _so_id:
                     _step += reminder
                 _end = socket["physical_start"] + _step
-                print(
-                    f"osd: {osd}, socket:{socket["socket"]}, _start:{_start}, _end:{_end - 1}"
+                # For cephadm, construct a dictionary for these intervals
+
+                logger.debug(
+                    f"osd: {osd}, socket:{_so_id}, _start:{_start}, _end:{_end - 1}"
                 )
-                if _end < socket["physical_end"]:
+                print(f"{_start}-{_end - 1}")
+                if _end <= socket["physical_end"]:
                     socket["physical_start"] = _end
                     # Produce the HT sibling list to disable
                     # Consider to use sets to avoid dupes
-                    cores_to_disable.append(
-                        list(range(
-                            socket["ht_sibling_start"],
-                            (socket["ht_sibling_start"] + _step -1),
-                        ))
-                    )
+                    plist = list(
+                            range(
+                                socket["ht_sibling_start"],
+                                (socket["ht_sibling_start"] + _step),
+                                1,
+                            )
+                        )
+
+                    logger.debug(f"plist: {plist}")
+                    pset = set(plist)
+                    #_to_disable = pset.union(cores_to_disable)
+                    cores_to_disable = pset.union(cores_to_disable)
+                    logger.debug(f"cores_to_disable: {list(cores_to_disable)}")
                     socket["ht_sibling_start"] += _step
                 else:
                     # bail out
-                    logger.debug(f"Out of range: {socket["physical_start"] + step }")
+                    _sops = socket["physical_start"] + step 
+                    logger.debug(f"Out of range: {_sops}")
                     break
-        print(f"Cores to disable: {cores_to_disable}")
+        _to_disable = sorted(list(cores_to_disable))
+        logger.debug(f"Cores to disable: {_to_disable}")
+        print(" ".join(map(str,_to_disable)))
+        #print(f"{_to_disable}")
 
     def print(self):
         """
