@@ -25,12 +25,13 @@
 # #### EXPERIMENTAL: USE UNDER YOUR OWN RISK #####
 #
 # Assoc array to use the single OSD table for (iodepth x num_jobs) ref values
-
+# WORKLOAD (first arg to fun_run_workload) is used as index for these:
 declare -A map=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread)
 declare -A mode=([rw]=write [rr]=read [sw]=write [sr]=read)
 # Typical values as observed during discovery sprint:
 # Single FIO instances: for sequential workloads, bs=64k fixed
 # Need to be valid ranges
+# Option -w (WORKLOAD) is used as index for these:
 declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="1 2 4 8 16 24 32 40 52 64"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 )
 declare -A m_s_numjobs=( [ex8osd]="1 4 8" [hockey]="1"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
 #declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
@@ -180,7 +181,7 @@ fun_set_fio_job_spec() {
 }
 
 #############################################################################################
-fun_run_workload() {
+fun_set_globals() {
   local WORKLOAD=$1
   local SINGLE=$2
   local WITH_PERF=$3
@@ -213,6 +214,18 @@ fun_run_workload() {
   TOP_PID_JSON="${TEST_RESULT}_pid.json"
   OSD_CPU_AVG="${TEST_RESULT}_cpu_avg.json"
   DISK_STAT="${TEST_RESULT}_diskstat.json"
+}
+
+#############################################################################################
+# Refactor this
+fun_run_workload() {
+  local WORKLOAD=$1
+  local SINGLE=$2
+  local WITH_PERF=$3
+  local TEST_PREFIX=$4
+  local WORKLOAD_NAME=$5 # used for respose curves
+
+  fun_set_globals $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX $WORKLOAD_NAME
 
   for job in $RANGE_NUMJOBS; do
     for io in $RANGE_IODEPTH; do
@@ -284,6 +297,7 @@ fun_run_workload() {
     done # loop IODEPTH
   done # loop NUM_JOBS 
 
+  # Refactor into two subroutines
   # Post processing:
   if [ "$RESPONSE_CURVE" = true ]; then
     echo "OSD: $osd_pids" > ${TOP_PID_LIST}
@@ -293,7 +307,7 @@ fun_run_workload() {
    # CPU avg, so we might add a condttion (or option) to select which
     # When collecting data for response curves, produce charts for the cummulative pid list
     cat ${TEST_RESULT}_top.out | jc --top --pretty > ${TEST_RESULT}_top.json
-    /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+    python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
           --pids=${TOP_PID_JSON} 2>&1 > /dev/null
   else
     #  single top out file with OSD and FIO CPU util
@@ -301,7 +315,7 @@ fun_run_workload() {
       # CPU avg, so we might add a condttion (or option) to select which
       # When collecting data for response curves, produce charts for the cummulative pid list
       if [ -f "$x" ]; then
-        /root/bin/parse-top.py --config=$x --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+        python3 /root/bin/parse-top.py --config=$x --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
           --pids=${TOP_PID_JSON} 2>&1 > /dev/null
                   # We always calculate the arithmetic avg, the perl script has got a new flag
                   # to indicate whether we skip producing individual charts
@@ -448,37 +462,81 @@ fun_animate() {
   cd ..
   rm -rf animate/
 }
+
+#############################################################################################
+# Traverse the dir for .zip archives, extract and examine for missing postprocess files
+fun_post_process_cold() {
+  local WORKLOAD=$1
+  local SINGLE=$2
+  local WITH_PERF=$3
+  local TEST_PREFIX=$4
+  local WORKLOAD_NAME=$5 # used for respose curves
+
+  fun_set_globals $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX $WORKLOAD_NAME
+  echo "== post-processing archives for ${WORKLOAD} in ${TEST_RESULT} =="
+  # find aarchives of such 
+  for x in ${TEST_RESULT}*.zip; do
+    echo "== Looking for ${x} =="
+    yn=${x/.zip/_d}
+    unzip -d $yn $x
+    cd $yn
+    # Test which (second degree files) need to be reconstructed
+    if [ ! -f "${OSD_CPU_AVG}" ] && [ -f "${TEST_RESULT}_top.json" ]; then
+      echo "== Recostructing ${OSD_CPU_AVG}:"
+      python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" \
+        --avg=${OSD_CPU_AVG} --pids=${TOP_PID_JSON} 2>&1 > /dev/null
+    fi
+    # Post processing: FIO .json
+    if [ -f  ${OSD_TEST_LIST} ] && [ -f  ${OSD_CPU_AVG} ]; then
+      # Filter out any FIO high latency error from the .json, otherwise the Python script bails out
+      for x in $(cat ${OSD_TEST_LIST}); do
+        sed -i '/^fio:/d' $x
+      done
+      python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} \
+          -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
+    fi
+
+    # Produce charts from the scripts .plot and .dat files generated
+    for x in $(ls *.plot); do
+      gnuplot $x 2>&1 > /dev/null
+    done
+    zip -9muqj ../${TEST_RESULT}.zip *
+    cd ..
+    rm -rf $yn
+  done
+}
 #############################################################################################
 # main:
 
-# Standalone option to post-process a set of results previously collected
-# might need to provide extra info for the end file name
-if [ "$POST_PROC" = true ]; then
-  fun_coalesce_charts $TEST_PREFIX
-  echo "$(date)== Done =="
-  exit
-fi
-
 [[ ! -d $RUN_DIR ]] && mkdir $RUN_DIR
 pushd $RUN_DIR
-fun_set_osd_pids $TEST_PREFIX
-fun_set_fio_job_spec
 
-if [ "$RUN_ALL" = true ]; then
-  if [ "$SINGLE" = true ]; then
-    procs_order=( true )
-  fi
-  for single_procs in ${procs_order[@]}; do
-    for wk in ${workloads_order[@]}; do
-      #fun_prime
-      fun_run_workload $wk $single_procs  $WITH_PERF $TEST_PREFIX $WORKLOAD
-    done
-  done
-else
-  fun_run_workload $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX
+# Standalone option to post-process a set of results previously collected
+# might need to provide extra info for the end file name
+if [ "$POST_PROC" = false ]; then
+  fun_set_osd_pids $TEST_PREFIX
+  fun_set_fio_job_spec
 fi
 
-echo ${osd_id[@]}
+  if [ "$RUN_ALL" = true ]; then
+    if [ "$SINGLE" = true ]; then
+      procs_order=( true )
+    fi
+    for single_procs in ${procs_order[@]}; do
+      for wk in ${workloads_order[@]}; do
+        #fun_prime
+        if [ "$POST_PROC" = true ]; then
+          fun_post_process_cold $wk $single_procs  $WITH_PERF $TEST_PREFIX $WORKLOAD 
+        else
+          fun_run_workload $wk $single_procs  $WITH_PERF $TEST_PREFIX $WORKLOAD
+        fi
+      done
+    done
+  else
+    fun_run_workload $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX
+  fi
+
+  echo ${osd_id[@]}
 
 echo "$(date)== Done =="
 popd

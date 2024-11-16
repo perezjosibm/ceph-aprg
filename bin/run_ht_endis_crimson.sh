@@ -22,6 +22,7 @@ NUM_CPU_SOCKETS=2
 # The following values consider already the CPU cores reserved for FIO
 MAX_NUM_PHYS_CPUS_PER_SOCKET=24
 MAX_NUM_HT_CPUS_PER_SOCKET=52
+NUMA_NODES_OUT=/tmp/numa_nodes.json
 
 declare -A test_table
 declare -A test_row
@@ -86,14 +87,15 @@ fun_set_osd_pids() {
   local NUM_OSD=$(pgrep -c osd)
   echo -e "${RED}== Constructing list of threads and affinity for ${TEST_PREFIX} ==${NC}"
   for (( i=0; i<$NUM_OSD; i++ )); do
+    [ -f "${RUN_DIR}/osd_${i}_${TEST_PREFIX}_threads.out" ] && rm -f ${RUN_DIR}/osd_${i}_${TEST_PREFIX}_threads.out
     iosd=/ceph/build/out/osd.${i}.pid
     echo -e "${RED}== " $(cat "$iosd") "==${NC}"
     if [ -f "$iosd" ]; then
       osd_id["osd.${i}"]=$(cat "$iosd")
       x=${osd_id["osd.${i}"]}
       # Count number, name and affinity of the OSD threads
-      ps -p $x -L -o pid,tid,comm,psr --no-headers >> _threads.out
-      taskset -acp $x >> _tasks.out
+      ps -p $x -L -o pid,tid,comm,psr --no-headers > _threads.out
+      taskset -acp $x > _tasks.out
       paste _threads.out _tasks.out >> "${RUN_DIR}/osd_${i}_${TEST_PREFIX}_threads.out"
       rm -f  _threads.out _tasks.out
       echo "osd_${i}_${TEST_PREFIX}_threads.out" >>  "${RUN_DIR}/${TEST_PREFIX}_threads_list"
@@ -110,7 +112,8 @@ fun_validate_set() {
   # From the _threads.out files: parse them into .json (might be as part of the prev step?)
   # produce a dict which keys are the cpu uid (numeric), values is a list of threads-types
   # take longest string to define the cell width, and produce an ascii grid
-  python3 /root/bin/tasksetcpu.py -c $TEST_NAME -d ${RUN_DIR}
+  [ ! -f "${NUMA_NODES_OUT}" ] && lscpu --json > ${NUMA_NODES_OUT}
+  python3 /root/bin/tasksetcpu.py -c $TEST_NAME -u ${NUMA_NODES_OUT} -d ${RUN_DIR}
 }
 
 #############################################################################################
@@ -137,7 +140,8 @@ fun_run_fio(){
   /root/bin/cephmkrbd.sh
   #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
   RBD_NAME=fio_test_0 fio ${FIO_JOBS}rbd_prefill.fio && rbd du fio_test_0 && \
-    /root/bin/run_fio.sh -s -w hockey -r -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n -k -x # w/o osd dump_metrics
+    /root/bin/run_fio.sh -s -w hockey -r -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n -k -x
+      # w/o osd dump_metrics, x: skip response curves stop heuristic
     #/root/bin/run_fio.sh -s -l -a -c "0-111" -f $FIO_CPU_CORES -p "$test_name" -n -k  # w/o osd dump_metrics
 
 }
