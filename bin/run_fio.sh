@@ -16,6 +16,7 @@
 # ! -n : only collect top measurements, no perf
 # ! -t : indicate the type of OSD (classic or crimson by default).
 # ! -x : skip the heuristic criteria for Response Latency Curves
+# ! -z : use AIO for FIO (no Ceph cluster)
 # !
 # ! Ex.: ./run_fio.sh -w sw
 # ! Ex.: ./run_fio.sh -a -s  -w sw # single workload
@@ -51,9 +52,6 @@ declare -A osd_id
 declare -A fio_id
 declare -a global_fio_id=()
 
-# The suffixes for the individual metric charts:
-declare -a workloads_order=( rr rw sr sw )
-
 # Default values that can be changed via arg options
 FIO_JOBS=/root/bin/rbd_fio_examples/
 FIO_CORES="0-31" # unrestricted
@@ -80,7 +78,7 @@ usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 
-while getopts 'ac:d:f:jklrsrw:p:nt:gx' option; do
+while getopts 'ac:d:f:jklrsrw:p:nt:gxz' option; do
   case "$option" in
     a) RUN_ALL=true
         ;;
@@ -111,6 +109,8 @@ while getopts 'ac:d:f:jklrsrw:p:nt:gx' option; do
     g) POST_PROC=true
         ;;
     x) RC_SKIP_HEURISTIC=true
+        ;;
+    z) FIO_JOB_SPEC="aio_"
         ;;
     :) printf "missing argument for -%s\n" "$OPTARG" >&2
        usage >&2
@@ -155,14 +155,15 @@ fun_osd_dump() {
   local NUM_SAMPLES=$2
   local SLEEP_SECS=$3
   local OSD_TYPE=$4
+  local LABEL=$5
 
   #Take a sample each 5 secs, 30 samples in total
   for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
     for oid in ${!osd_id[@]}; do
       if [ "${OSD_TYPE}" == "crimson" ]; then
-        /ceph/build/bin/ceph tell ${oid} dump_metrics >> ${oid}_${TEST_NAME}_dump.json
+        /ceph/build/bin/ceph tell ${oid} dump_metrics reactor_utilization >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
       else
-        /ceph/build/bin/ceph daemon -c /ceph/build/ceph.conf ${oid} perf dump >> ${oid}_${TEST_NAME}_dump.json
+        /ceph/build/bin/ceph daemon -c /ceph/build/ceph.conf ${oid} perf dump >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
       fi
     done
     sleep ${SLEEP_SECS};
@@ -231,12 +232,18 @@ fun_run_workload() {
     for io in $RANGE_IODEPTH; do
       # Take diskstats measurements before FIO instances
       jc --pretty /proc/diskstats > ${DISK_STAT}
+      if [ "$SKIP_OSD_MON" = false ]; then
+        fun_osd_dump ${TEST_NAME} 1 1 ${OSD_TYPE} "before"
+      fi
+
       for (( i=0; i<${NUM_PROCS}; i++ )); do
-        #Bail out if no OSD process is running -- improve health check
-        NUM_OSD=$(pgrep -c osd)
-        if [[ $NUM_OSD -le 0 ]]; then
-          echo " ERROR == no OSD process running .. bailing out"
-          exit 1;
+        if [ "$SKIP_OSD_MON" = false ]; then
+          #Bail out if no OSD process is running -- improve health check
+          NUM_OSD=$(pgrep -c osd)
+          if [[ $NUM_OSD -le 0 ]]; then
+            echo " ERROR == no OSD process running .. bailing out"
+            exit 1;
+          fi
         fi
 
         export TEST_NAME=${TEST_PREFIX}_${job}job_${io}io_${BLOCK_SIZE_KB}_${map[${WORKLOAD}]}_p${i};
@@ -256,11 +263,14 @@ fun_run_workload() {
         global_fio_id+=($!)
       done # loop NUM_PROCS
       sleep 30; # ramp up time
-      # Prepare list of pid to monitor
-      osd_pids=$( fun_join_by ',' ${osd_id[@]} )
-      if [ "$WITH_PERF" = true ]; then
-        echo "== $(date) == Profiling $osd_pids =="
-        fun_perf "$osd_pids" ${TEST_NAME}
+      
+      if [ "$SKIP_OSD_MON" = false ]; then
+        # Prepare list of pid to monitor
+        osd_pids=$( fun_join_by ',' ${osd_id[@]} )
+        if [ "$WITH_PERF" = true ]; then
+          echo "== $(date) == Profiling $osd_pids =="
+          fun_perf "$osd_pids" ${TEST_NAME}
+        fi
       fi
 
       # We use this list of pid to extract the pid corresponding CPU util from the top profile
@@ -275,12 +285,13 @@ fun_run_workload() {
         echo "FIO: $fio_pids" >> ${TOP_PID_LIST}
         printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
        fi
-      fun_measure "${osd_pids},${fio_pids}" ${top_out_name} ${TOP_OUT_LIST} &
+      all_pids=$( fun_join_by ',' ${osd_id[@]}  ${fio_id[@]} )
+      fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
 
-      if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump ${TEST_NAME} 1 0 ${OSD_TYPE}
-      fi
       wait;
+      if [ "$SKIP_OSD_MON" = false ]; then
+        fun_osd_dump ${TEST_NAME} 1 1 ${OSD_TYPE} "after"
+      fi
       # Measure the diskstats after the completion of FIO
       jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT}
 

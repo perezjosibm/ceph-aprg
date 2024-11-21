@@ -246,18 +246,18 @@ fun_run_bal_vs_default_tests() {
 
   declare -A bal_ops_table
   bal_ops_table["default"]=""
-  bal_ops_table["bal_osd"]=" --crimson-balance-cpu"
-  #bal_ops_table["bal_socket"]="--crimson-distrib-cpu"
+  bal_ops_table["bal_osd"]=" --crimson-balance-cpu osd"
+  bal_ops_table["bal_socket"]="--crimson-balance-cpu socket"
 
   for KEY in "${!bal_ops_table[@]}"; do
     for NUM_OSD in 5 8; do
       for NUM_REACTORS in 3 4 5; do #1
 
-      #echo "== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, response latency=="   
+      #echo "== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, response latency=="
       echo -e "${RED}== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, response latency==${NC}"
 
-      cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh --new -x --localhost --without-dashboard --bluestore --redirect-output --cyanstore --crimson --crimson-smp ${NUM_REACTORS} --no-restart ${bal_ops_table[${KEY}]}"
-      #echo "${cmd[@]}" 
+      cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh --new -x --localhost --without-dashboard --redirect-output --cyanstore --crimson --crimson-smp ${NUM_REACTORS} --no-restart ${bal_ops_table[${KEY}]}"
+      #echo "${cmd[@]}"
       echo "${cmd}"  | tee >> ${RUN_DIR}/cpu_distro.log
       test_name="cyan_${NUM_OSD}osd_${NUM_REACTORS}reactor_8fio_${KEY}_rc"
       echo $test_name
@@ -272,12 +272,58 @@ fun_run_bal_vs_default_tests() {
   done
 done
 }
+
+#############################################################################################
+# Useful when the cluster was created manually:
+fun_run_fio_lt(){
+  local TEST_NAME=$1
+
+  [ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
+  /root/bin/cephlogoff.sh 2>&1 > /dev/null
+  # Preliminary: simply collect the threads from OSD to verify its as expected
+  /root/bin/cephmkrbd.sh
+  #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
+  RBD_NAME=fio_test_0 fio ${FIO_JOBS}rbd_prefill.fio && rbd du fio_test_0 && \
+    /root/bin/run_fio.sh -s -l -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n
+}
+
+#########################################
+# Run balanced (osd|socket) vs default CPU core/reactor distribution for cyanstore -- latency target with profiling
+fun_run_cmp_lt_tests() {
+
+  declare -A bal_ops_table
+  bal_ops_table["default"]=""
+  bal_ops_table["bal_osd"]=" --crimson-balance-cpu osd"
+  bal_ops_table["bal_socket"]="--crimson-balance-cpu socket"
+
+  for KEY in "${!bal_ops_table[@]}"; do
+    for NUM_OSD in 8; do
+      for NUM_REACTORS in 4 5; do
+
+      echo -e "${RED}== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, latency target ==${NC}"
+
+      cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh --new -x --localhost --without-dashboard --redirect-output --cyanstore --crimson --crimson-smp ${NUM_REACTORS} --no-restart ${bal_ops_table[${KEY}]}"
+      test_name="cyan_${NUM_OSD}osd_${NUM_REACTORS}reactor_8fio_${KEY}_lt"
+      echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
+      echo $test_name
+      eval "$cmd" >> ${RUN_DIR}/${test_name}_cpu_distro.log
+      # TODO: deal with exceptions
+      sleep 20 # wait until all OSD online, pgrep?
+      fun_show_grid $test_name
+      fun_run_fio_lt $test_name
+      /ceph/src/stop.sh --crimson
+      sleep 60
+    done
+  done
+done
+}
+
 #########################################
 # Main:
 #
 cd /ceph/build/
 
-while getopts 'ats:r:' option; do
+while getopts 'ats:r:l' option; do
   case "$option" in
     a) fun_show_all_tests
        exit
@@ -289,6 +335,9 @@ while getopts 'ats:r:' option; do
        exit
         ;;
     t) fun_run_bal_vs_default_tests
+       exit
+        ;;
+    l) fun_run_cmp_lt_tests
        exit
         ;;
     :) printf "missing argument for -%s\n" "$OPTARG" >&2

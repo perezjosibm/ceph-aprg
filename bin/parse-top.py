@@ -1,9 +1,18 @@
 #!/usr/bin/python
 """
-This script expect as input _top.json file name as argument, and _pid.json,
-and a _cpu_avg.json
-calculates the avg for each sample size (normally 30 items), producing a gnuplot
-.plot and dat for the whole period
+This script extracts average utilisation (CPU and MEM) from a list of process id (PIDs) from the .json output
+from the Linux command top. Produces a gnuplot script and corresponding .dat
+
+Arguments are:
+- (input) a _top.json file name, 
+- (input) a _pid.json file name,
+- (input/output) and a _cpu_avg.json file name, average over a range (typically for Response latency curves).
+
+Example of usage:
+    cat ${TEST_RESULT}_top.out | jc --top --pretty > ${TEST_RESULT}_top.json
+    python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+          --pids=${TOP_PID_JSON} 2>&1 > /dev/null
+
 """
 
 import argparse
@@ -15,8 +24,6 @@ import json
 import tempfile
 from pprint import pformat
 
-# import pprint
-# from json import JSONEncoder
 from gnuplot_plate import GnuplotTemplate
 
 __author__ = "Jose J Palacios-Perez"
@@ -41,7 +48,10 @@ class TopEntry(object):
     """
     Filter the .json to a dictionary with keys the threads command names, and values
     array of avg measurement samples (normally 30),
-    produce a gnuplot and .json
+    produce as output a gnuplot (script an d.dat files) and .json
+
+    The following is an example of the structure of the input .json:
+
     cat _top.out | python3 ~/Work/cephdev/jc/jc --top --pretty > _top.json
     [
     {
@@ -77,17 +87,19 @@ class TopEntry(object):
       },
 
     "pid" and "parent_pid" are used to filter those processes specified in the _pid.json
-    Only interested in the following measurements:
+    We are only interested in the following measurements:
     "percent_cpu" "percent_mem"
     """
 
     # Define some regex for threads that can be agglutinated
     # "control" dict, the proc_groups should be containing the _data to plot
+    # These are intended for Ceph and Crimson OSD, so you might need to extend for your own
+    # needs.
     PROC_INFO = {
         "OSD": {
             "tname": re.compile(
                 r"^(crimson-osd|alien-store-tp|reactor|bstore|log|cfin|rocksdb|syscall-0).*$"
-                #re.DEBUG,
+                # re.DEBUG,
             ),
             "regex": {
                 "reactor": re.compile(r"reactor-\d+"),
@@ -120,8 +132,8 @@ class TopEntry(object):
     def __init__(self, options):
         """
         This class expects the required options
-        Filters the .json into a dict: keys are thread names (command) and values arrays of
-        metrics (cpu/mem), coalesced avg every DEFAULT_NUM_SAMPLES which amounts to a single data point
+        Filters the .json into a dict: keys are thread names (commands) and values are arrays of
+        metrics (cpu/mem), coalesced into an avg every DEFAULT_NUM_SAMPLES, which amounts to a single data point.
         """
         self.options = options
         self.measurements = [
@@ -166,12 +178,11 @@ class TopEntry(object):
         b = pdict["pids"]  # already a set set(pdict['pids'])
         intersect = list(a & b)
         return pdict["tname"].search(p["command"]) and intersect
-        # self.PROC_INFO[pg]["tname"].search(p["command"]) and intersect)
 
     def create_cpu_range(self):
         """
-        Create the corresponding CPU range of interest
-        At the moment ignored since jc does not support the CPU core view
+        Create the corresponding CPU range of interest.
+        At the moment ignored since jc does not support the CPU core view yet (PR in progress)
         """
         regex = self.CPU_RANGE["regex"]
         m = regex.search(self.options.cpu)
@@ -193,14 +204,12 @@ class TopEntry(object):
         """
         Update the avg_cpu array
         """
-        if ((num_samples+1) % DEFAULT_NUM_SAMPLES) == 0:
+        if ((num_samples + 1) % DEFAULT_NUM_SAMPLES) == 0:
             if num_samples > 0:
                 for pg in self.PROC_INFO:  # proc_groups:
                     for m in self.METRICS:
                         avg_d = self.avg_cpu[pg][m]
                         val = avg_d["total"] / DEFAULT_NUM_SAMPLES
-                        # index = avg_d["index"]
-                        # avg_d["data"][index] = val
                         avg_d["data"].append(val)
                         avg_d["index"] += 1  # prob redundant
                         avg_d["total"] = 0.0
@@ -212,8 +221,8 @@ class TopEntry(object):
         pdict = self.proc_groups[pg]
         for p in procs:
             if self._is_p_in_pgroup(pg, p):
-                # find the corresp thread name to insert this sample, it can be "pure"
-                # or in a group, in which case needs to be agglutinated
+                # Find the corresp thread name to insert this sample, it can be "pure"
+                # or in a group, in which case it needs to be agglutinated
                 pname = self._get_pname(pg, p)
                 if pname not in pdict:
                     pdict.update(
@@ -221,14 +230,12 @@ class TopEntry(object):
                             pname: {
                                 "cpu": [0.0] * self.num_samples,
                                 "mem": [0.0] * self.num_samples,
-                                # "cpu": [p["percent_cpu"]],
-                                # "mem": [p["percent_mem"]],
                             }
                         }
                     )
                     self.update_pids(pg, p)
                 for m in self.METRICS:
-                    # remember: agglutinate up to num samples
+                    # Agglutinate up to num samples
                     pdict[pname][m][index] += p[f"percent_{m}"]
                     self.avg_cpu[pg][m]["total"] += p[f"percent_{m}"]
 
@@ -242,12 +249,11 @@ class TopEntry(object):
         for _i, item in enumerate(samples):
             self.update_avg(_i)
             procs = item["processes"]  # list of dicts jobs
-            # filter those PIDs we are interested
+            # Filter those PIDs we are interested
             for pg in self.PROC_INFO:
                 self.aggregate_proc(_i, pg, procs)
 
         logger.info(f"Parsed {self.num_samples} entries from {self.options.config}")
-        # logger.debug(f"proc_groups: {json.dumps(self.proc_groups, indent=4)}")
         logger.debug(f"avg_cpu: {json.dumps(self.avg_cpu, indent=4)}")
 
     def load_json(self, json_fname):
@@ -257,13 +263,12 @@ class TopEntry(object):
         """
         try:
             with open(json_fname, "r") as json_data:
-                # check for empty file
+                # Check for empty file
                 f_info = os.fstat(json_data.fileno())
                 if f_info.st_size == 0:
                     logger.error(f"JSON input file {json_fname} is empty")
                     # bail out
                     sys.exit(1)
-                # parse the JSON: list of dicts with keys device
                 return json.load(json_data)
         except IOError as e:
             raise argparse.ArgumentTypeError(str(e))
@@ -287,7 +292,6 @@ class TopEntry(object):
         for pg in pids_list:
             if pg in self.PROC_INFO:
                 self.PROC_INFO[pg]["pids"] = set(pids_list[pg])
-        # logger.debug(f"JSON pid loaded: {json.dumps(self.PROC_INFO, indent=4)}")
         logger.debug(f"JSON pid loaded: {pformat(self.PROC_INFO)}")
 
     def get_job_stats(self, pg: str, metric: str):
@@ -309,7 +313,6 @@ class TopEntry(object):
             else:
                 if metric not in pg_control[pname]:
                     pg_control[pname].update({metric: {}})
-            # logger.debug(f"pg_control: {json.dumps(pg_control, indent=4)}")
             pg_control[pname][metric].update(
                 {"avg": avg_metric, "min": min(_data), "max": max(_data)}
             )
@@ -322,7 +325,7 @@ class TopEntry(object):
         pg_control = self.PROC_INFO[pg]["threads"]
         for comm, job in pg_control.items():
             d[comm] = job[metric]["avg"]
-        # dsorted = {k: v for k, v in sorted(d.items(), key=lambda item: item[1])}
+        # Alt: dsorted = {k: v for k, v in sorted(d.items(), key=lambda item: item[1])}
         self.PROC_INFO[pg]["sorted"][metric] = sorted(d, key=d.get, reverse=True)
 
     def get_top_procs_util(self):
@@ -377,8 +380,6 @@ class TopEntry(object):
         # Check whether the flag to skip plot gneration is on -- atm ignored
         self.gen_plots()
         self.save_json(self.options.avg, [self.avg_cpu])
-        #json_out = re.sub(r"[.]out$", r".json", self.options.config)
-        #self.save_json(json_out, self.proc_groups)
 
 
 def main(argv):
@@ -388,7 +389,7 @@ def main(argv):
     # cat _top.out | jc --pretty --top  > _top.json
     # Use that to produce the gnuplot charts:
     # parse-top.py -c _top.json -p _pids.json -u "0-111" -a _avg.json 
-    # Use the _avg.json to combine in a table:
+    # Use the _avg.json to combine in a FIO results table:
     # fio-parse-jsons.py -c test_list -t test_title -a _avg.json 
 
     """
@@ -426,7 +427,7 @@ def main(argv):
         "--avg",
         type=str,
         required=False,
-        help=".json output file of CPU avg to produce (cummulative if exists)",
+        help=".json output file of CPU avg to produce (cummulative if it already exists)",
         default="",
     )
     parser.add_argument(
@@ -438,14 +439,6 @@ def main(argv):
         default=DEFAULT_NUM_SAMPLES,
     )
     parser.add_argument(
-        "-x",
-        "--nochart",
-        action="store_true",
-        help="Indicate not to chart the data",
-        default=False,
-    )
-
-    parser.add_argument(
         "-d", "--directory", type=str, help="Directory to examine", default="./"
     )
     parser.add_argument(
@@ -456,7 +449,6 @@ def main(argv):
         default=False,
     )
 
-    # parser.set_defaults(numosd=1)
     options = parser.parse_args(argv)
 
     if options.verbose:
@@ -466,19 +458,10 @@ def main(argv):
 
     with tempfile.NamedTemporaryFile(dir="/tmp", delete=False) as tmpfile:
         logging.basicConfig(filename=tmpfile.name, encoding="utf-8", level=logLevel)
-        # print(f"logname: {tmpfile.name}")
 
     logger.debug(f"Got options: {options}")
 
     top_meter = TopEntry(options)
-    #        {
-    #            "config": options.config,
-    #            "pids": options.pids,
-    #            "cpu": options.cpu,
-    #            "avg": options.avg,
-    #            "num": options.num,
-    #            "directory": options.directory,
-    #        }
     top_meter.run()
 
 

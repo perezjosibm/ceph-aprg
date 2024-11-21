@@ -29,6 +29,7 @@ RUN yum install chrony -y
 RUN yum install irqbalance -y
 RUN yum install smartmontools -y
 RUN yum install logrotate -y
+RUN yum install lnav -y
 RUN yum install perf -y
 # Extra packages needed to run cbt
 RUN yum install python3-lxml -y

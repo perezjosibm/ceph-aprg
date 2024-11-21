@@ -6,14 +6,14 @@
 # Input parameters:
 #
 # -c <file_name>- a file name containing a list of JSONs FIO output
-#  result files, each following the naming convention:
+#  result files, each following the (workload) naming convention:
 #  <prefix>_\d+job_d+io_<suffix>
 #
 # -t <title> - a string describing the Title for the chart, eg.
 # 'Crimson 4k Random Write (Single 200GB OSD)'
 #
 # -a <file_name> - a JSON filename with the CPU average list, normally
-# produced by the parse-top.pl script.
+# produced by the parse-top.py script.
 #
 # -d <dir> - work directory
 #
@@ -140,7 +140,7 @@ def process_fio_item(k, next_node_list):
     json files for the same timestamp and then divide by total IOPs to get
     an average latency
     """
-    #    match k: # Python version on the SV1 node does not support 'match'
+    #    match k: # Python version on node does not support 'match'
     #    case 'iops' | 'usr_cpu' | 'sys_cpu':
     if re.search("iops|usr_cpu|sys_cpu|iodepth|total_ios", k):
         return next_node_list[0]
@@ -238,14 +238,12 @@ def get_jobs_type(job, jobname: str):
     FIO job files are follow the convention of jobtype being the
     global "rw" attribute.
     """
-    #jobname = str(job["jobname"])
     if jobname in predef_dict:
         # this gives the paths to query for the metrics
         query_dict = predef_dict[jobname]
     else:
         jobname = job["job options"]["rw"]
         query_dict = predef_dict[jobname]
-        #result_dict["jobname"] = jobname
     return query_dict 
 
 
@@ -261,7 +259,6 @@ def process_fio_json_file(json_file, json_tree_path):
         if f_info.st_size == 0:
             print(f"JSON input file {json_file} is empty")
             return result_dict
-        # parse the JSON object
         node = json.load(json_data)
         # Extract the json timestamp: useful for matching same workloads from
         # different FIO processes
@@ -294,6 +291,8 @@ def process_fio_json_file(json_file, json_tree_path):
 def traverse_files(sdir, config, json_tree_path):
     """
     Traverses the JSON files given in the config
+    Returns a dictionary whose keys are the input .json file names, values
+    are the (sub)dictionary of the metrics collected from the input .json file
     """
     os.chdir(sdir)
     try:
@@ -314,7 +313,7 @@ def traverse_files(sdir, config, json_tree_path):
     return dict_new
 
 
-def gen_plot(config, data, list_subtables, title):
+def gen_plot(config, data, list_subtables, title, header_keys ):
     """
     Generate a gnuplot script and .dat files -- for response
     latency curves, it charts Throughput/latency against CPU util
@@ -325,17 +324,21 @@ def gen_plot(config, data, list_subtables, title):
         # the .dat file is the same for the different charts
         "iops_vs_lat_vs_cpu": {
             "ylabel": "Latency (ms)",
-            "ycolumn": "4",
+            "ycolumn": "clat_ms",
             "y2label": "CPU",
-            "y2column": "9",
+            "y2column": "OSD_cpu",
         }
     }
-    # This dict might need to be extracted from the avg_cpu
-    # 8 osd cpu 9 OSD mem 10 FIO cpu 11 FIO mem
     pg_y2column = {
-        "OSD" : "8",
-        "FIO": "10",
+        'OSD_cpu': 8,
+        #'OSD_mem': 9,
+        'FIO_cpu': 10,	
+        #'FIO_mem': 11, 
     }
+    # Use the header_keys to ensure we refer to the correct column number
+    for k in pg_y2column.keys():
+        pg_y2column[k]=str(header_keys[k])
+
     header = r"""
 set terminal pngcairo size 650,420 enhanced font 'Verdana,10'
 set key box left Left noreverse title 'Iodepth'
@@ -357,9 +360,8 @@ set style function linespoints
     for pk in plot_dict.keys():
         out_chart = config.replace("list", pk + ".png")
         ylabel = plot_dict[pk]["ylabel"]
-        ycol = plot_dict[pk]["ycolumn"]
+        ycol = str(header_keys[plot_dict[pk]["ycolumn"]])
         y2label = plot_dict[pk]["y2label"]
-        #y2col = plot_dict[pk]["y2column"]
         template += f"""
 set ylabel "{ylabel}"
 set xlabel "IOPS (thousand)"
@@ -378,8 +380,7 @@ set title "{_title}"
         if len(list_subtables) > 0:
             head = f"plot '{out_data}' index 0 using ($2/1e3):{ycol}:5 t '{list_subtables[0]} q-depth' w yerr axes x1y1 lc 1"
             head += f",\\\n '' index 0 using ($2/1e3):{ycol} notitle w lp lc 1 axes x1y1"
-            for pg in pg_y2column:
-                y2col = pg_y2column[pg]
+            for pg,y2col  in pg_y2column.items():
                 head += f",\\\n '' index 0 using ($2/1e3):{y2col} w lp axes x1y2 t '{pg}'"
             if len(list_subtables) > 1:
                 tail = ",\\\n".join(
@@ -423,10 +424,6 @@ def initial_fio_table(dict_files, multi):
                 if k not in table:
                     avg[k] = 0.0
                 avg[k] += item[k]
-    # Probably might use some other avg rather than arithmetic avg
-    # For a sinlge data point, table == avg
-    # For multiple FIO: probably want to do the same reduction as multi job
-    # For response time curves, we want to have the sequence of increasing queue depth
     for k in avg.keys():
         avg[k] /= len(table[k])
     return table, avg
@@ -511,7 +508,6 @@ def _aggregate_proc_cpu_avg_(avg, table, avg_cpu, proc):
         for metric in cpu_proc:
             if num_entries > 1:
                 cpu_proc[metric] /= num_entries 
-            #metrics.append( f"{proc}_{metric}")
             # Aggregate the CPU values in the avg table
             mt = f"{proc}_{metric}"
             if mt not in avg:
@@ -559,7 +555,6 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
     # The following produces a List of dicts, each with keys 'sys', 'us',
     # each sample with list of CPU (eg. 0-3, and 4-7)
     # Aggregate osd_cpu_us and osd_cpu_sys into the main table
-    #aggregate_cpu_avg(avg, table, avg_cpu)
     for pname in ("OSD", "FIO"):
         aggregate_proc_cpu_avg(avg, table, avg_cpu, pname)
     
@@ -600,6 +595,9 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
     latex += " & ".join(map(lambda x: x.replace(r"_",r"\_"), list(table.keys())))
     latex += r"\\" + "\n" + r"\hline" + "\n"
 
+    # Construct a header_keys list that describes the order of the columns in the gnuplot .dat
+    # table
+    header_keys = { v:i for i,v in enumerate(table.keys(),1) }
     for k in table.keys():
         table_iters[k] = iter(table[k])
     # Construct the wiki table: the order given by the file names is important here,
@@ -663,7 +661,7 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
         f.write(latex)
         f.close()
 
-    gen_plot(config, gplot, list_subtables, title)
+    gen_plot(config, gplot, list_subtables, title, header_keys )
     print("Done")
 
 
