@@ -13,6 +13,7 @@ import re
 import json
 import tempfile
 from pprint import pformat
+from abc import ABC, abstractmethod
 
 # import pprint
 from lscpu import LsCpuJson
@@ -44,18 +45,83 @@ def serialize_sets(obj):
 
     return obj
 
+class ThreadType(ABC):
+    """
+    (Abstract) class to indicate a thread type. This is contained within a CpuCell.
+    """
+    def __init__(self):
+        self.num = 0 # number of the threads of the same type running in the CPU.
+
+    #@abstractmethod
+    def print(self, osd_id):
+        """
+        This is a common method since should be the same for all thread types.
+        """
+        _id = self.thr_def["name"]
+        return to_color(
+            f"{_id}{osd_id}",
+            self.thr_def["color"],
+        )
+
+class Reactor(ThreadType):
+    """
+    Simple Reactor
+    """
+    thr_def = {
+        "regex": re.compile(r"(crimson|reactor|syscall|log).*"),
+        "color": "red",
+        "name": "R",
+    }
+    def print(self, osd_id):
+        """
+        This could be an abstract method since should be the same for all thread types.
+        """
+        return super().print(osd_id)
+
+class Alien(ThreadType):
+    """
+    Simple Alien
+    """
+    thr_def = {
+        "regex": re.compile(r"(alien-store-tp)"),
+        "color": "green",
+        "name": "A",
+    }
+
+class Bluestore(ThreadType):
+    """
+    Simple Bluestore
+    """
+    thr_def = {
+        "regex": re.compile(r"(bstore|rocksdb|cfin).*"),
+        "color": "blue",
+        "name": "B",
+    }
 
 class CpuCell(object):
     """
     Single cell representing a CPU core
-    Essentially a list of tuples, each tuple is a str (actually a letter) of the type of thread
-    running in this Cpu core. The type indicates the color code that it should be printed.
+    Essentially a list of tuples, each tuple is a str (actually a letter) of the Type of thread
+    (Reactor, Alien, Bluestore). The Reactor type should be mutually exclusive to the other types.
+    The type indicates the thread running in this Cpu core. The type indicates the color code that
+    it should be printed.
     We only support three types: Reactors, Alien, and Bluestore threads.
     Probably need to refactor the proc_groups dict as a member here, or a class of its own (?)
+    Each CpuCell should be a set (of the ThreadType class), only indicating the arity/how many
+    threads oof the type are actually allocated to this Cpu.
     """
 
+    # Only for OSD/Crimson
+    proc_groups = {
+        "reactor": Reactor,
+        "alien": Alien,
+        "bluestore": Bluestore,
+    }
+    proc_groups_set = set()
+
+
     def __init__(self, cpuid, atype):
-        self.type = atype
+        self.type = atype  # ThreadType
         self.cpuid = cpuid
 
 
@@ -79,6 +145,7 @@ class CpuGrid(object):
         self.id = id
         self.socket = socket
         # Or more generally, a list of tuples -- these should be CpuCell
+        self.grid = [[] * self.COLS for _ in range(self.ROWS)]
         self.grid = [["."] * self.COLS for _ in range(self.ROWS)]
         self.str_lines = []
 
@@ -90,10 +157,8 @@ class CpuGrid(object):
             row = (cpuid - self.socket["phy_start"]) // self.COLS
             col = (cpuid - self.socket["phy_start"]) % self.COLS
         else:
-            row = (
-                (self.socket["num_cores"] // self.COLS)  # should be 4
-                + (cpuid - self.socket["ht_start"]) // self.COLS
-            )
+            row = (cpuid - self.socket["ht_start"]) // self.COLS
+            #( #self.ROWS // 2 + #(self.socket["num_cores"] // self.COLS)  # should be 4)
             col = (cpuid - self.socket["ht_start"]) % self.COLS
         return (row, col)
 
@@ -103,8 +168,12 @@ class CpuGrid(object):
         """
         # vlen = len(vstr) // 10 # due to control chars
         row, col = self.get_cell_coord(cpuid, is_phys)
-        self.grid[row][col] = " " + vstr + " "  # use a new object instead?
-        # self.grid[row][col] = " " * (self.WIDTH - vlen) + vstr
+        try:
+            self.grid[row][col] = " " + vstr + " "  # use a new object instead?
+            # self.grid[row][col] = " " * (self.WIDTH - vlen) + vstr
+        except IndexError:
+            logger.debug(f"{is_phys}-index_out_of_range for {cpuid}: {row},{col}")
+            pass
 
     def set_header(self):
         """
@@ -199,7 +268,8 @@ class TasksetEntry(object):
     produce a CpuGrid per socket and .JSON
     """
 
-    # Only for OSD/Crimson
+    # Only for OSD/Crimson: for this class we only require the regexes, 
+    # for the CpuCell we need everything else
     proc_groups = {
         # TODO: log are valid thread names for both reactor and aliens
         "reactor": {
@@ -220,7 +290,7 @@ class TasksetEntry(object):
     }
     proc_groups_set = set()
 
-    # Formmat from the _threads.out files:
+    # Format from the _threads.out files:
     # 1368714 1368714 crimson-osd       0     pid 1368714's current affinity list: 0
     # 1368714 1368720 reactor-1         1     pid 1368720's current affinity list: 1
     LINE_REGEX = re.compile(
@@ -234,7 +304,7 @@ class TasksetEntry(object):
     )  # |re.DEBUG)
     FILE_SUFFIX_LST = re.compile(r"_list$")  # ,(_list|.out)re.DEBUG)
 
-    def __init__(self, config, directory, num_cpu_client, lscpu):
+    def __init__(self, config, directory, num_cpu_client, lscpu=None, taskset=None):
         """
         This class expects either:
         a list of result files to process into a grid (suffix _list)
@@ -259,7 +329,10 @@ class TasksetEntry(object):
         # From lscpu we can get the ranges
         # self.sockets = [ Cpugrid(_i, ) for _i in range(NUM_SOCKETS)] # array of CpuGrid
         self.sockets = []
-        self.lscpu = LsCpuJson(lscpu)
+        if lscpu:
+            self.lscpu = LsCpuJson(lscpu)
+        if taskset:
+            self.taskset = taskset
         self.proc_groups_set.update(self.proc_groups.keys())
 
     def traverse_dir(self):
@@ -291,7 +364,7 @@ class TasksetEntry(object):
             _id = self.proc_groups[item]["name"]
             logger.debug(f"Got {_id}.{osd_id}")
             _result += to_color(
-                f"{_id}.{osd_id}",
+                f"{_id}{osd_id}",
                 self.proc_groups[item]["color"],
                 # self.proc_groups[item]["name"], self.proc_groups[item]["color"]
             )
@@ -303,6 +376,10 @@ class TasksetEntry(object):
         Shall we use the same name as the config list replaced extension
         """
         if self.jsonName:
+            # Ensur ethe struict is OSD.id: [array of CPU entries]
+            # Sort the CPU entries by numeric order:
+            # int_docs_info = {int(k) : v for k, v in dc.items()}
+            # sorted_dict = dict(sorted(int_docs_info.items()))
             with open(self.jsonName, "w", encoding="utf-8") as f:
                 json.dump(
                     self.entries, f, indent=4, sort_keys=True, default=serialize_sets
@@ -504,8 +581,13 @@ def main(argv):
     # Produce a CPU distribution visualisation grid for a single file:
         %prog -c osd_0_crimson_1osd_16reactor_256at_8fio_lt_disable_ht_threads.out
 
-    # Produce a CPU distribution visualisation grid for a _list _of files:
-        %prog -c crimson_1osd_16reactor_lt_disable_list
+    # Produce a CPU distribution visualisation grid for a _list _of files (located in /tmp) and the output
+        from ps and taskset:
+        %prog -v -c crimson_1osd_16reactor_lt_disable_list -d /tmp -u numa_nodes.json 
+
+    # Similar as above, but using the taskset mask instead of lscpu:
+        %prog -v -c crimson_1osd_16reactor_lt_disable_list -d /tmp -t <taskset_mask>
+
     """
     parser = argparse.ArgumentParser(
         description="""This tool is used to parse output from the combined taskset and ps commands""",
@@ -521,15 +603,23 @@ def main(argv):
         help="Input file: either containing a _list_ of _threads.out files, or a single .out file",
         default=None,
     )
-    # load the NUMA summary -- or lscpu --json
-    parser.add_argument(
+    # load the NUMA summary -- or lscpu --json, or the parent's taskset mask
+    cmd_grp = parser.add_mutually_exclusive_group()
+    cmd_grp.add_argument(
         "-u",
         "--lscpu",
         type=str,
-        required=True,
         help="Input file: .json file produced by lscpu --json",
         default=None,
     )
+    cmd_grp.add_argument(
+        "-t",
+        "--taskset",
+        type=str,
+        help="The taskset argument of the parent process (eg. vstart)",
+        default=None,
+    )
+
     parser.add_argument(
         "-i",
         "--client",
@@ -565,8 +655,9 @@ def main(argv):
     logger.debug(f"Got options: {options}")
 
     os.chdir(options.directory)
+    # Extend with optionals
     grid = TasksetEntry(
-        options.config, options.directory, options.client, options.lscpu
+        options.config, options.directory, options.client, options.lscpu, options.taskset
     )
     grid.run()
 

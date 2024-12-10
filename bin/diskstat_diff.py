@@ -4,6 +4,7 @@ This script expect an input .json file name as argument, and a .json stream
 from stdin, and
 calculates its difference, (producing a gnuplot .plot and dat for it)
 Might generalise later for a whole set of samples (like we do with top).
+It could also be extended to process .json from ceph conf osd tell dump_metrics.
 """
 
 import argparse
@@ -13,8 +14,6 @@ import sys
 import re
 import json
 import tempfile
-# import pprint
-#from pprint import pformat
 
 __author__ = "Jose J Palacios-Perez"
 
@@ -71,7 +70,7 @@ class DiskStatEntry(object):
         The result is a dict with keys the device names, values the measurements above
         """
         self.aname = aname
-        self.regex = re.compile(regex) #, re.DEBUG)
+        self.regex = re.compile(regex)  # , re.DEBUG)
         self.time_re = re.compile(r"_time_ms$")
         self.measurements = [
             "reads_completed",
@@ -125,7 +124,6 @@ class DiskStatEntry(object):
                 if f_info.st_size == 0:
                     logger.error(f"JSON input file {json_fname} is empty")
                     return ds_list
-                # parse the JSON: list of dicts with keys device
                 ds_list = json.load(json_data)
                 return self.filter_metrics(ds_list)
         except IOError as e:
@@ -142,8 +140,6 @@ class DiskStatEntry(object):
                 )
                 f.close()
 
-    # logger.debug(f"Got entries: {self.entries}:")
-
     def run(self):
         """
         Entry point: processes the input files, then produces the diff
@@ -151,10 +147,7 @@ class DiskStatEntry(object):
         """
         os.chdir(self.directory)
         a_data = self.load_json(self.aname)
-        #logger.debug(f"a is : {a_data}")
         b_data = self.filter_metrics(json.load(sys.stdin))
-        #pp = pprint.PrettyPrinter(width=41, compact=True)
-        #logger.debug(f"b is : {pformat(b_data)}")
         self.get_diff(a_data, b_data)
         self.save_json()
 
@@ -200,7 +193,6 @@ def main(argv):
         default=False,
     )
 
-    # parser.set_defaults(numosd=1)
     options = parser.parse_args(argv)
 
     if options.verbose:
@@ -210,7 +202,6 @@ def main(argv):
 
     with tempfile.NamedTemporaryFile(dir="/tmp", delete=False) as tmpfile:
         logging.basicConfig(filename=tmpfile.name, encoding="utf-8", level=logLevel)
-        # print(f"logname: {tmpfile.name}")
 
     logger.debug(f"Got options: {options}")
 

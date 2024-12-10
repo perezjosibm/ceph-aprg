@@ -38,7 +38,7 @@ filename=/dev/nvme6n1p2
 size=3550G
 
 [nvme5n1p2]
-filename=/dev/nvmer5n1p2
+filename=/dev/nvme5n1p2
 size=3550G
 
 [nvme8n1p2]

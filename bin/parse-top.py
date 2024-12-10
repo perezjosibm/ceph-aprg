@@ -40,6 +40,11 @@ def serialize_sets(obj):
 
     return obj
 
+def _is_empty(s):
+    """
+        Returns True if s is an empty set
+        """
+    return s == set()
 
 DEFAULT_NUM_SAMPLES = 30
 
@@ -159,6 +164,7 @@ class TopEntry(object):
                 if m not in self.avg_cpu[pg]:
                     self.avg_cpu[pg].update({m: {"total": 0.0, "index": 0, "data": []}})
 
+    
     def _get_pname(self, pg, p):
         """
         Return the name to use as key in the dictionary for this sample
@@ -176,8 +182,12 @@ class TopEntry(object):
         a = set([p["parent_pid"], p["pid"]])
         pdict = self.PROC_INFO[pg]
         b = pdict["pids"]  # already a set set(pdict['pids'])
+        matches = pdict["tname"].search(p["command"]) 
+        if _is_empty(b):
+            logger.error(f"Input PID list for {pg} is empty, flag is {bool(matches)}")
+            return bool(matches)
         intersect = list(a & b)
-        return pdict["tname"].search(p["command"]) and intersect
+        return matches and intersect
 
     def create_cpu_range(self):
         """
@@ -194,7 +204,6 @@ class TopEntry(object):
     def update_pids(self, pg, p):
         """
         Update the self.proc_groups[pg]["pids"] with the PIDs of the sample
-        This is an array, we might want to use sets instead to avoid dupes
         """
         pid_set = self.PROC_INFO[pg]["pids"]
         if p["parent_pid"] not in pid_set:

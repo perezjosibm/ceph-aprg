@@ -8,6 +8,18 @@ Two strategies of balancing reactors over CPU cores:
 
 1) OSD based: all the reactors of each OSD run in the same CPU NUMA socket (default),
 2) Socket based: reactors for the same OSD are distributed evenly across CPU NUMA sockets.
+
+Some auxiliaries:
+- given a taskset cpu_set bitmask, identify those active physical CPU core ids and their
+  HT siblings,
+- for a gfiven OSD id, identify the corresponding CPU core ids to set.
+- convert a (decimal) comma separated intervals into a cpu_set bitmask
+
+Apply bitwise operator over each bytes variables:
+result=bytes(map (lambda a,b: a ^ b, bytes_all_cpu, bytes_fio_cpu))
+
+Given the list extracted from lscpu, apply the cpu_set bitmask from the taskset argument,
+hence disabling some core ids. For each OSD, produce the corresponding bitmask.
 """
 
 import argparse
@@ -23,9 +35,27 @@ __author__ = "Jose J Palacios-Perez"
 
 logger = logging.getLogger(__name__)
 
+# Some generic bitwise functions to use from the taskset data
+def get_bit(value, bit_index):
+    """ Get a power of 2 if the bit is on"""
+    return value & (1 << bit_index)
+
+def get_normalized_bit(value, bit_index):
+    """Return 1/0 whenever the bit is on"""
+    return (value >> bit_index) & 1
+
+def set_bit(value, bit_index):
+    """As it says on the tin"""
+    return value | (1 << bit_index)
+
+def clear_bit(value, bit_index):
+    """As it says on the tin"""
+    return value & ~(1 << bit_index)
+
 # Defaults
 NUM_OSD = 8
 NUM_REACTORS = 3
+ALL_CPUS =  "ff" * 14
 
 class CpuCoreAllocator(object):
     """
@@ -35,6 +65,7 @@ class CpuCoreAllocator(object):
     {
     "lscpu": [
       {
+        d: { "field": "CPU(s):", "data": "112",}
         d: {'field': 'NUMA node(s):', 'data': '2'}
         d: {'field': 'NUMA node0 CPU(s):', 'data': '0-27,56-83'}
         d: {'field': 'NUMA node1 CPU(s):', 'data': '28-55,84-111'}
@@ -43,7 +74,7 @@ class CpuCoreAllocator(object):
     }
     """
 
-    def __init__(self, json_file: str, num_osd: int, num_react: int):
+    def __init__(self, json_file: str, num_osd: int, num_react: int, hex_cpu_mask = ALL_CPUS):
         """
         This class expects the output from lscpu --json, from there
         it works out a list of physical CPU uids to allocate Seastar reactors
@@ -51,15 +82,18 @@ class CpuCoreAllocator(object):
         self.json_file = json_file
         self.num_osd = num_osd
         self.num_react = num_react
+        self.hex_cpu_mask = hex_cpu_mask
+        self.bytes_ts = bytes.fromhex(hex_cpu_mask)
         self._dict = {}
         self.socket_lst = {
             "num_sockets": 0,
+            "total_num_cpu": 0,
             # or more general, an array, index is the socket number
             "sockets": [],
-            # TODO: extracxt num_cpus
+            # TODO: calculate how many hex words we need for the max number of CPU supported by the platform
         }
 
-    def load_json(self):
+    def load_lscpu_json(self):
         """
         Load the lscpu --json output
         """
@@ -74,20 +108,26 @@ class CpuCoreAllocator(object):
             json_data.close()
         # logger.debug(f"_dict: {self._dict}")
 
-    def get_ranges(self):
+    def get_lscpu_ranges(self):
         """
         Parse the .json from lscpu
         (we might extend this to parse either version: normal or .json)
         """
+        numcpus_re = re.compile(r"CPU\(s\):")
         numa_re = re.compile(r"NUMA node\(s\):")
         node_re = re.compile(r"NUMA node(\d+) CPU\(s\):")
         ranges_re = re.compile(r"(\d+)-(\d+),(\d+)-(\d+)")
         socket_lst = self.socket_lst
         for d in self._dict["lscpu"]:
             logger.debug(f"d: {d}")
+            m = numcpus_re.search(d["field"])
+            if m:
+                socket_lst["total_num_cpu"] = int(d["data"])
+                continue
             m = numa_re.search(d["field"])
             if m:
                 socket_lst["num_sockets"] = int(d["data"])
+                continue
             m = node_re.search(d["field"])
             if m:
                 socket = m.group(1)
@@ -101,9 +141,15 @@ class CpuCoreAllocator(object):
                         "ht_sibling_end": int(m.group(4)),
                     }
                     socket_lst["sockets"].append(drange)
+                    continue
         logger.debug(f"result: {socket_lst}")
         assert self.socket_lst["num_sockets"] > 0, "Failed to parse lscpu"
 
+    def set_avail_cpus(self):
+        """
+        Apply the taskset argument to the list of socket core ids to define the
+        actual available CPU cor ids.
+        """
     def do_distrib_socket_based(self):
         """
         Distribution criteria: the reactors of each OSD are distributed across the available
@@ -181,7 +227,7 @@ class CpuCoreAllocator(object):
         logger.debug(f"Cores to disable: {_to_disable}")
         print(" ".join(map(str, _to_disable)))
 
-    def do_distrib_osd_based(self, strategy):
+    def do_distrib_osd_based(self):
         """
         Given a number of Seastar reactor threads and number of OSD,
         distributes all the reactors of the same OSD in the same NUMA socket
@@ -233,6 +279,7 @@ class CpuCoreAllocator(object):
                 logger.debug(f"plist: {plist}")
                 pset = set(plist)
                 # _to_disable = pset.union(cores_to_disable)
+                # No longer diable cores: simply use the HT siblings in the range for the OSD to use 
                 cores_to_disable = pset.union(cores_to_disable)
                 logger.debug(f"cores_to_disable: {list(cores_to_disable)}")
                 socket["ht_sibling_start"] += step
@@ -251,8 +298,8 @@ class CpuCoreAllocator(object):
         produce the corresponding balance, print the balance as a list intended to be
         consumed by vstart.sh -- a dictionary will be used for cephadm.
         """
-        self.load_json()
-        self.get_ranges()
+        self.load_lscpu_json()
+        self.get_lscpu_ranges()
         if distribute_strat == "socket":
             self.do_distrib_socket_based()
         else:
@@ -264,8 +311,8 @@ def main(argv):
     Examples:
     # Produce a balanced CPU distribution of physical CPU cores intended for the Seastar
         reactor threads
-        %prog -u <lscpu.json> [-b <osd|socket>] [-d<dir>] [-v]
-                 [-o <num_OSDs>] [-r <num_reactors>]
+        %prog [-u <lscpu.json>|-t <taskset_mask>] [-b <osd|socket>] [-d<dir>] [-v]
+              [-o <num_OSDs>] [-r <num_reactors>]
 
     # such a list can be used for vstart.sh/cephadm to issue ceph conf set commands.
     """
@@ -275,20 +322,27 @@ def main(argv):
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "-u",
-        "--lscpu",
-        type=str,
-        required=True,
-        help="Input file: .json file produced by lscpu --json",
-        default=None,
-    )
-    parser.add_argument(
         "-o",
         "--num_osd",
         type=int,
         required=False,
         help="Number of OSDs",
         default=NUM_OSD,
+    )
+    cmd_grp = parser.add_mutually_exclusive_group()
+    cmd_grp.add_argument(
+        "-u",
+        "--lscpu",
+        type=str,
+        help="Input file: .json file produced by lscpu --json",
+        default=None,
+    )
+    cmd_grp.add_argument(
+        "-t",
+        "--taskset",
+        type=str,
+        help="The taskset argument of the parent process (eg. vstart)",
+        default=None,
     )
     parser.add_argument(
         "-r",
@@ -330,7 +384,7 @@ def main(argv):
 
     logger.debug(f"Got options: {options}")
 
-    cpu_cores = CpuCoreAllocator(options.lscpu, options.num_osd, options.num_reactor)
+    cpu_cores = CpuCoreAllocator(options.lscpu, options.num_osd, options.num_reactor, options.taskset)
     cpu_cores.run(options.balance)
 
 

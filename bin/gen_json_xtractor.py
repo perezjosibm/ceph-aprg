@@ -1,3 +1,7 @@
+"""
+Refactoring of the standalone tool fio-parse-jsons.py into modules that can be reused.
+"""
+
 import os
 import math
 import logging

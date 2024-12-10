@@ -245,7 +245,6 @@ class FioRcPlot(FioPlot):
             ylabel = pitem["ylabel"]
             ycol = str(self.header_keys[pitem["ycolumn"]])
             y2label = pitem["y2label"]
-            # y2col = plot_dict[pk]["y2column"]
             # Catenate the Setting section of the .plot script
             self.template += self.getSetting(ylabel, y2label, out_chart, _title)
             # To plot CPU util in the same response curve, we need the extra axis
@@ -256,7 +255,6 @@ class FioRcPlot(FioPlot):
             list_subtables = self.list_subtables
             if len(list_subtables) > 0:
                 head = f"plot '{self.out_data}' index 0 using ($2/1e3):{ycol}:{stddev_col} t '{list_subtables[0]} q-depth' w yerr axes x1y1 lc 1"
-                # head = f"plot '{self.out_data}' index 0 using ($2/1e3):{ycol}:5 t '{list_subtables[0]} q-depth' w yerr axes x1y1 lc 1"
                 head += f",\\\n '' index 0 using ($2/1e3):{ycol} notitle w lp lc 1 axes x1y1"
                 # These are the pg metrics we are intersted: CPU or MEM
                 for pg, y2col in pg_y2column:
@@ -368,7 +366,6 @@ class FioCmpPlot(FioPlot):
             # This is a list of result sets, so we traverse over their associated .dat
             if len(list_subtables) > 0:
                 head = f"plot '{self.out_data}' index 0 using ($2/1e3):{ycol}:{stddev_col} t '{list_subtables[0]} q-depth' w yerr axes x1y1 lc 1"
-                # head = f"plot '{self.out_data}' index 0 using ($2/1e3):{ycol}:5 t '{list_subtables[0]} q-depth' w yerr axes x1y1 lc 1"
                 head += f",\\\n '' index 0 using ($2/1e3):{ycol} notitle w lp lc 1 axes x1y1"
                 # These are the pg metrics we are intersted: CPU or MEM
                 for pg, y2col in pg_y2column:

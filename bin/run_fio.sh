@@ -1,5 +1,7 @@
+#!/usr/bin/env bash
+
 #!/usr/bin/bash
-# !
+# ! FIO driver for Ceph 
 # ! Usage: ./run_fio.sh [-a] [-c <osd-cpu-cores>] [-k] [-j] [-d rundir]
 # !  		-w {workload} [-n] -p <test_prefix>, eg "4cores_8img_16io_2job_8proc"
 # !		 
@@ -73,6 +75,7 @@ RC_SKIP_HEURISTIC=false
 POST_PROC=false
 PACK_DIR="/packages/"
 MAX_LATENCY=10 #in millisecs
+STOP_CLEAN=false
 
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
@@ -161,7 +164,7 @@ fun_osd_dump() {
   for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
     for oid in ${!osd_id[@]}; do
       if [ "${OSD_TYPE}" == "crimson" ]; then
-        /ceph/build/bin/ceph tell ${oid} dump_metrics reactor_utilization >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
+        /ceph/build/bin/ceph tell ${oid} dump_metrics >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
       else
         /ceph/build/bin/ceph daemon -c /ceph/build/ceph.conf ${oid} perf dump >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
       fi
@@ -228,14 +231,16 @@ fun_run_workload() {
 
   fun_set_globals $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX $WORKLOAD_NAME
 
+  if [ "$SKIP_OSD_MON" = false ]; then
+    fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "before"
+  fi
+
   for job in $RANGE_NUMJOBS; do
     for io in $RANGE_IODEPTH; do
+      # Check if file in place to indicate stop cleanly:
+
       # Take diskstats measurements before FIO instances
       jc --pretty /proc/diskstats > ${DISK_STAT}
-      if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump ${TEST_NAME} 1 1 ${OSD_TYPE} "before"
-      fi
-
       for (( i=0; i<${NUM_PROCS}; i++ )); do
         if [ "$SKIP_OSD_MON" = false ]; then
           #Bail out if no OSD process is running -- improve health check
@@ -249,21 +254,22 @@ fun_run_workload() {
         export TEST_NAME=${TEST_PREFIX}_${job}job_${io}io_${BLOCK_SIZE_KB}_${map[${WORKLOAD}]}_p${i};
         echo "== $(date) == ($io,$job): ${TEST_NAME} ==";
         echo fio_${TEST_NAME}.json >> ${OSD_TEST_LIST}
-	      fio_name=${FIO_JOBS}${FIO_JOB_SPEC}${map[${WORKLOAD}]}.fio
+        fio_name=${FIO_JOBS}${FIO_JOB_SPEC}${map[${WORKLOAD}]}.fio
 
         if [ "$RESPONSE_CURVE" = true ]; then
           log_name=${TEST_RESULT}
         else
           log_name=${TEST_NAME}
         fi
-        LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} \
-          taskset -ac ${FIO_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json \
-          --output-format=json 2> fio_${TEST_NAME}.err &
-        fio_id["fio_${i}"]=$!
-        global_fio_id+=($!)
+          # Execute FIO
+          LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} \
+            taskset -ac ${FIO_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json \
+            --output-format=json 2> fio_${TEST_NAME}.err &
+          fio_id["fio_${i}"]=$!
+          global_fio_id+=($!)
       done # loop NUM_PROCS
       sleep 30; # ramp up time
-      
+
       if [ "$SKIP_OSD_MON" = false ]; then
         # Prepare list of pid to monitor
         osd_pids=$( fun_join_by ',' ${osd_id[@]} )
@@ -284,14 +290,11 @@ fun_run_workload() {
         echo "OSD: $osd_pids" > ${TOP_PID_LIST}
         echo "FIO: $fio_pids" >> ${TOP_PID_LIST}
         printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
-       fi
+      fi
       all_pids=$( fun_join_by ',' ${osd_id[@]}  ${fio_id[@]} )
       fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
 
       wait;
-      if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump ${TEST_NAME} 1 1 ${OSD_TYPE} "after"
-      fi
       # Measure the diskstats after the completion of FIO
       jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT}
 
@@ -300,13 +303,17 @@ fun_run_workload() {
         mop=${mode[${WORKLOAD}]}
         covar=$(jq ".jobs | .[] | .${mop}.clat_ns.stddev/.${mop}.clat_ns.mean < 0.5 and \
           .${mop}.clat_ns.mean/1000000 < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
-        if [ "$covar" != "true" ]; then
-          echo "== Latency std dev too high, exiting loops =="
-          break 2
-        fi
+                  if [ "$covar" != "true" ]; then
+                    echo "== Latency std dev too high, exiting loops =="
+                    break 2
+                  fi
       fi
     done # loop IODEPTH
   done # loop NUM_JOBS 
+
+  if [ "$SKIP_OSD_MON" = false ]; then
+    fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "after"
+  fi
 
   # Refactor into two subroutines
   # Post processing:
@@ -315,23 +322,23 @@ fun_run_workload() {
     fio_pids=$( fun_join_by ',' ${global_fio_id[@]} )
     echo "FIO: $fio_pids" >> ${TOP_PID_LIST}
     printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
-   # CPU avg, so we might add a condttion (or option) to select which
+    # CPU avg, so we might add a condttion (or option) to select which
     # When collecting data for response curves, produce charts for the cummulative pid list
     cat ${TEST_RESULT}_top.out | jc --top --pretty > ${TEST_RESULT}_top.json
     python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
-          --pids=${TOP_PID_JSON} 2>&1 > /dev/null
-  else
-    #  single top out file with OSD and FIO CPU util
-    for x in $(cat ${TOP_OUT_LIST}); do
-      # CPU avg, so we might add a condttion (or option) to select which
-      # When collecting data for response curves, produce charts for the cummulative pid list
-      if [ -f "$x" ]; then
-        python3 /root/bin/parse-top.py --config=$x --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
-          --pids=${TOP_PID_JSON} 2>&1 > /dev/null
-                  # We always calculate the arithmetic avg, the perl script has got a new flag
-                  # to indicate whether we skip producing individual charts
-      fi
-    done
+      --pids=${TOP_PID_JSON} 2>&1 > /dev/null
+        else
+          #  single top out file with OSD and FIO CPU util
+          for x in $(cat ${TOP_OUT_LIST}); do
+            # CPU avg, so we might add a condttion (or option) to select which
+            # When collecting data for response curves, produce charts for the cummulative pid list
+            if [ -f "$x" ]; then
+              python3 /root/bin/parse-top.py --config=$x --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+                --pids=${TOP_PID_JSON} 2>&1 > /dev/null
+                              # We always calculate the arithmetic avg, the perl script has got a new flag
+                              # to indicate whether we skip producing individual charts
+            fi
+          done
   fi
   # Post processing: FIO .json
   if [ -f  ${OSD_TEST_LIST} ] && [ -f  ${OSD_CPU_AVG} ]; then
@@ -341,6 +348,11 @@ fun_run_workload() {
     done
     python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
   fi
+  # Post processing: OSD dump_metrics .json
+  for x in $(ls osd*_dump_*.json); do
+    cat $x | jq '[paths(values) as $path | {"key": $path    | join("."), "value": getpath($path)}] | from_entries' > /tmp/temposd.json
+    mv /tmp/temposd.json $x
+  done
 
   # Produce charts from the scripts .plot and .dat files generated
   for x in $(ls *.plot); do
@@ -350,10 +362,10 @@ fun_run_workload() {
   # Generate single animated file from a timespan of FIO charts
   # Need to traverse the suffix of the charts produced to know which ones we want to coalesce
   # on a single animated .gif
-#  if [ "$RESPONSE_CURVE" = true ]; then
-#    echo "== This is a response curve run =="
-#    fun_coalesce_charts ${TEST_PREFIX} ${TEST_RESULT}
-#  fi
+  #  if [ "$RESPONSE_CURVE" = true ]; then
+  #    echo "== This is a response curve run =="
+  #    fun_coalesce_charts ${TEST_PREFIX} ${TEST_RESULT}
+  #  fi
   #cd # location of FIO .log data
   #fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280 # Made some tweaks, so will keep it in my priv repo
   /root/bin/fio_generate_plots ${TEST_NAME} 650 280 2>&1 > /dev/null
@@ -374,16 +386,18 @@ fun_run_workload() {
   fi
   # Remove empty .err files
   find . -type f -name "fio*.err" -size 0c -exec rm {} \;
+  # Remove empty tmp  files
+  find . -type f -name "tmp*" -size 0c -exec rm {} \;
   # Generate report: use the template, integrate the tables/charts -- per workload
   # /root/tinytex/tools/texlive/bin/x86_64-linux/pdflatex -interaction=nonstopmode ${TEST_RESULT}.tex
-  # Run it again to get the references, TOC, etc
+  # Run it again to get the rences, TOC, etc
   # Archiving:
-  zip -9mqj ${TEST_RESULT}.zip ${OSD_TEST_LIST} ${TEST_RESULT}_json.out \
+  zip -9mqj ${TEST_RESULT}.zip ${_TEST_LIST} ${TEST_RESULT}_json.out \
     *_top.out *.json *.plot *.dat *.png *.gif ${TOP_OUT_LIST} \
-    osd*_threads.out ${TOP_PID_LIST} *.svg *.tex
-  # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
-  rm -f *.log
-}
+    osd*_threads.out *_threads_list ${TOP_PID_LIST} *.svg *.tex *_cpu_distro.log
+      # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
+      rm -f *.log
+    }
 
 #############################################################################################
 fun_set_osd_pids() {
@@ -492,7 +506,8 @@ fun_post_process_cold() {
     unzip -d $yn $x
     cd $yn
     # Test which (second degree files) need to be reconstructed
-    if [ ! -f "${OSD_CPU_AVG}" ] && [ -f "${TEST_RESULT}_top.json" ]; then
+    [ -f "${OSD_CPU_AVG}" ] && rm -f ${OSD_CPU_AVG}
+    if [ -f "${TEST_RESULT}_top.json" ]; then
       echo "== Recostructing ${OSD_CPU_AVG}:"
       python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" \
         --avg=${OSD_CPU_AVG} --pids=${TOP_PID_JSON} 2>&1 > /dev/null
