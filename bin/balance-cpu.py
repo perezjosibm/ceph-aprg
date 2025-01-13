@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 # Some generic bitwise functions to use from the taskset data
 def get_bit(value, bit_index):
-    """ Get a power of 2 if the bit is on"""
+    """ Get a power of 2 if the bit is on, 0 otherwise"""
     return value & (1 << bit_index)
 
 def get_normalized_bit(value, bit_index):
@@ -52,10 +52,62 @@ def clear_bit(value, bit_index):
     """As it says on the tin"""
     return value & ~(1 << bit_index)
 
+# Generic functions to respond whether a CPU id is enabled/available or not
+def is_cpu_avail(bytes_mask, cpuid):
+    """Return true if the cpuid is on"""
+    return get_normalized_bit(bytes_mask[-1-(cpuid//8)], cpuid%8)
+
+def set_cpu(bytes_mask, cpuid):
+    """Set cpuid on bytes_mask"""
+    bytes_mask[-1-(cpuid//8)] = set_bit(bytes_mask[-1-(cpuid//8)], cpuid%8)
+    return bytes_mask
+
+def get_range(bytes_mask, start, length):
+    """
+    Given a bytes_mask, return a new bytes_mask with the range of CPU ids
+    starting from start and of length, skipping those that are not available
+    """
+    result=bytearray(b'\x00' * len(bytes_mask))
+    max_cpu=8*len(bytes_mask)
+    while length > 0 and start < max_cpu: # verify not out of range
+        if is_cpu_avail(bytes_mask, start):
+            set_cpu(result, start)
+            length -= 1
+        start += 1
+    
+    return result
+
+def set_range(bytes_mask, start, end):
+    """
+    Set a range of CPU ids in bytes_mask from start to end
+    """
+    ba=bytearray(bytes_mask)
+    for i in range(start,end):
+        set_cpu(ba, i)
+    return ba
+
+def set_all_ht_siblings(bytes_mask):
+    """
+    Set all the HT sibling of the enabled physical CPU ids specified in bytes_mask
+    Physical cores are in the range [-half_length_bytes_mask:]
+    HT siblings are in the range [0:half_length_bytes_mask-1]
+    result=bytes(map (lambda a,b: a | b, bytes_ht, bytes_phys))
+    """
+    result=bytearray(b'\x00' * len(bytes_mask))
+    half_indx = len(bytes_mask)//2
+    for i in range(0,half_indx):
+        result[i] |= bytes_mask[half_indx+i]
+    #result=bytes(map (lambda a,b: a | b, result[0:half_indx], bytes_mask[-half_indx:]))
+    #partial = [a | b for a, b in zip(empty[0:half_indx], bytes_mask[-half_indx:])]
+    #result = bytes( partial + bytes_mask[-half_indx:] )
+    return result
+# Convert back to hex string
+# hex_string = "".join("%02x" % b for b in array_alpha)
+# print(bytes(bytes_array).hex())
+
 # Defaults
 NUM_OSD = 8
 NUM_REACTORS = 3
-ALL_CPUS =  "ff" * 14
 
 class CpuCoreAllocator(object):
     """
@@ -74,7 +126,7 @@ class CpuCoreAllocator(object):
     }
     """
 
-    def __init__(self, json_file: str, num_osd: int, num_react: int, hex_cpu_mask = ALL_CPUS):
+    def __init__(self, json_file: str, num_osd: int, num_react: int, hex_cpu_mask = ""):
         """
         This class expects the output from lscpu --json, from there
         it works out a list of physical CPU uids to allocate Seastar reactors
@@ -83,16 +135,39 @@ class CpuCoreAllocator(object):
         self.num_osd = num_osd
         self.num_react = num_react
         self.hex_cpu_mask = hex_cpu_mask
-        self.bytes_ts = bytes.fromhex(hex_cpu_mask)
         self._dict = {}
         self.socket_lst = {
             "num_sockets": 0,
             "total_num_cpu": 0,
-            # or more general, an array, index is the socket number
+            # index is the socket number
             "sockets": [],
-            # TODO: calculate how many hex words we need for the max number of CPU supported by the platform
         }
+        self.bytes_avail_cpus = bytes([])
 
+        self.load_lscpu_json()
+        self.get_lscpu_ranges()
+        self.validate_taskset_str()
+
+    def validate_taskset_str(self):
+        """
+        Validate the taskset hex string argument tha tindicates the available CPU ids
+        """
+        # How many hex digits are need for the max number of CPU ids
+        max_num_cpus=self.socket_lst["total_num_cpu"]//8
+        # Default bitmask: all CPUs available
+        ALL_CPUS =  "ff" * max_num_cpus
+        bytes_all_cpu = bytes.fromhex(ALL_CPUS)
+        if self.hex_cpu_mask:
+            try:
+                bytes_avail_cpu = bytes.fromhex(self.hex_cpu_mask)
+                # Apply this to the ALL_CPUS to have the set of available
+                self.bytes_avail_cpus = bytes(map (lambda a,b: a ^ b, bytes_all_cpu, bytes_avail_cpu ))
+            except ValueError:
+                print(f"Ignoring invalid hex string, using default {ALL_CPUS}")
+                self.bytes_avail_cpus = bytes.fromhex(ALL_CPUS)
+        # Validate the hex_string/bytes size for the cpuset bitmask
+        assert max_num_cpus >= len(self.bytes_avail_cpus), "Invalid taskset hexstring size"
+        
     def load_lscpu_json(self):
         """
         Load the lscpu --json output
@@ -135,7 +210,7 @@ class CpuCoreAllocator(object):
                 if m:
                     drange = {
                         "socket": int(socket),
-                        "physical_start": int(m.group(1)),
+                        "physical_start": int(m.group(1)), #CPU uids
                         "physical_end": int(m.group(2)),
                         "ht_sibling_start": int(m.group(3)),
                         "ht_sibling_end": int(m.group(4)),
@@ -145,16 +220,13 @@ class CpuCoreAllocator(object):
         logger.debug(f"result: {socket_lst}")
         assert self.socket_lst["num_sockets"] > 0, "Failed to parse lscpu"
 
-    def set_avail_cpus(self):
-        """
-        Apply the taskset argument to the list of socket core ids to define the
-        actual available CPU cor ids.
-        """
     def do_distrib_socket_based(self):
         """
         Distribution criteria: the reactors of each OSD are distributed across the available
         NUMA sockets evenly.
-        Each OSD uses step cores from each NUMA socket.
+        Each OSD uses step cores from each NUMA socket. Each socket is a pair of ranges (_start,_end)
+        for physical and HT. On each allocation we update the physical_start, so the next iteration
+        picks the CPU uid accordingly.
         Produces a list of ranges to use for the ceph config set CLI.
         """
         # Init:
@@ -180,6 +252,9 @@ class CpuCoreAllocator(object):
         # Copy the original physical ranges to the control dict
         for socket in self.socket_lst["sockets"]:
             control.append(socket)
+
+        cpu_avail_ba = bytearray(self.bytes_avail_cpus)
+        osds_ba = {}
         # Traverse the OSD to produce an allocation
         #  f"total_phys_cores: {total_phys_cores}, max_osd_num: {max_osd_num}, step:{step}, rem:{reminder} "
         for osd in range(self.num_osd):
@@ -198,6 +273,17 @@ class CpuCoreAllocator(object):
                 logger.debug(
                     f"osd: {osd}, socket:{_so_id}, _start:{_start}, _end:{_end - 1}"
                 )
+                # Verify this range is valid, otherwise shift as appropriate
+                cpuset_ba = get_range(cpu_avail_ba, _start, _step)
+                # Associate their HT siblings of this range
+                cpuset_ba = set_all_ht_siblings(cpuset_ba)
+                # TODO: Remove these CPU ids from the available bytearray
+                if osd in osds_ba:
+                    merged = bytes(map (lambda a,b: a | b, 
+                        osds_ba[osd], cpuset_ba))
+                    osds_ba[osd] = merged
+                else:
+                    osds_ba.update({osd: cpuset_ba})
                 osds.append(f"{_start}-{_end - 1}")
 
                 if _end <= socket["physical_end"]:
@@ -298,8 +384,6 @@ class CpuCoreAllocator(object):
         produce the corresponding balance, print the balance as a list intended to be
         consumed by vstart.sh -- a dictionary will be used for cephadm.
         """
-        self.load_lscpu_json()
-        self.get_lscpu_ranges()
         if distribute_strat == "socket":
             self.do_distrib_socket_based()
         else:

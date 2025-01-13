@@ -22,7 +22,7 @@ FIO_CPU_CORES="48-55" # inc HT
 FIO_JOBS=/root/bin/rbd_fio_examples/
 OSD_TYPE=cyan
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
-BLUESTORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2,/dev/nvme2n1p2,/dev/nvme6n1p2,/dev/nvme3n1p2,/dev/nvme5n1p2,/dev/nvme0n1p2,/dev/nvme4n1p2'
+STORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2,/dev/nvme2n1p2,/dev/nvme6n1p2,/dev/nvme3n1p2,/dev/nvme5n1p2,/dev/nvme0n1p2,/dev/nvme4n1p2'
 export NUM_RBD_IMAGES=1
 export RBD_SIZE=10GB
 
@@ -48,7 +48,8 @@ bal_ops_table["bal_socket"]="--crimson-balance-cpu socket"
 # CLI for the OSD backend
 declare -A crimson_be_table
 crimson_be_table["cyan"]="--cyanstore"
-crimson_be_table["blue"]="--bluestore --bluestore-devs ${BLUESTORE_DEVS}"
+crimson_be_table["blue"]="--bluestore --bluestore-devs ${STORE_DEVS}"
+crimson_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS}"
 
 # Number of CPU cores for each case
 num_cpus['enable_ht']=${MAX_NUM_HT_CPUS_PER_SOCKET}
@@ -221,7 +222,7 @@ fun_run_ht_tests() {
       nta_osd=$(( num_threads_alien / NUM_OSD ))
      
       echo -e "${RED}== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, ${num_threads_alien} total alien wrk threads, ${num_cores_alien} num_cores_alien, latency target, ${HT_STATE} ==${NC}"
-      cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh --new -x --localhost --without-dashboard --bluestore --redirect-output --bluestore-devs ${BLUESTORE_DEVS} --crimson --crimson-smp ${NUM_REACTORS} --no-restart --crimson-alien-num-cores ${nca_osd} --crimson-alien-num-threads ${nta_osd}"
+      cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh --new -x --localhost --without-dashboard --bluestore --redirect-output --bluestore-devs ${STORE_DEVS} --crimson --crimson-smp ${NUM_REACTORS} --no-restart --crimson-alien-num-cores ${nca_osd} --crimson-alien-num-threads ${nta_osd}"
       #echo "${cmd[@]}" 
       echo "$cmd" | tee >> ${RUN_DIR}/cpu_distro.log
       test_name="crimson_${NUM_OSD}osd_${NUM_REACTORS}reactor_${nta_osd}at_8fio_lt_${HT_STATE}"
@@ -265,17 +266,28 @@ fun_run_all_ht_tests() {
 # Run balanced vs default CPU core/reactor distribution in Crimson using either Cyan or  Bluestore
 fun_run_bal_vs_default_tests() {
   local OSD_TYPE=$1
-  local NUM_ALIEN_THREADS=7
+  local NUM_ALIEN_THREADS=7 # default 
+  local title=""
 
   for KEY in "${!bal_ops_table[@]}"; do
     for NUM_OSD in 8; do
       for NUM_REACTORS in 5 6; do
+        title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, response latency "
 
-        NUM_ALIEN_THREADS=$(( 4 *NUM_OSD * NUM_REACTORS ))
-        echo -e "${RED}== (${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, response latency alien_num_threads=${NUM_ALIEN_THREADS}==${NC}"
+        cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh --new -x --localhost --without-dashboard\
+            --redirect-output ${crimson_be_table[${OSD_TYPE}]} --crimson --crimson-smp ${NUM_REACTORS}\
+            --no-restart ${bal_ops_table[${KEY}]}"
+
+        test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_8fio_${KEY}_rc"
+
+        if [ "$OSD_TYPE" == "blue" ]; then
+            NUM_ALIEN_THREADS=$(( 4 *NUM_OSD * NUM_REACTORS ))
+            title="${title} alien_num_threads=${NUM_ALIEN_THREADS}"
+            cmd="${cmd}  --crimson-alien-num-threads $NUM_ALIEN_THREADS"
+            test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${NUM_ALIEN_THREADS}at_8fio_${KEY}_rc"
+        fi
+        echo -e "${RED}== ${title}==${NC}"
         # For later: try number of alien cores = 4 * number of backend CPU cores (= crimson-smp)
-        cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh --new -x --localhost --without-dashboard --redirect-output ${crimson_be_table[${OSD_TYPE}]} --crimson --crimson-smp ${NUM_REACTORS} --no-restart ${bal_ops_table[${KEY}]}  --crimson-alien-num-threads $NUM_ALIEN_THREADS"
-        test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${NUM_ALIEN_THREADS}at_8fio_${KEY}_rc"
         echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
         echo $test_name
         eval "$cmd" >> ${RUN_DIR}/${test_name}_cpu_distro.log

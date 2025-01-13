@@ -13,7 +13,7 @@ import re
 import json
 import tempfile
 from pprint import pformat
-from abc import ABC, abstractmethod
+#from abc import ABC, abstractmethod
 
 # import pprint
 from lscpu import LsCpuJson
@@ -45,89 +45,51 @@ def serialize_sets(obj):
 
     return obj
 
-class ThreadType(ABC):
-    """
-    (Abstract) class to indicate a thread type. This is contained within a CpuCell.
-    """
-    def __init__(self):
-        self.num = 0 # number of the threads of the same type running in the CPU.
-
-    #@abstractmethod
-    def print(self, osd_id):
-        """
-        This is a common method since should be the same for all thread types.
-        """
-        _id = self.thr_def["name"]
-        return to_color(
-            f"{_id}{osd_id}",
-            self.thr_def["color"],
-        )
-
-class Reactor(ThreadType):
-    """
-    Simple Reactor
-    """
-    thr_def = {
-        "regex": re.compile(r"(crimson|reactor|syscall|log).*"),
-        "color": "red",
-        "name": "R",
+THREAD_TYPES = {
+        # log are valid thread names for both reactor and aliens
+        "reactor": {
+            "regex": re.compile(r"(crimson|reactor|syscall|log).*"),
+            "color": "red",
+            "name": "R",
+        },
+        "alien": {
+            "regex": re.compile(r"(alien-store-tp)"),
+            "color": "green",
+            "name": "A",
+        },
+        "bluestore": {
+            "regex": re.compile(r"(bstore|rocksdb|cfin).*"),
+            "color": "blue",
+            "name": "B",
+        },
     }
-    def print(self, osd_id):
-        """
-        This could be an abstract method since should be the same for all thread types.
-        """
-        return super().print(osd_id)
-
-class Alien(ThreadType):
-    """
-    Simple Alien
-    """
-    thr_def = {
-        "regex": re.compile(r"(alien-store-tp)"),
-        "color": "green",
-        "name": "A",
-    }
-
-class Bluestore(ThreadType):
-    """
-    Simple Bluestore
-    """
-    thr_def = {
-        "regex": re.compile(r"(bstore|rocksdb|cfin).*"),
-        "color": "blue",
-        "name": "B",
-    }
-
+ 
 class CpuCell(object):
     """
-    Single cell representing a CPU core
-    Essentially a list of tuples, each tuple is a str (actually a letter) of the Type of thread
-    (Reactor, Alien, Bluestore). The Reactor type should be mutually exclusive to the other types.
-    The type indicates the thread running in this Cpu core. The type indicates the color code that
-    it should be printed.
-    We only support three types: Reactors, Alien, and Bluestore threads.
-    Probably need to refactor the proc_groups dict as a member here, or a class of its own (?)
-    Each CpuCell should be a set (of the ThreadType class), only indicating the arity/how many
-    threads oof the type are actually allocated to this Cpu.
+    Single cell representing the threads allocated to a CPU core
+    Each cell is a set of thread types (Reactor, Alien, Bluestore). 
+    The Reactor type should be mutually exclusive to the other types.
+    The type indicates the color code that the thread set should be printed.
     """
-
-    # Only for OSD/Crimson
-    proc_groups = {
-        "reactor": Reactor,
-        "alien": Alien,
-        "bluestore": Bluestore,
-    }
-    proc_groups_set = set()
-
+    THREAD_TYPES_set = set()
 
     def __init__(self, cpuid, atype):
         self.type = atype  # ThreadType
         self.cpuid = cpuid
 
+    def print(self, osd_id):
+        """
+        This is a common method since should be the same for all thread types.
+        """
+        _id = THREAD_TYPES[self.type]["name"]
+        return to_color(
+            f"{_id}{osd_id}",
+            THREAD_TYPES[self.type]["color"],
+        )
 
 class CpuGrid(object):
     """
-    Grid for a Single CPU socket
+    Grid for a Single CPU socket, container of CpuCell
     Each cell is a CpuCell, which contains a set of threads initials (single letter as per the field 'name')
     and a color code.
     """
@@ -144,7 +106,7 @@ class CpuGrid(object):
         """
         self.id = id
         self.socket = socket
-        # Or more generally, a list of tuples -- these should be CpuCell
+        # CpuCell
         self.grid = [[] * self.COLS for _ in range(self.ROWS)]
         self.grid = [["."] * self.COLS for _ in range(self.ROWS)]
         self.str_lines = []
@@ -270,25 +232,7 @@ class TasksetEntry(object):
 
     # Only for OSD/Crimson: for this class we only require the regexes, 
     # for the CpuCell we need everything else
-    proc_groups = {
-        # TODO: log are valid thread names for both reactor and aliens
-        "reactor": {
-            "regex": re.compile(r"(crimson|reactor|syscall|log).*"),
-            "color": "red",
-            "name": "R",
-        },
-        "alien": {
-            "regex": re.compile(r"(alien-store-tp)"),
-            "color": "green",
-            "name": "A",
-        },
-        "bluestore": {
-            "regex": re.compile(r"(bstore|rocksdb|cfin).*"),
-            "color": "blue",
-            "name": "B",
-        },
-    }
-    proc_groups_set = set()
+    THREAD_TYPES_set = set()
 
     # Format from the _threads.out files:
     # 1368714 1368714 crimson-osd       0     pid 1368714's current affinity list: 0
@@ -333,7 +277,7 @@ class TasksetEntry(object):
             self.lscpu = LsCpuJson(lscpu)
         if taskset:
             self.taskset = taskset
-        self.proc_groups_set.update(self.proc_groups.keys())
+        self.THREAD_TYPES_set.update(THREAD_TYPES.keys())
 
     def traverse_dir(self):
         """
@@ -358,15 +302,15 @@ class TasksetEntry(object):
         logger.debug(f"Got cpuset: {cpuset} for {osd_id}:")
         for item in cpuset:
             logger.debug(f"Got {item}:")
-            if item not in self.proc_groups:
-                logger.error(f"{item} not in proc_groups")
+            if item not in self.THREAD_TYPES:
+                logger.error(f"{item} not in THREAD_TYPES")
                 return _result
-            _id = self.proc_groups[item]["name"]
+            _id = self.THREAD_TYPES[item]["name"]
             logger.debug(f"Got {_id}.{osd_id}")
             _result += to_color(
                 f"{_id}{osd_id}",
-                self.proc_groups[item]["color"],
-                # self.proc_groups[item]["name"], self.proc_groups[item]["color"]
+                self.THREAD_TYPES[item]["color"],
+                # self.THREAD_TYPES[item]["name"], self.THREAD_TYPES[item]["color"]
             )
         return _result
 
@@ -388,10 +332,10 @@ class TasksetEntry(object):
 
     def _get_tgroup(self, tname: str):
         """
-        Get the proc_groups from the thread name
+        Get the THREAD_TYPES from the thread name
         """
-        for k in self.proc_groups:
-            if self.proc_groups[k]["regex"].match(tname):
+        for k in self.THREAD_TYPES:
+            if self.THREAD_TYPES[k]["regex"].match(tname):
                 return k
 
         logger.debug(f"{tname}: not registered in groups")
@@ -515,7 +459,7 @@ class TasksetEntry(object):
             _s.show_grid()
 
         # join the grid lines per socket: this should be done in a more Pythonic way...
-        for i in range(self.sockets[0].get_num_lines()):
+        for _ in range(self.sockets[0].get_num_lines()):
             line = " + ".join(_s.next() for _s in self.sockets)
             print(line)
 
@@ -535,7 +479,7 @@ class TasksetEntry(object):
             config_file.close()
 
         self.osd_num = len(out_files)
-        for entry in range(self.osd_num):
+        for _ in range(self.osd_num):
             self.entries.append({})
 
         print(f"loading {len(out_files)} .out files ...")

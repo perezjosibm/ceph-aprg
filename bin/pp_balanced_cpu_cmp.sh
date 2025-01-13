@@ -5,8 +5,10 @@
 # ! Run postprocessing to assemble a 3-side comparison of response latency curves
 # for the three CPU allocation strategies
 # ! -d : indicate the run directory cd to
-# ! -t :  OSD backend type: cyan, blue
+# ! -t :  OSD backend type: cyan, blue, sea
 # ! -o : output .md file
+# ! Remember to edit the range for the reactors
+#
 # Defaults:
 OSD_TYPE=cyan
 RUN_DIR="/tmp"
@@ -17,7 +19,7 @@ usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 # -d for the directory to traverse
-# -t for the type of OSD backend: [cyan| blue ](store), 
+# -t for the type of OSD backend: [cyan| blue | sea ](store), 
 while getopts 'd:t:o:' option; do
   case "$option" in
     d) RUN_DIR=$OPTARG
@@ -53,7 +55,7 @@ fun_pp_bal_vs_default_tests() {
     echo "# ${WORKLOAD}" >> ${OUT_MD}
     # The ranges should come from the test plan .yaml
     for NUM_OSD in 8; do
-      for NUM_REACTORS in 5; do
+      for NUM_REACTORS in 5 6; do
 
         test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_8fio_${WORKLOAD}"
         test_title="${OSD_TYPE}store-${NUM_OSD}osd-${NUM_REACTORS}reactor-${WORKLOAD}"
