@@ -24,6 +24,8 @@ class LsCpuJson(object):
     {
     "lscpu": [
       {
+        d: { "field": "CPU(s):", "data": "112"}
+        d: {"field": "Core(s) per socket:", "data": "28"}
         d: {'field': 'NUMA node(s):', 'data': '2'}
         d: {'field': 'NUMA node0 CPU(s):', 'data': '0-27,56-83'}
         d: {'field': 'NUMA node1 CPU(s):', 'data': '28-55,84-111'}
@@ -41,6 +43,7 @@ class LsCpuJson(object):
         self.socket_lst = {
             "num_sockets": 0,
             "num_logical_cpus": 0,
+            "num_cores_per_socket": 0,
             # or more general, an array, index is the socket number
             "sockets": [],
         }
@@ -78,26 +81,24 @@ class LsCpuJson(object):
         """
         return self.socket_lst["sockets"][sindex]["ht_sibling_start"]
 
-    def get_num_physical(self, sindex):
+    def get_num_physical(self):
         """
-        Accessor: num cpu core ids
+        Accessor: num physical cpu core ids
         """
-        return (
-            self.socket_lst["sockets"][sindex]["physical_end"]
-            - self.socket_lst["sockets"][sindex]["physical_start"]
-        )
+        return self.socket_lst["num_cores_per_socket"]
+
+    def get_num_logical_cpus(self):
+        """
+        Accessor: num CPU ids
+        """
+        return self.socket_lst["num_logical_cpus"]
 
     def get_total_physical(self):
         """
         Accessor: sum of the physical cores for all sockets
-        num_sockets * (
-            self.socket_lst["sockets"][0]["physical_end"] + 1
-        )
         """
-        t = 0
-        for s in range(self.get_num_sockets()):  # self.socket_lst["sockets"]:
-            t += self.get_num_physical(s)
-        return t
+        return self.get_num_sockets() * self.get_num_physical()
+        
 
     def get_socket(self, cpuid: int):
         """
@@ -107,7 +108,7 @@ class LsCpuJson(object):
         for _i, s in enumerate(self.socket_lst["sockets"]):
             if s["physical_start"] <= cpuid and cpuid <= s["physical_end"]:
                 return (_i, True)
-            if s["ht_sibling_start"] <= cpuid and s["ht_sibling_end"]:
+            if s["ht_sibling_start"] <= cpuid and cpuid <= s["ht_sibling_end"]:
                 return (_i, False)
 
     def get_ranges(self):
@@ -119,6 +120,7 @@ class LsCpuJson(object):
         numa_re = re.compile(r"NUMA node\(s\):")
         node_re = re.compile(r"NUMA node(\d+) CPU\(s\):")
         ranges_re = re.compile(r"(\d+)-(\d+),(\d+)-(\d+)")
+        cores_re = re.compile(r"^Core\(s\) per socket:$")
         socket_lst = self.socket_lst
         for d in self._dict["lscpu"]:
             # logger.debug(f"d: {d}")
@@ -143,6 +145,10 @@ class LsCpuJson(object):
             m = ncpu_re.search(d["field"])
             if m:
                 socket_lst["num_logical_cpus"] = int(d["data"])
+                continue
+            m = cores_re.search(d["field"]) 
+            if m:
+                socket_lst["num_cores_per_socket"] = int(d["data"])
         # logger.debug(f"result: {socket_lst}")
         assert self.socket_lst["num_sockets"] > 0, "Failed to parse lscpu"
 
