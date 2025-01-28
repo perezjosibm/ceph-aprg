@@ -31,7 +31,6 @@ import tempfile
 from pprint import pformat
 # from typing import Dict, List, Any
 
-# import pprint
 from lscpu import LsCpuJson
 
 __author__ = "Jose J Palacios-Perez"
@@ -62,13 +61,22 @@ def clear_bit(value, bit_index):
 
 # Generic functions to query whether a CPU id is enabled/available or not
 def is_cpu_avail(bytes_mask, cpuid):
-    """Return true if the cpuid is on"""
-    return get_normalized_bit(bytes_mask[-1 - (cpuid // 8)], cpuid % 8)
+    """
+    Return true if the cpuid is on
+    CPU id 0 is at the last end of the bytes_mask, the max_cpu is at bit 0
+    """
+    try:
+        return get_normalized_bit(bytes_mask[-1 - (cpuid // 8)], cpuid % 8)
+    except IndexError:
+        return False
 
 
 def set_cpu(bytes_mask, cpuid):
     """Set cpuid on bytes_mask"""
-    bytes_mask[-1 - (cpuid // 8)] = set_bit(bytes_mask[-1 - (cpuid // 8)], cpuid % 8)
+    try:
+        bytes_mask[-1 - (cpuid // 8)] = set_bit(bytes_mask[-1 - (cpuid // 8)], cpuid % 8)
+    except IndexError:
+        pass
     return bytes_mask
 
 
@@ -79,7 +87,7 @@ def get_range(bytes_mask, start, length):
     """
     result = bytearray(b"\x00" * len(bytes_mask))
     max_cpu = 8 * len(bytes_mask)
-    while length > 0 and start < max_cpu:  # verify not out of range
+    while length > 0 and start < max_cpu:
         if is_cpu_avail(bytes_mask, start):
             set_cpu(result, start)
             length -= 1
@@ -148,9 +156,7 @@ def is_hexadecimal_str(s: str) -> bool:
         return False
 
 
-# Need auxiliary function to create a deciomal comma separated range from a bitmask cpuset
-
-# Defaults
+# Defaults to declare, which are values that can be given as options for the script
 NUM_OSD = 8
 NUM_REACTORS = 3
 
@@ -272,6 +278,7 @@ class CpuCoreAllocator(object):
         max_osd_num = self.num_avail_phys_cores // self.num_react
         assert max_osd_num > self.num_osd, "Not enough physical CPU cores"
 
+
     def setup(self):
         """
         Preparation and validation of available CPU ids
@@ -287,6 +294,55 @@ class CpuCoreAllocator(object):
         logger.debug(f"self.bytes_avail_cpus: {self.bytes_avail_cpus}")
         self.validate_cpu_for_osd()
 
+
+    def bitmask_to_range(self, bytes_mask) -> str:
+        """
+        Produce a list of decimal ranges from the bitmask cpuset
+        """
+        lista = []
+        start = -1
+        end = start
+        i = 0
+        # Do we need to check max_cpu < self.lscpu.get_num_logical_cpus():
+        max_cpu = len(bytes_mask) * 8
+        logger.debug(f"max_cpu : {max_cpu}")
+        while i<max_cpu:
+            flag = is_cpu_avail(bytes_mask, i)
+            if flag:
+                if start == -1:
+                    start = i
+                logger.debug(f"i: {i}, lista:{pformat(lista)}")
+                while is_cpu_avail(bytes_mask,i) and i<max_cpu:
+                    end = i
+                    i += 1
+                if start == end:
+                    lista.append(f"{start}")
+                else:
+                    lista.append(f"{start}-{end}")
+                start = -1
+            else:
+                logger.debug(f"not i: {i}, lista:{pformat(lista)}")
+                while not is_cpu_avail(bytes_mask, i) and i<max_cpu:
+                    i += 1
+        return ",".join(lista)
+
+
+    def set_osd_cpuset(self, osd, cpuset_ba:bytes) -> None:
+        """
+        Updates the internal attributes to trace the CPUs assigned to the OSD process
+        """
+        osd_cpu_s = bytes(cpuset_ba).hex()
+        # Update the bitset mask:
+        if osd in self.osds_cpu_out["hex_cpu_mask"]:
+            self.osds_cpu_out["hex_cpu_mask"][osd] += f",{osd_cpu_s}"
+        else:
+            self.osds_cpu_out["hex_cpu_mask"].update({osd: osd_cpu_s})
+
+        osd_cpu_str = self.bitmask_to_range(cpuset_ba)
+        self.osds_cpu_out["dec_ranges"].update({osd: osd_cpu_str})
+        logger.debug(f"self.osds_cpu_out: {pformat(self.osds_cpu_out)}")
+
+
     def do_distrib_socket_based(self):
         """
         Distribution criteria: the reactors of each OSD are distributed across the available
@@ -301,7 +357,6 @@ class CpuCoreAllocator(object):
         """
         # Init: common to both strategies
         control = []
-        cores_to_disable = set([])
         num_sockets = self.lscpu.get_num_sockets()
 
         # Each OSD uses num reactor//sockets cores
@@ -320,9 +375,7 @@ class CpuCoreAllocator(object):
         # This dict would hold a bitsetmask in hex per OSD
         osds_ba = {}
         # Traverse the OSD to produce an allocation
-        #  f"total_phys_cores: {total_phys_cores}, max_osd_num: {max_osd_num}, step:{step}, rem:{reminder} "
         for osd in range(self.num_osd):
-            osds = []  # List of ranges as string
             for socket in control:
                 _start = socket["physical_start"]
                 _step = step
@@ -347,65 +400,36 @@ class CpuCoreAllocator(object):
                     osds_ba[osd] = merged
                 else:
                     osds_ba.update({osd: cpuset_ba})
-                osds.append(f"{_start}-{_end - 1}")
                 # Disable this OSD bitmaskset from the cpu_avail_ba
                 cpu_avail_ba = bytes(map(lambda a, b: a & ~b, cpu_avail_ba, cpuset_ba))
-                #osd_cpu_s = bytes(cpuset_ba).hex()
+                osd_cpu_s = bytes(cpuset_ba).hex()
                 osd_cpu_s = bytes(osds_ba[osd]).hex()
                 avail_s = bytes(cpu_avail_ba).hex()
                 logger.debug(f"-- OSD: {osd}: {osd_cpu_s}, avail:{avail_s}")
                 # Update the bitset mask
-                if osd in self.osds_cpu_out["hex_cpu_mask"]:
-                    # We actuallly need to 'or' it for the new socket
-                    self.osds_cpu_out["hex_cpu_mask"][osd] = osd_cpu_s
-                else:
-                    self.osds_cpu_out["hex_cpu_mask"].update({osd: osd_cpu_s})
-                # Shall we extract a range from the bitset? If so, we have two general cases:
-                # contiguos range: just give the (start,end),
-                # gaps: enumerate the cpu id, until the next one, comma separated
+                self.set_osd_cpuset(osd, osds_ba[osd])
+
                 if _end <= socket["physical_end"]:
                     socket["physical_start"] = _end
-                    # Produce the HT sibling list to disable
-                    # Consider to use sets to avoid dupes
                     _ht_start = socket["ht_sibling_start"]
                     _ht_end = socket["ht_sibling_start"] + step
                     plist = list(
                         range(
-                            socket["ht_sibling_start"],
-                            (socket["ht_sibling_start"] + _step),
+                            _ht_start,
+                            _ht_end,
                             1,
                         )
                     )
                     logger.debug(f"plist: {plist}")
-                    pset = set(plist)
-                    osd_cpu_str = f"{_ht_start}-{_ht_end - 1}"
-                    if osd in self.osds_cpu_out["dec_ranges"]:
-                        previous = self.osds_cpu_out["dec_ranges"][osd]
-                        self.osds_cpu_out["dec_ranges"][osd] = ",".join(
-                            [previous, osd_cpu_str]
-                        )
-                    else:
-                        self.osds_cpu_out["dec_ranges"] = {osd: osd_cpu_str}
-
-                    # _to_disable=pset.union(cores_to_disable)
-                    cores_to_disable = pset.union(cores_to_disable)
-                    logger.debug(f"cores_to_disable: {list(cores_to_disable)}")
                     socket["ht_sibling_start"] += _step
-                    # Update the list for this OSD with its HT siblings
-                    osds.append(plist)
                 else:
                     # bail out
                     _sops = socket["physical_start"] + step
                     logger.debug(f"out of range: {_sops}")
                     break
-            # print(",".join(osds))
-        # Instead of disabling these cores, we assign them to the reactors
-        _to_disable = sorted(list(cores_to_disable))
-        # print(" ".join(map(str, _to_disable)))
-        self._to_disable = _to_disable
+        # Set the reminder available CPU
+        self.set_osd_cpuset('available', bytes(cpu_avail_ba) )
         self.osds_ba = osds_ba
-        # Last to add: the set of available CPU
-        self.osds_cpu_out["hex_cpu_mask"]["available"] = avail_s
 
     def do_distrib_osd_based(self):
         """
@@ -415,7 +439,6 @@ class CpuCoreAllocator(object):
         Produces a list of ranges to use for the ceph config set CLI.
         """
         control = []
-        cores_to_disable = set([])
         # Each OSD uses num reactor cores from the same NUMA socket
         num_sockets = self.lscpu.get_num_sockets()
         step = self.num_react
@@ -433,7 +456,7 @@ class CpuCoreAllocator(object):
         # Traverse the OSD to produce an allocation
         # even OSD num uses socket0, odd OSD number uses socket 1
         for osd in range(self.num_osd):
-            osds = []  # List of ranges as string
+            #osds = []  # List of ranges as string
             _so_id = osd % num_sockets
             socket = control[_so_id]
             _start = socket["physical_start"]
@@ -442,17 +465,9 @@ class CpuCoreAllocator(object):
             logger.debug(
                 f"osd: {osd}, socket:{_so_id}, _start:{_start}, _end:{_end - 1}"
             )
-            # print(f"{_start}-{_end - 1}")
-            osd_cpu_str = f"{_start}-{_end - 1}"
-            if osd in self.osds_cpu_out["dec_ranges"]:
-                previous = self.osds_cpu_out["dec_ranges"][osd]
-                self.osds_cpu_out["dec_ranges"][osd] = ",".join([previous, osd_cpu_str])
-            else:
-                self.osds_cpu_out["dec_ranges"] = {osd: osd_cpu_str}
-
-            # Verify this range is valid, otherwise shift as appropriate
+            # Verify this range is valid, skipping unavailable CPU ids as appropriate
             cpuset_ba = get_range(cpu_avail_ba, _start, step)
-            # Associate their HT siblings of this range
+            # Associate their HT siblings of this range -- what if some of these are disabled?
             cpuset_ba = set_all_ht_siblings(cpuset_ba)
             # Update the list of bitmask of this OSD
             if osd in osds_ba:
@@ -460,22 +475,17 @@ class CpuCoreAllocator(object):
                 osds_ba[osd] = merged
             else:
                 osds_ba.update({osd: cpuset_ba})
-            osds.append(f"{_start}-{_end - 1}")
+            #osds.append(f"{_start}-{_end - 1}")
             # Disable this OSD bitmaskset from the cpu_avail_ba
             cpu_avail_ba = bytes(map(lambda a, b: a & ~b, cpu_avail_ba, cpuset_ba))
             osd_cpu_s = bytes(cpuset_ba).hex()
             avail_s = bytes(cpu_avail_ba).hex()
             logger.debug(f"-- OSD: {osd}: {osd_cpu_s}, avail:{avail_s}")
             # Update the bitset mask
-            if osd in self.osds_cpu_out["hex_cpu_mask"]:
-                self.osds_cpu_out["hex_cpu_mask"][osd] += f",{osd_cpu_s}"
-            else:
-                self.osds_cpu_out["hex_cpu_mask"].update({osd: osd_cpu_s})
+            self.set_osd_cpuset(osd, osds_ba[osd])
 
             if _end <= socket["physical_end"]:
                 socket["physical_start"] = _end
-                # Produce the HT sibling list to disable
-                # Consider to use sets to avoid dupes
                 _ht_start = socket["ht_sibling_start"]
                 _ht_end = socket["ht_sibling_start"] + step
                 plist = list(
@@ -486,35 +496,21 @@ class CpuCoreAllocator(object):
                     )
                 )
                 logger.debug(f"plist: {plist}")
-                pset = set(plist)
-                osd_cpu_str = f"{_ht_start}-{_ht_end - 1}"
-                if osd in self.osds_cpu_out["dec_ranges"]:
-                    previous = self.osds_cpu_out["dec_ranges"][osd]
-                    self.osds_cpu_out["dec_ranges"][osd] = ",".join(
-                        [previous, osd_cpu_str]
-                    )
-                else:
-                    self.osds_cpu_out["dec_ranges"] = {osd: osd_cpu_str}
-                # _to_disable = pset.union(cores_to_disable)
-                # No longer diable cores: simply use the HT siblings in the range for the OSD to use
-                cores_to_disable = pset.union(cores_to_disable)
-                logger.debug(f"cores_to_disable: {list(cores_to_disable)}")
                 socket["ht_sibling_start"] += step
             else:
                 # bail out
                 _sops = socket["physical_start"] + step
                 logger.debug(f"Out of range: {_sops}")
                 break
-        _to_disable = sorted(list(cores_to_disable))
-        logger.debug(f"Final Cores to disable: {_to_disable}")
+        # Set the reminder available CPU
+        self.set_osd_cpuset('available', bytes(cpu_avail_ba) )
         # Set the following to exercise the unit tests
-        self._to_disable = _to_disable
         self.osds_ba = osds_ba
-        # Set the last cpuset of available
 
     def output_cpusets(self):
         """
-        Generic print of the cpuset to use per OSD and the remaining list of CPU available to use for everything else, eg Alien threads
+        Generic print of the cpuset to use per OSD and the remaining list of CPU available
+        to use for everything else, eg Alien threads
 
         # Convert a bytesarrys back to hex string
         # hex_string = "".join("%02x" % b for b in array_alpha)
@@ -528,9 +524,10 @@ class CpuCoreAllocator(object):
         else:
             for cpuset in self.osds_cpu_out["dec_ranges"].values():
                 print(cpuset)
-            print(" ".join(map(str, self._to_disable)))
+            #print(" ".join(map(str, self._to_disable)))
 
         logger.debug(f"osds_cpu_out: {pformat(self.osds_cpu_out)}")
+
 
     def run(self, distribute_strat):
         """
@@ -545,6 +542,7 @@ class CpuCoreAllocator(object):
             self.do_distrib_osd_based()
 
         self.output_cpusets()
+
 
 def main(argv):
     examples = """

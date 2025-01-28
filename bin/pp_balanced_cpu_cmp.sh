@@ -12,15 +12,14 @@
 # Defaults:
 OSD_TYPE=cyan
 RUN_DIR="/tmp"
-OUT_MD="${OSD_TYPE}_out_cmp.md"
-OUT_LOG="${OSD_TYPE}_out_cmp.log"
+IMG_DIR="images/"
 
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 # -d for the directory to traverse
 # -t for the type of OSD backend: [cyan| blue | sea ](store), 
-while getopts 'd:t:o:' option; do
+while getopts 'd:t:o:i:' option; do
   case "$option" in
     d) RUN_DIR=$OPTARG
         ;;
@@ -28,12 +27,16 @@ while getopts 'd:t:o:' option; do
         ;;
     o) OUT_MD=$OPTARG
         ;;
+    i) IMG_DIR=$OPTARG
+        ;;
     :) printf "missing argument for -%s\n" "$OPTARG" >&2
        usage >&2
        exit 1
        ;;
   esac
  done
+OUT_MD="${OSD_TYPE}_out_cmp.md"
+OUT_LOG="${OSD_TYPE}_out_cmp.log"
 # Post process the data collected from run_balanced_cyanstore.sh
 PLOT_TEMPLATE=/root/bin/cpu_cmp_TEMPLATE_CMP.plot
 
@@ -50,20 +53,22 @@ fun_pp_bal_vs_default_tests() {
   bal_ops_table["bal_socket"]="SOCKET_BAL_DAT"
   declare -a workloads=( randread randwrite seqwrite seqread )
   declare -a plots=( _bal_vs_unbal_iops_vs_lat _osd_cpu _osd_mem _fio_cpu _fio_mem )
+  #declare -A be_table=( ["cyan"]="crimson" ["blue"]="bluestore" ["sea"]="seastore" )
+  declare -A be_table=( ["blue"]="_160at" )
 
   for WORKLOAD in "${workloads[@]}"; do
     echo "# ${WORKLOAD}" >> ${OUT_MD}
     # The ranges should come from the test plan .yaml
     for NUM_OSD in 8; do
-      for NUM_REACTORS in 5 6; do
+      for NUM_REACTORS in 5; do
 
-        test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_8fio_${WORKLOAD}"
+        test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor${be_table[${OSD_TYPE}]}_8fio_${WORKLOAD}"
         test_title="${OSD_TYPE}store-${NUM_OSD}osd-${NUM_REACTORS}reactor-${WORKLOAD}"
         # ${OSD_TYPE}_5osd_3reactor_8fio_bal_socket_rc_1procs_randread.zip
         echo -e "## $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, response latency" >> ${OUT_MD}
         for KEY in "${!bal_ops_table[@]}"; do
 
-          TEST_RESULT="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_8fio_${KEY}_rc_1procs_${WORKLOAD}"
+          TEST_RESULT="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor${be_table[${OSD_TYPE}]}_8fio_${KEY}_rc_1procs_${WORKLOAD}"
           zarch="${TEST_RESULT}.zip"
           test_dat=${zarch/zip/dat}
           subs_table[${KEY}]="${test_dat}"
@@ -88,7 +93,7 @@ fun_pp_bal_vs_default_tests() {
         gnuplot ${test_name}.plot > /dev/null 2>&1
         for x in "${plots[@]}"; do
           this_plot="${test_name}${x}"
-          echo "![${this_plot}](${this_plot}.png)" >> ${OUT_MD}
+          echo "![${this_plot}](${IMG_DIR}${this_plot}.png)" >> ${OUT_MD}
         done
         echo "---" >> ${OUT_MD}
         done # NUM_REACTORS

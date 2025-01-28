@@ -546,7 +546,7 @@ class TasksetEntry(object):
                     {
                         "phy_start": self.lscpu.get_physical_start(s),
                         "ht_start": self.lscpu.get_ht_start(s),
-                        "num_cores": self.lscpu.get_num_physical(s),
+                        "num_cores": self.lscpu.get_num_physical(),
                     },
                     # Use this to calculate the size of grid
                     self.lscpu.get_num_logical_cpus(),

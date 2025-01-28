@@ -6,7 +6,9 @@
 # NUMA-socket based, intended for a 3-side comparison of response latency curves
 # for the three CPU allocation strategies
 # ! -d : indicate the run directory cd to
-# ! -t :  OSD backend type: cyan, blue
+# ! -t :  OSD backend type: cyan, blue, sea. Runs all the balanced vs default CPU core/reactor
+# distribution tests for the given OSD backend type, 'all' for the three of them.
+# ! -b : Run a single balanced CPU core/reactor distribution tests for all the OSD backend types
 
 #!/usr/bin/bash
 # Test plan experiment to compare the effect of balanced vs unbalanced CPU core distribution for the Seastar
@@ -15,10 +17,12 @@
 # get the CPU distribution for the 2 general cases: 24 physical vs 52 inc. HT
 RED='\033[0;31m'
 NC='\033[0m' # No Color
-#
+export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+
 # Invariant: number of CPU cores for FIO
 # Might try disable HT as well: so we can have the same test running on the two cases, which means that the FIO has two cases
-FIO_CPU_CORES="48-55" # inc HT
+VSTART_CPU_CORES="0-51,56-107" # inc HT
+FIO_CPU_CORES="52-55,108-111" # inc HT
 FIO_JOBS=/root/bin/rbd_fio_examples/
 OSD_TYPE=cyan
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
@@ -44,6 +48,7 @@ declare -A bal_ops_table
 bal_ops_table["default"]=""
 bal_ops_table["bal_osd"]=" --crimson-balance-cpu osd"
 bal_ops_table["bal_socket"]="--crimson-balance-cpu socket"
+declare -a order_keys=( default bal_osd bal_socket )
 
 # CLI for the OSD backend
 declare -A crimson_be_table
@@ -54,6 +59,9 @@ crimson_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS}"
 # Number of CPU cores for each case
 num_cpus['enable_ht']=${MAX_NUM_HT_CPUS_PER_SOCKET}
 num_cpus['disable_ht']=${MAX_NUM_PHYS_CPUS_PER_SOCKET}
+
+# Default options:
+BALANCE="all"
 
 # Index of test_table is the OSD num
 test_row["title"]="== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, $ALIEN_THREADS  alien threads, fixed FIO 8 cores, latency target =="
@@ -222,16 +230,15 @@ fun_run_ht_tests() {
       nta_osd=$(( num_threads_alien / NUM_OSD ))
      
       echo -e "${RED}== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, ${num_threads_alien} total alien wrk threads, ${num_cores_alien} num_cores_alien, latency target, ${HT_STATE} ==${NC}"
-      cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh --new -x --localhost --without-dashboard --bluestore --redirect-output --bluestore-devs ${STORE_DEVS} --crimson --crimson-smp ${NUM_REACTORS} --no-restart --crimson-alien-num-cores ${nca_osd} --crimson-alien-num-threads ${nta_osd}"
+      cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac ${VSTART_CPU_CORES} /ceph/src/vstart.sh --new -x --localhost --without-dashboard\
+          --bluestore --redirect-output --bluestore-devs ${STORE_DEVS} --crimson --crimson-smp ${NUM_REACTORS}\
+          --no-restart --crimson-alien-num-cores ${nca_osd} --crimson-alien-num-threads ${nta_osd}"
       #echo "${cmd[@]}" 
       echo "$cmd" | tee >> ${RUN_DIR}/cpu_distro.log
       test_name="crimson_${NUM_OSD}osd_${NUM_REACTORS}reactor_${nta_osd}at_8fio_lt_${HT_STATE}"
       #echo ${test_row["test"]}
       echo $test_name
       eval "$cmd" >> ${RUN_DIR}/cpu_distro.log
-      #$("$cmd") #  doesn't work
-      #"$cmd" # #  doesn't work
-      #"${cmd[@]}" # doesn't work
       # TODO: deal with exceptions
       sleep 20 # wait until all OSD online, pgrep?
       fun_show_grid $test_name
@@ -263,20 +270,21 @@ fun_run_all_ht_tests() {
 }
 
 #########################################
-# Run balanced vs default CPU core/reactor distribution in Crimson using either Cyan or  Bluestore
-fun_run_bal_vs_default_tests() {
-  local OSD_TYPE=$1
+# Run balanced vs default CPU core/reactor distribution in Crimson using either Cyan, Seastore or  Bluestore
+fun_run_fixed_bal_tests() {
+  local KEY=$1
+  local OSD_TYPE=$2
   local NUM_ALIEN_THREADS=7 # default 
   local title=""
 
-  for KEY in "${!bal_ops_table[@]}"; do
     for NUM_OSD in 8; do
-      for NUM_REACTORS in 5 6; do
+      for NUM_REACTOR in 5; do
         title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, response latency "
 
-        cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh --new -x --localhost --without-dashboard\
-            --redirect-output ${crimson_be_table[${OSD_TYPE}]} --crimson --crimson-smp ${NUM_REACTORS}\
-            --no-restart ${bal_ops_table[${KEY}]}"
+        # Default does not respect the balance VSTART_CPU_CORES
+        cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac '${VSTART_CPU_CORES}' /ceph/src/vstart.sh --new -x --localhost --without-dashboard\
+  --redirect-output ${crimson_be_table[${OSD_TYPE}]} --crimson --crimson-smp ${NUM_REACTORS}\
+  --no-restart ${bal_ops_table[${KEY}]}"
 
         test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_8fio_${KEY}_rc"
 
@@ -292,6 +300,7 @@ fun_run_bal_vs_default_tests() {
         echo $test_name
         eval "$cmd" >> ${RUN_DIR}/${test_name}_cpu_distro.log
         # TODO: deal with exceptions
+        echo "Sleeping for 20 secs..."
         sleep 20 # wait until all OSD online, pgrep?
         fun_show_grid $test_name
         fun_run_fio $test_name
@@ -299,7 +308,23 @@ fun_run_bal_vs_default_tests() {
         sleep 60
       done
     done
-  done
+}
+
+#########################################
+# Run balanced vs default CPU core/reactor distribution in Crimson using either Cyan, Seastore or  Bluestore
+# Iterate over all the balanced CPU allocation strategies, given the OSD osd-be-type
+fun_run_bal_vs_default_tests() {
+  local OSD_TYPE=$1
+  local BAL=$2
+
+  if [ "$BAL" == "all" ]; then
+    #for KEY in "${!bal_ops_table[@]}"; do
+    for KEY in "${!bal_ops_table[@]}"; do
+      fun_run_fixed_bal_tests ${KEY} ${OSD_TYPE}
+    done
+  else
+    fun_run_fixed_bal_tests ${BAL} ${OSD_TYPE}
+  fi
 }
 
 #############################################################################################
@@ -333,7 +358,9 @@ fun_run_cmp_lt_tests() {
 
         echo -e "${RED}== (${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, latency target ==${NC}"
 
-        cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh --new -x --localhost --without-dashboard --redirect-output ${crimson_be_table[${OSD_TYPE}]} --crimson --crimson-smp ${NUM_REACTORS} --no-restart ${bal_ops_table[${KEY}]}"
+        cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh --new -d --localhost\
+ --without-dashboard --redirect-output ${crimson_be_table[${OSD_TYPE}]} --crimson\
+ --crimson-smp ${NUM_REACTORS} --no-restart ${bal_ops_table[${KEY}]}"
       test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_8fio_${KEY}_lt"
       echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
       echo $test_name
@@ -354,10 +381,12 @@ done
 #
 cd /ceph/build/
 
-while getopts 'at:s:r:l:' option; do
+while getopts 'ab:t:s:r:l:' option; do
   case "$option" in
     a) fun_show_all_tests
        exit
+        ;;
+    b) BALANCE=$OPTARG
         ;;
     d) RUN_DIR=$OPTARG
         ;;
@@ -368,8 +397,6 @@ while getopts 'at:s:r:l:' option; do
        exit
         ;;
     t) OSD_TYPE=$OPTARG
-       fun_run_bal_vs_default_tests ${OSD_TYPE} # response latency
-       exit
         ;;
     l) OSD_TYPE=$OPTARG
        fun_run_cmp_lt_tests ${OSD_TYPE} # latency target
@@ -381,6 +408,13 @@ while getopts 'at:s:r:l:' option; do
        ;;
   esac
  done
+ if [ "$OSD_TYPE" == "all" ]; then
+   for OSD_TYPE in cyan blue sea; do
+     fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}
+   done
+ else
+   fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE} # response latency
+ fi
 exit
 
 #########################################

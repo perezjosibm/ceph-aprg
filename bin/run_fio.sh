@@ -394,7 +394,7 @@ fun_run_workload() {
   # Archiving:
   zip -9mqj ${TEST_RESULT}.zip ${_TEST_LIST} ${TEST_RESULT}_json.out \
     *_top.out *.json *.plot *.dat *.png *.gif ${TOP_OUT_LIST} \
-    osd*_threads.out *_threads_list ${TOP_PID_LIST} *.svg *.tex *_cpu_distro.log
+    osd*_threads.out *_list ${TOP_PID_LIST} *.svg *.tex *_cpu_distro.log numa_args*.out
       # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
       rm -f *.log
     }
