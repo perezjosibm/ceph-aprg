@@ -247,6 +247,7 @@ fun_run_workload() {
           NUM_OSD=$(pgrep -c osd)
           if [[ $NUM_OSD -le 0 ]]; then
             echo " ERROR == no OSD process running .. bailing out"
+            # Refactor the post into a function to be called from here to tidy up
             exit 1;
           fi
         fi

@@ -28,3 +28,5 @@ bin/ceph balancer off
 bin/ceph osd set nodeep-scrub
 # Turn off scrub
 bin/ceph osd set noscrub
+# Turn off RBD coalescing
+bin/ceph config set client rbd_io_scheduler none 

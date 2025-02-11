@@ -9,9 +9,9 @@
 ######################################################################
 [global]
 #logging
-write_iops_log=prefill
-write_bw_log=prefill
-write_lat_log=prefill
+# write_iops_log=prefill
+# write_bw_log=prefill
+# write_lat_log=prefill
 #rbdname=fio_test
 rbdname=${RBD_NAME}
 ioengine=rbd
@@ -20,8 +20,8 @@ pool=rbd
 bs=64k
 direct=1
 runtime=7m
-time_based
-group_reporting
+time_based=1
+group_reporting=1
 numjobs=2 # num concurrent clients/processes
 ramp_time=30s
 

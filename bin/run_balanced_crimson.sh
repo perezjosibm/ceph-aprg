@@ -16,6 +16,7 @@
 #
 # get the CPU distribution for the 2 general cases: 24 physical vs 52 inc. HT
 RED='\033[0;31m'
+GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
 
@@ -63,6 +64,8 @@ num_cpus['disable_ht']=${MAX_NUM_PHYS_CPUS_PER_SOCKET}
 # Default options:
 BALANCE="all"
 
+# Either rewrite or define a new oe to define the test plan table: pre, post and run "callbacks", only the run has a counter or max attempts, the rest are just functions
+# The test plan table should be a dict with the test name as key, and the value is a list of functions to run
 # Index of test_table is the OSD num
 test_row["title"]="== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, $ALIEN_THREADS  alien threads, fixed FIO 8 cores, latency target =="
 test_row['osd']="$NUM_OSD"
@@ -116,12 +119,12 @@ fun_set_osd_pids() {
   local TEST_PREFIX=$1
   # Should be a better way, eg ceph query
   local NUM_OSD=$(pgrep -c osd)
-  echo -e "${RED}== Constructing list of threads and affinity for ${TEST_PREFIX} ==${NC}"
+  echo -e "${GREEN}== Constructing list of threads and affinity for ${TEST_PREFIX} ==${NC}"
   for (( i=0; i<$NUM_OSD; i++ )); do
     [ -f "${RUN_DIR}/osd_${i}_${TEST_PREFIX}_threads.out" ] && rm -f ${RUN_DIR}/osd_${i}_${TEST_PREFIX}_threads.out
     iosd=/ceph/build/out/osd.${i}.pid
-    echo -e "${RED}== " $(cat "$iosd") "==${NC}"
     if [ -f "$iosd" ]; then
+      echo -e "${GREEN}== osd${i} pid: " $(cat "$iosd") "==${NC}"
       osd_id["osd.${i}"]=$(cat "$iosd")
       x=${osd_id["osd.${i}"]}
       # Count number, name and affinity of the OSD threads
@@ -130,6 +133,8 @@ fun_set_osd_pids() {
       paste _threads.out _tasks.out >> "${RUN_DIR}/osd_${i}_${TEST_PREFIX}_threads.out"
       rm -f  _threads.out _tasks.out
       echo "osd_${i}_${TEST_PREFIX}_threads.out" >>  "${RUN_DIR}/${TEST_PREFIX}_threads_list"
+    else
+        echo -e "${RED}== osd.${i} not found ==${NC}"
     fi
   done
   
@@ -167,11 +172,12 @@ fun_run_fio(){
   local TEST_NAME=$1
 
   [ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
-  /root/bin/cephlogoff.sh 2>&1 > /dev/null
+  /root/bin/cephlogoff.sh 2>&1 > /dev/null && \
   # Preliminary: simply collect the threads from OSD to verify its as expected
-  /root/bin/cephmkrbd.sh
+  /root/bin/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_cpu_distro.log && \
   #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
-  RBD_NAME=fio_test_0 fio ${FIO_JOBS}rbd_prefill.fio && rbd du fio_test_0 && \
+  # Debug flag in place since recent RBD hangs
+  RBD_NAME=fio_test_0 fio --debug=io ${FIO_JOBS}rbd_prefill.fio  2>&1 > /dev/null && rbd du fio_test_0 && \
     /root/bin/run_fio.sh -s -w hockey -r -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n -x
       # w/o osd dump_metrics, x: skip response curves stop heuristic
 }
@@ -277,8 +283,10 @@ fun_run_fixed_bal_tests() {
   local NUM_ALIEN_THREADS=7 # default 
   local title=""
 
-    for NUM_OSD in 8; do
-      for NUM_REACTOR in 5; do
+  echo -e "${GREEN}== ${OSD_TYPE} ==${NC}"
+
+    for NUM_OSD in  1 3 5 8; do
+      for NUM_REACTORS in 3 5; do
         title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, response latency "
 
         # Default does not respect the balance VSTART_CPU_CORES
@@ -317,6 +325,7 @@ fun_run_bal_vs_default_tests() {
   local OSD_TYPE=$1
   local BAL=$2
 
+  echo -e "${GREEN}== ${BAL} ==${NC}"
   if [ "$BAL" == "all" ]; then
     #for KEY in "${!bal_ops_table[@]}"; do
     for KEY in "${!bal_ops_table[@]}"; do
@@ -333,14 +342,24 @@ fun_run_fio_lt(){
   local TEST_NAME=$1
 
   [ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
-  /root/bin/cephlogoff.sh 2>&1 > /dev/null
+  /root/bin/cephlogoff.sh 2>&1 > /dev/null && \
   # Preliminary: simply collect the threads from OSD to verify its as expected
-  /root/bin/cephmkrbd.sh
+  /root/bin/cephmkrbd.sh && \
   #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
   RBD_NAME=fio_test_0 fio ${FIO_JOBS}rbd_prefill.fio && rbd du fio_test_0 && \
     /root/bin/run_fio.sh -s -l -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n
 }
 
+#########################################
+# Remember to reegenerate the radwrite64k.fio for the config of drives
+fun_run_precond(){
+  local TEST_NAME=$1
+
+  echo -e "${GREEN}== Preconditioning ==${NC}"
+  jc --pretty /proc/diskstats > ${RUN_DIR}/${TEST_NAME}.json && \
+      fio ${FIO_JOBS}randwrite64k.fio && \
+      jc --pretty /proc/diskstats | python3 diskstat_diff.py -d ${RUN_DIR} -a  ${TEST_NAME}.json 
+}
 #########################################
 # Run balanced (osd|socket) vs default CPU core/reactor distribution for cyanstore -- latency target with profiling
 # # Refactor this as a single function with paramenter whether its a latency target or response curves
@@ -408,6 +427,8 @@ while getopts 'ab:t:s:r:l:' option; do
        ;;
   esac
  done
+ fun_run_precond "precond"
+
  if [ "$OSD_TYPE" == "all" ]; then
    for OSD_TYPE in cyan blue sea; do
      fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}
