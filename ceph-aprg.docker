@@ -36,6 +36,7 @@ RUN yum install python3-lxml -y
 RUN yum install python3-yaml -y
 RUN yum install gnuplot -y
 RUN yum install vim -y
+# The following two might no longer be needed, check
 RUN yum install perl-JSON -y
 RUN yum install perl-JSON-XS -y
 # Ceph: on its own volume as well
@@ -70,6 +71,9 @@ ADD cephlog /etc/logrotate.d/ceph
 ADD bashrc /root/.bashrc
 # Add this repo: so all scripts and test plans are in place
 RUN cd /root && git clone https://github.com/perezjosibm/ceph-aprg
+# RUN pip3 install -r /root/ceph-aprg/requirements.txt
+# Seaborn: if the above don't quite work:
+# RUN python3 -m pip install /tmp/seaborn-0.13.2.tar.gz
 #ADD gitconfig  /root/.gitconfig
 #ADD vimrc  /root/.vimrc
 #COPY --chmod=755 bin/fio-parse-jsons.py /root/bin/

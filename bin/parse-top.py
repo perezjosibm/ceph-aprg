@@ -223,7 +223,7 @@ class TopEntry(object):
                         avg_d["index"] += 1  # prob redundant
                         avg_d["total"] = 0.0
 
-    def aggregate_proc(self, index, pg, procs):
+    def aggregate_proc(self, index, pg, procs, mem_used):
         """
         Aggregate the procs onto the corresponding pg under pdict
         """
@@ -237,16 +237,21 @@ class TopEntry(object):
                     pdict.update(
                         {
                             pname: {
-                                "cpu": [0.0] * self.num_samples,
-                                "mem": [0.0] * self.num_samples,
+                                "cpu": [0.0] * self.num_samples, # value pc
+                                "mem": [0.0] * self.num_samples, # value in MB
                             }
                         }
                     )
                     self.update_pids(pg, p)
                 for m in self.METRICS:
                     # Agglutinate up to num samples
-                    pdict[pname][m][index] += p[f"percent_{m}"]
-                    self.avg_cpu[pg][m]["total"] += p[f"percent_{m}"]
+                    if m == "mem":
+                        _val = (p[f"percent_{m}"] * mem_used) / 100.0
+                    else:
+                        _val = p[f"percent_{m}"]
+                    # Woul dit be a rolling average instead of accumulation? 
+                    pdict[pname][m][index] += _val
+                    self.avg_cpu[pg][m]["total"] += _val
 
     def filter_metrics(self, samples):
         """
@@ -257,10 +262,12 @@ class TopEntry(object):
         logger.debug(f"Got {self.num_samples}")
         for _i, item in enumerate(samples):
             self.update_avg(_i)
+            mem_used = item["mem_used"]
+            # calculate the space used by each thread below
             procs = item["processes"]  # list of dicts jobs
             # Filter those PIDs we are interested
             for pg in self.PROC_INFO:
-                self.aggregate_proc(_i, pg, procs)
+                self.aggregate_proc(_i, pg, procs, mem_used)
 
         logger.info(f"Parsed {self.num_samples} entries from {self.options.config}")
         logger.debug(f"avg_cpu: {json.dumps(self.avg_cpu, indent=4)}")

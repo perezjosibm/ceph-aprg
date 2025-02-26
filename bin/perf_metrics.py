@@ -1,10 +1,8 @@
 #!/usr/bin/python
 """
-This script expect an input .json file name as argument, and a .json stream
-from stdin, and
-calculates its difference, (producing a gnuplot .plot and dat for it)
-Might generalise later for a whole set of samples (like we do with top).
-It could also be extended to process .json from ceph conf osd tell dump_metrics.
+This script expect [list?, pair?] of input .json file(s) name as argument,
+corresponding to before,after measurements taken from ceph conf osd tell dump_metrics.
+Produces a heatmap with columns the OSDs and rows the metrics (e.g. read_time_ms, write_time_ms).
 """
 
 import argparse
@@ -33,37 +31,14 @@ def serialize_sets(obj):
     return obj
 
 
-class DiskStatEntry(object):
+class PerfMetricEntry(object):
     """
-    Calculate the difference between an diskstat .json file and
-    a .json stream from stdin, and
-    produce a gnuplot and .JSON of the difference
-    jc --pretty /proc/diskstats
-    {
-    "maj": 8,
-    "min": 1,
-    "device": "sda1",
-    "reads_completed": 43291,
-    "reads_merged": 34899,
-    "sectors_read": 4570338,
-    "read_time_ms": 20007,
-    "writes_completed": 6562480,
-    "writes_merged": 9555760,
-    "sectors_written": 1681486816,
-    "write_time_ms": 10427489,
-    "io_in_progress": 0,
-    "io_time_ms": 2062151,
-    "weighted_io_time_ms": 10447497,
-    "discards_completed_successfully": 0,
-    "discards_merged": 0,
-    "sectors_discarded": 0,
-    "discarding_time_ms": 0,
-    "flush_requests_completed_successfully": 0,
-    "flushing_time_ms": 0
-    }
+    Parses the .json from the output of
+    ceph conf osd tell dump_metrics.
+    Only interested in the following measurements: TBC
+    OSD is the principal column, the indices (rows) are the metrics,
+    Might need a separate heatmap for each group of metrics (groups related by type and prefix).
 
-    Only interested in the following measurements:
-    "device" "reads_completed" "read_time_ms" "writes_completed" "write_time_ms"
     """
 
     def __init__(self, aname: str, regex: str, directory: str):
@@ -75,11 +50,14 @@ class DiskStatEntry(object):
         self.aname = aname
         self.regex = re.compile(regex)  # , re.DEBUG)
         self.time_re = re.compile(r"_time_ms$")
+        # Prefixes (or define Regexes) for the metrics we are interested in
+        # Main key : "metrics"
         self.measurements = [
-            "reads_completed",
-            "read_time_ms",
-            "writes_completed",
-            "write_time_ms",
+            re.compile(r"^(cache.*)"),  # , re.DEBUG)
+        ]
+        # Skip these for the time being until we know better what they are
+        self.skip_measurements = [
+            re.compile(r"^(cache_commited.*)"),  # , re.DEBUG)
         ]
 
         self.directory = directory
@@ -109,12 +87,11 @@ class DiskStatEntry(object):
         """
         for dev in b_data:
             for m in b_data[dev]:
-                b_data[dev][m] -= a_data[dev][m]
-                # if self.time_re.search(m):
-                #     _max = max([b_data[dev][m], a_data[dev][m]])
-                #     b_data[dev][m] = _max
-                # else:
-                #     b_data[dev][m] -= a_data[dev][m]
+                if self.time_re.search(m):
+                    _max = max([b_data[dev][m], a_data[dev][m]])
+                    b_data[dev][m] = _max
+                else:
+                    b_data[dev][m] -= a_data[dev][m]
         self._diff = b_data
         self.df = pd.DataFrame(self._diff) #.T # Transpose
 
@@ -166,7 +143,53 @@ class DiskStatEntry(object):
             sns.heatmap(df_slice, annot=True, fmt=".1f", linewidths=.5, ax=ax)
             #plt.show()
             plt.savefig(self.aname.replace("_diskstat.json", f"_{slice_name}_heatmap.png"))
+    
+    def _znormalisation(self, df): # df: pd.DataFrame
+        """
+        Normalise the dataframe
+        """
+        # copy the data 
+        df_z_scaled = df.copy() 
 
+        # apply normalization techniques 
+        for column in df_z_scaled.columns: 
+            df_z_scaled[column] = (df_z_scaled[column] -
+                                df_z_scaled[column].mean()) / df_z_scaled[column].std()	 
+
+        # view normalized data 
+        #display(df_z_scaled)
+        df_z_scaled.plot(kind='bar', stacked=True)
+
+
+    def _minmax_normalisation(self, df): # df: pd.dataframe
+        """
+        Apply min-max normalisation to the DataFrame
+        """
+        # copy the data
+        df_minmax_scaled = df.copy()
+
+        # apply normalization techniques
+        for column in df_minmax_scaled.columns:
+            df_minmax_scaled[column] = (df_minmax_scaled[column] - df_minmax_scaled[column].min()) / (df_minmax_scaled[column].max() - df_minmax_scaled[column].min())
+
+        # view normalized data
+        #print(df_minmax_scaled)
+        df_minmax_scaled.plot(kind='bar', stacked=True)
+
+    def _max_abs_normalisation(self, df): # df: pd.dataframe 
+        """
+        Apply max-abs normalisation to the dataframe
+        """
+        # copy the data
+        df_maxabs_scaled = df.copy()
+
+        # apply normalization techniques
+        for column in df_maxabs_scaled.columns:
+            df_maxabs_scaled[column] = df_maxabs_scaled[column] / df_maxabs_scaled[column].abs().max()
+
+        # view normalized data
+        #print(df_maxabs_scaled)
+        df_maxabs_scaled.plot(kind='bar', stacked=True)
 
     def run(self):
         """
@@ -177,8 +200,8 @@ class DiskStatEntry(object):
         a_data = self.load_json(self.aname)
         b_data = self.filter_metrics(json.load(sys.stdin))
         self.get_diff(a_data, b_data)
-        self.save_json()
         self.make_heatmap(self.df)
+        self.save_json()
 
 
 def main(argv):
@@ -234,7 +257,7 @@ def main(argv):
 
     logger.debug(f"Got options: {options}")
 
-    dsDiff = DiskStatEntry(options.a, options.regex, options.directory)
+    dsDiff = PerfMetricEntry(options.a, options.regex, options.directory)
     dsDiff.run()
 
 

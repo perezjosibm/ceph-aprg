@@ -13,7 +13,10 @@ bin/ceph osd pool application enable rbd rbd
 [ -z "$NUM_RBD_IMAGES" ] && NUM_RBD_IMAGES=1
 for (( i=0; i<$NUM_RBD_IMAGES; i++ )); do
   bin/rbd create --size ${RBD_SIZE} rbd/fio_test_${i}
-  rbd du fio_test_${i}
+  bin/rbd du fio_test_${i}
+  # Prefill, so we workaround the FIO prefill 
+  echo "Prefilling rbd/fio_test_${i}"
+  bin/rbd bench -p rbd --image fio_test_${i} --io-size 64K --io-threads 1 --io-total ${RBD_SIZE} --io-pattern seq --io-type write  && rbd du fio_test_${i}
 done
 bin/ceph status
 bin/ceph osd dump | grep 'replicated size'

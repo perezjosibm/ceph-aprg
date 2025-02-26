@@ -1,9 +1,7 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 """
-This script expect an input .json file name as argument, and a .json stream
-from stdin, and
-calculates its difference, (producing a gnuplot .plot and dat for it)
-Might generalise later for a whole set of samples (like we do with top).
+This script expect an input .json file  produced from mdiskstat_diff.py
+Produced a Pandas dataframe with the difference between the two files implicitly and a heatmap using seaborn.
 It could also be extended to process .json from ceph conf osd tell dump_metrics.
 """
 
@@ -73,79 +71,37 @@ class DiskStatEntry(object):
         The result is a dict with keys the device names, values the measurements above
         """
         self.aname = aname
+        self.df = None
         self.regex = re.compile(regex)  # , re.DEBUG)
         self.time_re = re.compile(r"_time_ms$")
         self.measurements = [
             "reads_completed",
-            "read_time_ms",
             "writes_completed",
+            "read_time_ms",
             "write_time_ms",
         ]
 
         self.directory = directory
-        self._diff = {}
-        self.df = None # Pandas dataframe
-
-    def filter_metrics(self, ds):
-        """
-        Filter the (array of dicts) to the measurements we want, of those device names
-        """
-        result = {}
-        for item in ds:
-            dv = item["device"]
-            # Can we use list comprehension here?
-            if self.regex.search(dv):
-                if dv not in result:
-                    result.update({dv: {}})
-                for m in self.measurements:
-                    result[dv].update({m: item[m]})
-        return result
-
-    def get_diff(self, a_data, b_data):
-        """
-        Calculate the difference of b_data - a_data
-        Assigns the result to self._diff, we use that to make a dataframe and
-        produce heatmaps
-        """
-        for dev in b_data:
-            for m in b_data[dev]:
-                b_data[dev][m] -= a_data[dev][m]
-                # if self.time_re.search(m):
-                #     _max = max([b_data[dev][m], a_data[dev][m]])
-                #     b_data[dev][m] = _max
-                # else:
-                #     b_data[dev][m] -= a_data[dev][m]
-        self._diff = b_data
-        self.df = pd.DataFrame(self._diff) #.T # Transpose
-
+        
     def load_json(self, json_fname):
         """
         Load a .json file containing diskstat metrics
-        Returns a dict with keys only those interested device names
+        Returns a pandas dataframe (default index is the device name)
         """
         try:
             with open(json_fname, "r") as json_data:
-                ds_list = []
+                #ds_list = []
                 # check for empty file
                 f_info = os.fstat(json_data.fileno())
                 if f_info.st_size == 0:
                     logger.error(f"JSON input file {json_fname} is empty")
-                    return ds_list
-                ds_list = json.load(json_data)
-                return self.filter_metrics(ds_list)
+                    return [] #ds_list
+                #ds_list = json.load(json_data)
+                df = pd.read_json(json_data)
+                print(df.to_string())
+                return df
         except IOError as e:
             raise argparse.ArgumentTypeError(str(e))
-
-    def save_json(self):
-        """
-        Save the difference
-        """
-        if self.aname:
-            with open(self.aname, "w", encoding="utf-8") as f:
-                json.dump(
-                    self._diff, f, indent=4, sort_keys=True, default=serialize_sets
-                )
-                f.close()
 
     def make_heatmap(self, df):
         """
@@ -167,31 +123,28 @@ class DiskStatEntry(object):
             #plt.show()
             plt.savefig(self.aname.replace("_diskstat.json", f"_{slice_name}_heatmap.png"))
 
-
+        
     def run(self):
         """
-        Entry point: processes the input files, then produces the diff
-        and saves it back to -a
+        Entry point: produces a dataframe  from the .json file
         """
         os.chdir(self.directory)
-        a_data = self.load_json(self.aname)
-        b_data = self.filter_metrics(json.load(sys.stdin))
-        self.get_diff(a_data, b_data)
-        self.save_json()
-        self.make_heatmap(self.df)
+        df = self.load_json(self.aname)
+        self.make_heatmap(df)
 
 
 def main(argv):
     examples = """
     Examples:
-    # Calculate the difference in diskstats between the start/end of a performance run:
+    # Produce a dataframe index by device names and a heatmap:
     # jc --pretty /proc/diskstats  > _start.json
     < .. run test.. >
     # jc --pretty /proc/diskstats | %prog -a _start.json
+    # %prog -a _start.json
 
     """
     parser = argparse.ArgumentParser(
-        description="""This tool is used to calculate the difference in diskstat measurements""",
+        description="""This tool is used to post process diskstat measurements""",
         epilog=examples,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

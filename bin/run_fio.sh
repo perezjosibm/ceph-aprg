@@ -218,6 +218,7 @@ fun_set_globals() {
   TOP_PID_JSON="${TEST_RESULT}_pid.json"
   OSD_CPU_AVG="${TEST_RESULT}_cpu_avg.json"
   DISK_STAT="${TEST_RESULT}_diskstat.json"
+  DISK_OUT="${TEST_RESULT}_diskstat.out"
 }
 
 #############################################################################################
@@ -296,8 +297,8 @@ fun_run_workload() {
       fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
 
       wait;
-      # Measure the diskstats after the completion of FIO
-      jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT}
+      # Measure the diskstats after the completion of FIO instances
+      jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
 
       # Exit the loops if the latency disperses too much from the median
       if [ "$RESPONSE_CURVE" = true ] && [ "$RC_SKIP_HEURISTIC" = false ]; then
@@ -395,7 +396,7 @@ fun_run_workload() {
   # Archiving:
   zip -9mqj ${TEST_RESULT}.zip ${_TEST_LIST} ${TEST_RESULT}_json.out \
     *_top.out *.json *.plot *.dat *.png *.gif ${TOP_OUT_LIST} \
-    osd*_threads.out *_list ${TOP_PID_LIST} *.svg *.tex *_cpu_distro.log numa_args*.out
+    osd*_threads.out *_list ${TOP_PID_LIST} *.svg *.tex *_cpu_distro.log numa_args*.out *_diskstat.out
       # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
       rm -f *.log
     }

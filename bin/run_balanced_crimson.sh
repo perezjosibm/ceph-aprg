@@ -55,7 +55,7 @@ declare -a order_keys=( default bal_osd bal_socket )
 declare -A crimson_be_table
 crimson_be_table["cyan"]="--cyanstore"
 crimson_be_table["blue"]="--bluestore --bluestore-devs ${STORE_DEVS}"
-crimson_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS}"
+crimson_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS} --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cache_lru_size=2G\""
 
 # Number of CPU cores for each case
 num_cpus['enable_ht']=${MAX_NUM_HT_CPUS_PER_SOCKET}
@@ -176,8 +176,8 @@ fun_run_fio(){
   # Preliminary: simply collect the threads from OSD to verify its as expected
   /root/bin/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_cpu_distro.log && \
   #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
-  # Debug flag in place since recent RBD hangs
-  RBD_NAME=fio_test_0 fio --debug=io ${FIO_JOBS}rbd_prefill.fio  2>&1 > /dev/null && rbd du fio_test_0 && \
+  # Debug flag in place since recent RBD hangs -- temporarily disabling in favour of prefilling via rbd bench at cephmkrbd.sh
+  #RBD_NAME=fio_test_0 fio --debug=io ${FIO_JOBS}rbd_prefill.fio  2>&1 > /dev/null && rbd du fio_test_0 && \
     /root/bin/run_fio.sh -s -w hockey -r -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n -x
       # w/o osd dump_metrics, x: skip response curves stop heuristic
 }
@@ -285,8 +285,8 @@ fun_run_fixed_bal_tests() {
 
   echo -e "${GREEN}== ${OSD_TYPE} ==${NC}"
 
-    for NUM_OSD in  1 3 5 8; do
-      for NUM_REACTORS in 3 5; do
+    for NUM_OSD in 8; do
+      for NUM_REACTORS in 2 4 5; do
         title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, response latency "
 
         # Default does not respect the balance VSTART_CPU_CORES
@@ -366,10 +366,6 @@ fun_run_precond(){
 fun_run_cmp_lt_tests() {
 
   local OSD_TYPE=$1
-  declare -A bal_ops_table
-  bal_ops_table["default"]=""
-  bal_ops_table["bal_osd"]=" --crimson-balance-cpu osd"
-  bal_ops_table["bal_socket"]="--crimson-balance-cpu socket"
 
   for KEY in "${!bal_ops_table[@]}"; do
     for NUM_OSD in 8; do
