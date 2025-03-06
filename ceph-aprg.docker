@@ -52,7 +52,8 @@ EXPOSE 41000/tcp
 RUN echo '[ -f "/ceph/build/vstart_environment.sh" ] && source /ceph/build/vstart_environment.sh' >>/etc/profile.d/ceph.sh
 RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >>/etc/sudoers
 # The following is needed when multiple reactors in Crimson are deployed
-RUN echo 2116992 > /proc/sys/fs/aio-max-nr
+# Failed!
+#RUN echo 2116992 > /proc/sys/fs/aio-max-nr
 RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >>/etc/sudoers
 ## Utilities: on c_packages volume
 RUN bash -exc '[ ! -d /packages ] && mkdir /packages'; cd /packages && git clone https://git.kernel.dk/fio.git \
@@ -71,9 +72,9 @@ ADD cephlog /etc/logrotate.d/ceph
 ADD bashrc /root/.bashrc
 # Add this repo: so all scripts and test plans are in place
 RUN cd /root && git clone https://github.com/perezjosibm/ceph-aprg
-# RUN pip3 install -r /root/ceph-aprg/requirements.txt
+RUN pip3 install -r /root/ceph-aprg/requirements.txt
 # Seaborn: if the above don't quite work:
-# RUN python3 -m pip install /tmp/seaborn-0.13.2.tar.gz
+RUN python3 -m pip install /tmp/seaborn-0.13.2.tar.gz
 #ADD gitconfig  /root/.gitconfig
 #ADD vimrc  /root/.vimrc
 #COPY --chmod=755 bin/fio-parse-jsons.py /root/bin/
@@ -92,3 +93,5 @@ RUN cd /root && git clone https://github.com/perezjosibm/ceph-aprg
 # c_ceph -> /ceph
 # c_packages -> /packages
 # When running the container, additional volume: c_results -> /tmp/results
+RUN cd /packages/fio && git config --global --add safe.directory /packages/fio
+RUN cd /ceph && git config --global --add safe.directory /ceph

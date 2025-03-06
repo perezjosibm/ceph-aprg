@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 
-# ! Usage: ./run_balanced_crimson.sh [-t <osd-be-type>] [-d rundir]
+# ! Usage: ./run_balanced_osd.sh [-t <osd-be-type>] [-d rundir]
 # !		 
-# ! Run test plans to exercise the 3 CPU allocation strategies: default (no balance), OSD-based,
-# NUMA-socket based, intended for a 3-side comparison of response latency curves
-# for the three CPU allocation strategies
+# ! Run test plans to compare Classic vs Crimson OSD
 # ! -d : indicate the run directory cd to
-# ! -t :  OSD backend type: cyan, blue, sea. Runs all the balanced vs default CPU core/reactor
-# distribution tests for the given OSD backend type, 'all' for the three of them.
+# ! -t :  OSD backend type: classic, cyan, blue, sea. 
+# !  Runs all the balanced vs default CPU core/reactor
+# !    distribution tests for the given OSD backend type, 'all' for the three of them.
 # ! -b : Run a single balanced CPU core/reactor distribution tests for all the OSD backend types
 
 #!/usr/bin/bash
@@ -59,7 +58,7 @@ bal_ops_table["bal_osd"]=" --crimson-balance-cpu osd"
 bal_ops_table["bal_socket"]="--crimson-balance-cpu socket"
 declare -a order_keys=( default bal_osd bal_socket )
 
-# CLI for the OSD backend
+# CLI for the OSD backend, for Classic bluestore only
 declare -A crimson_be_table
 crimson_be_table["cyan"]="--cyanstore"
 crimson_be_table["blue"]="--bluestore --bluestore-devs ${STORE_DEVS}"
@@ -72,47 +71,9 @@ num_cpus['disable_ht']=${MAX_NUM_PHYS_CPUS_PER_SOCKET}
 # Default options:
 BALANCE="all"
 
-# Either rewrite or define a new oe to define the test plan table: pre, post and run "callbacks", only the run has a counter or max attempts, the rest are just functions
-# The test plan table should be a dict with the test name as key, and the value is a list of functions to run
-# Index of test_table is the OSD num
-test_row["title"]="== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, $ALIEN_THREADS  alien threads, fixed FIO 8 cores, latency target =="
-test_row['osd']="$NUM_OSD"
-test_row['smp']="$NUM_REACTORS"
-test_row['nat']="$NUM_ALIEN_THREADS"
-test_row['fio']="$FIO_CPU_CORES"
-test_row['test']="crimson_${NUM_OSD}_osd_${NUM_REACTORS}_reactor_${ALIEN_THREADS}_at_8fio_lt"
-# These values are for the total system (have been multiplied by the num of CPU sockets)
-test_row['enable_ht']="96 64 32"
-test_row['disable_ht']="32 24 16"
-string=$(declare -p test_row)
-test_table["1"]=${string}
-
-test_row["title"]="== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, $ALIEN_THREADS  alien threads, fixed FIO 8 cores, latency target =="
-test_row['osd']="$NUM_OSD"
-test_row['smp']="$NUM_REACTORS"
-test_row['nat']="$NUM_ALIEN_THREADS"
-test_row['fio']="$FIO_CPU_CORES"
-test_row['test']="crimson_${NUM_OSD}_osd_${NUM_REACTORS}_reactor_${ALIEN_THREADS}_at_8fio_lt"
-test_row['enable_ht']="32 20 10"
-test_row['disable_ht']="10 8 4"
-string=$(declare -p test_row)
-test_table["3"]=${string}
-
-test_row["title"]="== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, $ALIEN_THREADS  alien threads, fixed FIO 8 cores, latency target =="
-test_row['osd']="$NUM_OSD"
-test_row['smp']="$NUM_REACTORS"
-test_row['nat']="$NUM_ALIEN_THREADS"
-test_row['fio']="$FIO_CPU_CORES"
-test_row['test']="crimson_${NUM_OSD}_osd_${NUM_REACTORS}_reactor_${ALIEN_THREADS}_at_8fio_lt"
-test_row['enable_ht']="12 8 4"
-test_row['disable_ht']="4 4 2"
-string=$(declare -p test_row)
-test_table["8"]=${string}
-
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
-
 
 #############################################################################################
 # Original lscpu: o05
@@ -161,19 +122,6 @@ fun_validate_set() {
 }
 
 #############################################################################################
-fun_enable_ht() {
-  echo "Enabling HT"
-  echo 1 | tee /sys/devices/system/cpu/cpu{56..111}/online
-  lscpu | grep NUMA
-}
-
-#############################################################################################
-fun_disable_ht() {
-  echo "Disabling HT"
-  echo 0 | tee /sys/devices/system/cpu/cpu{56..111}/online
-  lscpu | grep NUMA
-}
-#############################################################################################
 fun_show_tests() {
   local HT_STATE=$1
   echo -e "${RED}== ${HT_STATE} ==${NC}"
@@ -203,69 +151,6 @@ fun_show_grid() {
     fun_validate_set "${RUN_DIR}/${test_name}_threads_list"
 }
 
-#########################################
-# Given the state of system's HT (enable/disable) run the corresponding setup 
-# Probably refact this to a single one
-fun_run_ht_tests() {
-  local HT_STATE=$1
-
-  max_num_cpu=$(( ${num_cpus["${HT_STATE}"]} * ${NUM_CPU_SOCKETS} ))
-  echo "total cpu for ${HT_STATE}: ${max_num_cpu}"
-
-  sorted_keys=$(for x in  "${!test_table[@]}"; do echo $x; done | sort -n -k1)
-  #for NUM_OSD in "${!test_table[@]}"; do
-  for NUM_OSD in ${sorted_keys}; do
-    eval "${test_table["${NUM_OSD}"]}"
-    #echo ${test_row["${HT_STATE}"]}
-    for NUM_REACTORS in ${test_row["${HT_STATE}"]}; do
-      #echo ${test_row["title"]}
-      # These values are system wide (inthis case for a single node)
-      num_cores_alien=$(( max_num_cpu - (NUM_OSD * NUM_REACTORS) ))
-      num_threads_alien=$(( num_cores_alien * ALIEN_THREADS ))
-      # We need to convert them per OSD:
-      nca_osd=$(( num_cores_alien / NUM_OSD ))
-      nta_osd=$(( num_threads_alien / NUM_OSD ))
-     
-      echo -e "${RED}== $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, ${num_threads_alien} total alien wrk threads, ${num_cores_alien} num_cores_alien, latency target, ${HT_STATE} ==${NC}"
-      cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac ${VSTART_CPU_CORES} /ceph/src/vstart.sh --new -x --localhost --without-dashboard\
-          --bluestore --redirect-output --bluestore-devs ${STORE_DEVS} --crimson --crimson-smp ${NUM_REACTORS}\
-          --no-restart --crimson-alien-num-cores ${nca_osd} --crimson-alien-num-threads ${nta_osd}"
-      #echo "${cmd[@]}" 
-      echo "$cmd" | tee >> ${RUN_DIR}/cpu_distro.log
-      test_name="crimson_${NUM_OSD}osd_${NUM_REACTORS}reactor_${nta_osd}at_8fio_lt_${HT_STATE}"
-      #echo ${test_row["test"]}
-      echo $test_name
-      eval "$cmd" >> ${RUN_DIR}/cpu_distro.log
-      # TODO: deal with exceptions
-      sleep 20 # wait until all OSD online, pgrep?
-      fun_show_grid $test_name
-      #fun_run_fio
-      /ceph/src/stop.sh --crimson
-      sleep 60
-      #fi
-    done
-    archive_nm="${RUN_DIR}/crimson_${NUM_OSD}osd_${HT_STATE}.zip"
-    echo -e "${RED}== Archiving ${archive_nm}==${NC}"
-    zip -9mj ${archive_nm} ${RUN_DIR}/*_threads.out 
-  done
-}
-
-#############################################################################################
-# These should be deprecated since run_ht_endis_crimson.sh
-fun_show_all_tests() {
-  fun_show_tests 'enable_ht'
-  fun_show_tests 'disable_ht'
-}
-
-fun_run_all_ht_tests() {
-
-  fun_enable_ht
-  fun_run_tests 'enable_ht'
-  fun_disable_ht
-  fun_run_tests 'disable_ht'
-  fun_enable_ht
-}
-
 #############################################################################################
 # Useful when the cluster was created manually:
 fun_run_fio(){
@@ -276,7 +161,6 @@ fun_run_fio(){
   # Preliminary: simply collect the threads from OSD to verify its as expected
   /root/bin/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_cpu_distro.log && \
   #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
-  #MULTI_VOL Debug flag in place since recent RBD hangs -- temporarily disabling in favour of prefilling via rbd bench at cephmkrbd.sh
 
   if [ "$MULTI_JOB_VOL" = true ]; then
       OPTS="-j "
@@ -286,7 +170,9 @@ fun_run_fio(){
   else
       OPTS="${OPTS} -w hockey -r "
   fi
+  #MULTI_VOL Debug flag in place since recent RBD hangs -- temporarily disabling in favour of prefilling via rbd bench at cephmkrbd.sh
   #RBD_NAME=fio_test_0 fio --debug=io ${FIO_JOBS}rbd_prefill.fio  2>&1 > /dev/null && rbd du fio_test_0 && \
+    echo "/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p \"${TEST_NAME}\" -n -x"
     /root/bin/run_fio.sh -s ${OPTS} -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n -x
     #/root/bin/run_fio.sh -s -w hockey -r -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n -x
       # w/o osd dump_metrics, x: skip response curves stop heuristic
@@ -295,44 +181,61 @@ fun_run_fio(){
 #########################################
 # Run balanced vs default CPU core/reactor distribution in Crimson using either Cyan, Seastore or  Bluestore
 fun_run_fixed_bal_tests() {
-  local KEY=$1
-  local OSD_TYPE=$2
-  local NUM_ALIEN_THREADS=7 # default 
-  local title=""
+    local BAL_KEY=$1
+    local OSD_TYPE=$2
+    local NUM_ALIEN_THREADS=7 # default 
+    local title=""
 
-  echo -e "${GREEN}== ${OSD_TYPE} ==${NC}"
+    echo -e "${GREEN}== ${OSD_TYPE} ==${NC}"
 
-    for NUM_OSD in 1; do
-      for NUM_REACTORS in 32; do
-        title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor, fixed FIO 8 cores, response latency "
+  # TODO: consider refactor to a single loop: list all the combinations of NUM_OSD and NUM_REACTORS, which does
+  # not apply to classic OSD
+  for NUM_OSD in 1; do
+      for NUM_REACTORS in 28; do
 
-        # Default does not respect the balance VSTART_CPU_CORES
-        cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac '${VSTART_CPU_CORES}' /ceph/src/vstart.sh --new -x --localhost --without-dashboard\
-  --redirect-output ${crimson_be_table[${OSD_TYPE}]} --crimson --crimson-smp ${NUM_REACTORS}\
-  --no-restart ${bal_ops_table[${KEY}]}"
+          if [ "$OSD_TYPE" == "classic" ]; then
+              title="(${OSD_TYPE}) $NUM_OSD OSD classic, fixed ${FIO_SPEC}" #, response latency 
+              cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh\
+                  --new -x --localhost --without-dashboard\
+                  --redirect-output ${crimson_be_table[blue]}\ 
+                  --no-restart "
 
-        test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_8fio_${KEY}_rc"
+          else
+              title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor,  fixed ${FIO_SPEC}" 
+              # Default does not respect the balance VSTART_CPU_CORES
+              cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac '${VSTART_CPU_CORES}' /ceph/src/vstart.sh\
+                  --new -x --localhost --without-dashboard\
+                  --redirect-output ${crimson_be_table[${OSD_TYPE}]} --crimson --crimson-smp ${NUM_REACTORS}\
+                  --no-restart ${bal_ops_table[${BAL_KEY}]}"
 
-        if [ "$OSD_TYPE" == "blue" ]; then
-            NUM_ALIEN_THREADS=$(( 4 *NUM_OSD * NUM_REACTORS ))
-            title="${title} alien_num_threads=${NUM_ALIEN_THREADS}"
-            cmd="${cmd}  --crimson-alien-num-threads $NUM_ALIEN_THREADS"
-            test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${NUM_ALIEN_THREADS}at_8fio_${KEY}_rc"
-        fi
-        echo -e "${RED}== ${title}==${NC}"
-        # For later: try number of alien cores = 4 * number of backend CPU cores (= crimson-smp)
-        echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
-        echo $test_name
-        eval "$cmd" >> ${RUN_DIR}/${test_name}_cpu_distro.log
-        # TODO: deal with exceptions
-        echo "Sleeping for 20 secs..."
-        sleep 20 # wait until all OSD online, pgrep?
-        fun_show_grid $test_name
-        fun_run_fio $test_name
-        /ceph/src/stop.sh --crimson
-        sleep 60
+              test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${FIO_SPEC}_${BAL_KEY}_rc"
+
+              if [ "$OSD_TYPE" == "blue" ]; then
+                  NUM_ALIEN_THREADS=$(( 4 *NUM_OSD * NUM_REACTORS ))
+                  title="${title} alien_num_threads=${NUM_ALIEN_THREADS}"
+                  cmd="${cmd}  --crimson-alien-num-threads $NUM_ALIEN_THREADS"
+                  test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${NUM_ALIEN_THREADS}at_${FIO_SPEC}_${BAL_KEY}_rc"
+              fi
+          fi
+          echo -e "${RED}== ${title}==${NC}"
+          # For later: try number of alien cores = 4 * number of backend CPU cores (= crimson-smp)
+          echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
+          echo $test_name
+          eval "$cmd" >> ${RUN_DIR}/${test_name}_cpu_distro.log
+
+          if [ "$OSD_TYPE" == "classic" ]; then
+              # Manually set the OSD process affinity
+              taskset -ac '${VSTART_CPU_CORES}' $(pgrep osd)
+          fi
+          # TODO: deal with exceptions
+          echo "Sleeping for 20 secs..."
+          sleep 20 # wait until all OSD online, pgrep?
+          fun_show_grid $test_name
+          fun_run_fio $test_name
+          /ceph/src/stop.sh --crimson
+          sleep 60
       done
-    done
+  done
 }
 
 #########################################
@@ -390,10 +293,6 @@ while getopts 'ab:t:s:r:jl' option; do
         ;;
     l) LATENCY_TARGET=true
         ;;
-    # l) OSD_TYPE=$OPTARG
-    #    fun_run_cmp_lt_tests ${OSD_TYPE} # latency target
-    #    exit
-    #     ;;
     :) printf "missing argument for -%s\n" "$OPTARG" >&2
        usage >&2
        exit 1
@@ -403,7 +302,7 @@ while getopts 'ab:t:s:r:jl' option; do
  fun_run_precond "precond"
 
  if [ "$OSD_TYPE" == "all" ]; then
-   for OSD_TYPE in cyan blue sea; do
+   for OSD_TYPE in classic sea; do # cyan blue 
      fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}
    done
  else

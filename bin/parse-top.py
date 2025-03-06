@@ -162,7 +162,7 @@ class TopEntry(object):
                 self.proc_groups.update({pg: {}})
             for m in self.METRICS:
                 if m not in self.avg_cpu[pg]:
-                    self.avg_cpu[pg].update({m: {"total": 0.0, "index": 0, "data": []}})
+                    self.avg_cpu[pg].update({m: {"total": 0.0, "index": 0, "data": [], "time": []}})
 
     
     def _get_pname(self, pg, p):
@@ -209,7 +209,7 @@ class TopEntry(object):
         if p["parent_pid"] not in pid_set:
             pid_set.add(p["parent_pid"])
 
-    def update_avg(self, num_samples: int):
+    def update_avg(self, num_samples: int, time_stamp):
         """
         Update the avg_cpu array
         """
@@ -222,6 +222,7 @@ class TopEntry(object):
                         avg_d["data"].append(val)
                         avg_d["index"] += 1  # prob redundant
                         avg_d["total"] = 0.0
+                        avg_d["time"].append(time_stamp)
 
     def aggregate_proc(self, index, pg, procs, mem_used):
         """
@@ -261,13 +262,14 @@ class TopEntry(object):
         self.num_samples = len(samples)
         logger.debug(f"Got {self.num_samples}")
         for _i, item in enumerate(samples):
-            self.update_avg(_i)
             mem_used = item["mem_used"]
+            time_stamp = item["time"]
+            self.update_avg(_i,time_stamp )
             # calculate the space used by each thread below
             procs = item["processes"]  # list of dicts jobs
             # Filter those PIDs we are interested
             for pg in self.PROC_INFO:
-                self.aggregate_proc(_i, pg, procs, mem_used)
+                self.aggregate_proc(_i, pg, procs, mem_used) 
 
         logger.info(f"Parsed {self.num_samples} entries from {self.options.config}")
         logger.debug(f"avg_cpu: {json.dumps(self.avg_cpu, indent=4)}")
@@ -396,6 +398,7 @@ class TopEntry(object):
         # Check whether the flag to skip plot gneration is on -- atm ignored
         self.gen_plots()
         self.save_json(self.options.avg, [self.avg_cpu])
+        self.save_json(self.options.avg.replace("avg","pg"), self.proc_groups)
 
 
 def main(argv):

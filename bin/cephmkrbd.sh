@@ -10,6 +10,9 @@ fi
 # basic setup
 bin/ceph osd pool create rbd
 bin/ceph osd pool application enable rbd rbd
+# New: set replica size to 1:
+bin/ceph osd pool set rbd size 1 --yes-i-really-mean-it
+
 [ -z "$NUM_RBD_IMAGES" ] && NUM_RBD_IMAGES=1
 for (( i=0; i<$NUM_RBD_IMAGES; i++ )); do
   bin/rbd create --size ${RBD_SIZE} rbd/fio_test_${i}

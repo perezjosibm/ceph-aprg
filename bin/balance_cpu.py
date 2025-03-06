@@ -101,7 +101,7 @@ def set_range(bytes_mask, start, end):
     Set a range of CPU ids in bytes_mask from start to end
     """
     ba = bytearray(bytes_mask)
-    for i in range(start, end):
+    for i in range(start, end+1):
         set_cpu(ba, i)
     return ba
 
@@ -276,7 +276,7 @@ class CpuCoreAllocator(object):
             total_phys_cores >= self.num_avail_phys_cores
         ), "Invalid available physical CPU cores"
         max_osd_num = self.num_avail_phys_cores // self.num_react
-        assert max_osd_num > self.num_osd, "Not enough physical CPU cores"
+        assert max_osd_num >= self.num_osd, "Not enough physical CPU cores"
 
 
     def setup(self):
