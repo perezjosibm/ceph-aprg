@@ -14,7 +14,7 @@
 # ! -k : indicate whether to skip OSD dump_metrics
 # ! -l : indicate whether to use latency_target FIO profile
 # ! -r : indicate whether the tests runs are intended for Response Latency Curves
-# ! -g : indicate whether to prost-process existing data --requires -p (only coalescing charts atm)
+# ! -g : indicate whether to post-process existing data --requires -p (only coalescing charts atm)
 # ! -n : only collect top measurements, no perf
 # ! -t : indicate the type of OSD (classic or crimson by default).
 # ! -x : skip the heuristic criteria for Response Latency Curves
@@ -263,7 +263,7 @@ fun_run_workload() {
         else
           log_name=${TEST_NAME}
         fi
-          # Execute FIO
+        # Execute FIO: for multijob/vols, we do not need to indicate the RBD_NAME
           LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} \
             taskset -ac ${FIO_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json \
             --output-format=json 2> fio_${TEST_NAME}.err &
@@ -329,13 +329,14 @@ fun_run_workload() {
     cat ${TEST_RESULT}_top.out | jc --top --pretty > ${TEST_RESULT}_top.json
     python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
       --pids=${TOP_PID_JSON} 2>&1 > /dev/null
-        else
+    else
           #  single top out file with OSD and FIO CPU util
           for x in $(cat ${TOP_OUT_LIST}); do
             # CPU avg, so we might add a condttion (or option) to select which
             # When collecting data for response curves, produce charts for the cummulative pid list
             if [ -f "$x" ]; then
-              python3 /root/bin/parse-top.py --config=$x --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+                cat $x | jc --top --pretty > ${TEST_RESULT}_top.json
+              python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
                 --pids=${TOP_PID_JSON} 2>&1 > /dev/null
                               # We always calculate the arithmetic avg, the perl script has got a new flag
                               # to indicate whether we skip producing individual charts

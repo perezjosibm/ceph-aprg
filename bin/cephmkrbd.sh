@@ -14,6 +14,8 @@ bin/ceph osd pool application enable rbd rbd
 bin/ceph osd pool set rbd size 1 --yes-i-really-mean-it
 
 [ -z "$NUM_RBD_IMAGES" ] && NUM_RBD_IMAGES=1
+echo "Creating $NUM_RBD_IMAGES RBD images"
+[ -z "$RBD_SIZE" ] && RBD_SIZE=2GB
 for (( i=0; i<$NUM_RBD_IMAGES; i++ )); do
   bin/rbd create --size ${RBD_SIZE} rbd/fio_test_${i}
   bin/rbd du fio_test_${i}

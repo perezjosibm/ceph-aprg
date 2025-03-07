@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
-cd /ceph/build/
+cd /ceph/build/bin
 FIO_JOBS=/root/bin/rbd_fio_examples/
 #BLUESTORE_DEVS='/dev/sdc,/dev/sde,/dev/sdf'
 BLUESTORE_DEVS='/dev/sdf'

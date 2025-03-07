@@ -313,7 +313,7 @@ def traverse_files(sdir, config, json_tree_path):
     return dict_new
 
 
-def gen_plot(config, data, list_subtables, title, header_keys ):
+def gen_plot(config:str, data:str, list_subtables, title:str, header_keys:dict):
     """
     Generate a gnuplot script and .dat files -- for response
     latency curves, it charts Throughput/latency against CPU util
@@ -329,6 +329,7 @@ def gen_plot(config, data, list_subtables, title, header_keys ):
             "y2column": "OSD_cpu",
         }
     }
+    # Define a new one for the CPU core utilisation
     pg_y2column = {
         'OSD_cpu': 8,
         #'OSD_mem': 9,
@@ -529,7 +530,7 @@ def save_table_json(table,name):
         json.dump(table, f, indent=4 ) #, sort_keys=True, cls=TopEntryJSONEncoder)
         f.close()
 
-def gen_table(dict_files, config, title, avg_cpu, multi=False):
+def gen_table(dict_files, config:str, title:str, avg_cpu:dict, multi=False):
     """
     Construct a table from the predefined keys, sorted according to the
     file naming convention:
@@ -596,7 +597,7 @@ def gen_table(dict_files, config, title, avg_cpu, multi=False):
     latex += r"\\" + "\n" + r"\hline" + "\n"
 
     # Construct a header_keys list that describes the order of the columns in the gnuplot .dat
-    # table
+    # table -- We might select a subset of the table keys to plot
     header_keys = { v:i for i,v in enumerate(table.keys(),1) }
     for k in table.keys():
         table_iters[k] = iter(table[k])
@@ -693,7 +694,7 @@ def load_avg_cpu_json(json_fname):
             if f_info.st_size == 0:
                 print(f"JSON input file {json_fname} is empty")
                 return cpu_avg_list
-            # parse the JSON: list of dicts with keys 'sys' and 'us'
+            # parse the JSON:  we might provide which keys to look for
             cpu_avg_list = json.load(json_data)
             return cpu_avg_list
     except IOError as e:
@@ -723,11 +724,19 @@ def parse_args():
         help="Title for the response curve gnuplot chart",
         default="",
     )
+    # Porb nbetter to expect a .json or .yaml with the list of input .json to process
     parser.add_argument(
         "-a",
         "--average",
         type=str,
         help="Name of the JSON file with the CPU avg",
+        default="",
+    )
+    parser.add_argument(
+        "-u",
+        "--cpu_core_avg",
+        type=str,
+        help="Name of the JSON file with the CPU core avg",
         default="",
     )
     parser.add_argument(
@@ -757,4 +766,6 @@ if __name__ == "__main__":
     args = parse_args()
     dict_files = main(args.directory, args.config, args.query)
     avg_cpu = load_avg_cpu_json(args.average)
+    if args.cpu_core_avg:
+        avg_core_cpu = load_avg_cpu_json(args.cpu_core_avg)
     gen_table(dict_files, args.config, args.title, avg_cpu, args.multi)

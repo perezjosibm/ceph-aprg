@@ -14,6 +14,12 @@
 # reactor threads -- using a pure reactor env cyanstore -- extended for Bluestore as well
 #
 # get the CPU distribution for the 2 general cases: 24 physical vs 52 inc. HT
+
+# Redirect to stdout/stderr to a log file
+# exec 3>&1 4>&2
+# trap 'exec 2>&4 1>&3' 0 1 2 3
+# exec 1>/tmp/run_balanced_osd.log 2>&1
+#
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
@@ -172,8 +178,8 @@ fun_run_fio(){
   fi
   #MULTI_VOL Debug flag in place since recent RBD hangs -- temporarily disabling in favour of prefilling via rbd bench at cephmkrbd.sh
   #RBD_NAME=fio_test_0 fio --debug=io ${FIO_JOBS}rbd_prefill.fio  2>&1 > /dev/null && rbd du fio_test_0 && \
-    echo "/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p \"${TEST_NAME}\" -n -x"
-    /root/bin/run_fio.sh -s ${OPTS} -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n -x
+    echo "/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p \"${TEST_NAME}\" -n -x -d ${RUN_DIR}"
+    /root/bin/run_fio.sh -s ${OPTS} -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n -x -d ${RUN_DIR}
     #/root/bin/run_fio.sh -s -w hockey -r -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n -x
       # w/o osd dump_metrics, x: skip response curves stop heuristic
 }
@@ -197,8 +203,9 @@ fun_run_fixed_bal_tests() {
               title="(${OSD_TYPE}) $NUM_OSD OSD classic, fixed ${FIO_SPEC}" #, response latency 
               cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh\
                   --new -x --localhost --without-dashboard\
-                  --redirect-output ${crimson_be_table[blue]}\ 
+                  --redirect-output ${crimson_be_table[blue]}\
                   --no-restart "
+              test_name="${OSD_TYPE}_${NUM_OSD}osd_${FIO_SPEC}_rc"
 
           else
               title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor,  fixed ${FIO_SPEC}" 
@@ -225,14 +232,21 @@ fun_run_fixed_bal_tests() {
 
           if [ "$OSD_TYPE" == "classic" ]; then
               # Manually set the OSD process affinity
-              taskset -ac '${VSTART_CPU_CORES}' $(pgrep osd)
+              cmd="taskset -a -c -p ${VSTART_CPU_CORES}  $(pgrep osd)"
+              echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
+              eval "$cmd" >> ${RUN_DIR}/${test_name}_cpu_distro.log
           fi
           # TODO: deal with exceptions
           echo "Sleeping for 20 secs..."
           sleep 20 # wait until all OSD online, pgrep?
           fun_show_grid $test_name
           fun_run_fio $test_name
-          /ceph/src/stop.sh --crimson
+          # Should be a neater way to stop the cluster
+          if [ "$OSD_TYPE" == "classic" ]; then
+            /ceph/src/stop.sh
+          else
+            /ceph/src/stop.sh --crimson
+          fi
           sleep 60
       done
   done
@@ -264,7 +278,7 @@ fun_run_precond(){
   echo -e "${GREEN}== Preconditioning ==${NC}"
   jc --pretty /proc/diskstats > ${RUN_DIR}/${TEST_NAME}.json && \
       fio ${FIO_JOBS}randwrite64k.fio && \
-      jc --pretty /proc/diskstats | python3 diskstat_diff.py -d ${RUN_DIR} -a  ${TEST_NAME}.json 
+      jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -d ${RUN_DIR} -a  ${TEST_NAME}.json 
 }
 
 #########################################
@@ -272,7 +286,7 @@ fun_run_precond(){
 #
 cd /ceph/build/
 
-while getopts 'ab:t:s:r:jl' option; do
+while getopts 'ab:d:t:s:r:jl' option; do
   case "$option" in
     a) fun_show_all_tests
        exit

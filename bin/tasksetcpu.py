@@ -25,6 +25,8 @@ def to_color(string: str, color: str) -> str:
     Simple basic color ANSI/ASCII Coding
     """
     color_code = {
+        "cyan": "\033[36m",
+        "magenta": "\033[35m",
         "blue": "\033[34m",
         "yellow": "\033[33m",
         "green": "\033[32m",
@@ -72,6 +74,12 @@ THREAD_TYPES = {
         "color": "blue",
         "name": "B",
     },
+    "messenger": {
+        "regex": re.compile(r"(perf-crimson|reactor|syscall).*"),
+        "color": "yellow",
+        "name": "M",
+    },
+ 
 }
 
 
@@ -127,6 +135,7 @@ class CpuCell(object):
     def print(self, width=0) -> str:
         """
         Print the cell in color coded.
+        If using opt, we might need to capture the process id.
         """
         _str = "."
         _tlen = 1
@@ -301,7 +310,7 @@ class TasksetEntry(object):
     FILE_SUFFIX_LST = re.compile(r"_list$")
 
     def __init__(
-        self, config, directory, num_cpu_client, lscpu: str = "", taskset=None
+        self, config, directory, num_cpu_client, lscpu: str = "", taskset=None, opt=None
     ):
         """
         This class expects:
@@ -309,6 +318,7 @@ class TasksetEntry(object):
             or a single _threads.out file
         -   the number of CPU intended for the clients (eg. FIO)
         -   the .json from lscpu.
+        - an optional .json to describe special options, like the process ids
         """
         self.config = config
         m = self.FILE_SUFFIX_LST.search(config)
@@ -329,6 +339,8 @@ class TasksetEntry(object):
         self.taskset = taskset
         if lscpu:
             self.lscpu = LsCpuJson(lscpu)
+        if opt:
+            self.options = LsCpuJson(opt)
 
     def traverse_dir(self):
         """
@@ -409,6 +421,7 @@ class TasksetEntry(object):
         Returns a dict whose keys are cpuid, values are dicts
         with the threads names, process group association (Reactor, Alien, Bluestore)
         represented as a set.
+        If opt was provided, it will be used to filter the process ids.
         """
         entry: Dict[int, Dict[str, List[Any]]] = {}
         with open(fname, "r") as _data:
@@ -612,6 +625,15 @@ def main(argv):
         "-d", "--directory", type=str, help="Directory to examine", default="./"
     )
     parser.add_argument(
+        "-o",
+        "--opt",
+        type=str,
+        required=False,
+        help="JSON Input file describing special options, like the process ids",
+        default=None,
+    )
+
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -640,6 +662,7 @@ def main(argv):
         options.client,
         options.lscpu,
         options.taskset,
+        options.opt,
     )
     grid.run()
 

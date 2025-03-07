@@ -52,8 +52,11 @@ DEFAULT_NUM_SAMPLES = 30
 class TopEntry(object):
     """
     Filter the .json to a dictionary with keys the threads command names, and values
-    array of avg measurement samples (normally 30),
-    produce as output a gnuplot (script an d.dat files) and .json
+    array of avg measurement samples (normally DEFAULT_NUM_SAMPLES),
+    produce as output a gnuplot (script an d.dat files) and avg_cpu.json.
+
+    We might also need to restructure the main data structure into a tree rather than a flat dict.
+    And differentiate between process and threads, since the MEM is the same for all threads of a process.
 
     The following is an example of the structure of the input .json:
 
@@ -93,26 +96,33 @@ class TopEntry(object):
 
     "pid" and "parent_pid" are used to filter those processes specified in the _pid.json
     We are only interested in the following measurements:
-    "percent_cpu" "percent_mem"
+    "percent_cpu" -- this is per thread
+    "percent_mem" -- this is one per process, all threads have the same value, a pc from the mem_total
+     or equivalently "resident_mem" in MB
     """
 
     # Define some regex for threads that can be agglutinated
     # "control" dict, the proc_groups should be containing the _data to plot
-    # These are intended for Ceph and Crimson OSD, so you might need to extend for your own
-    # needs.
+    # These are the process groups (families) we know about, intended for Ceph and Crimson OSD, 
+    # so you might need to extend for your own needs.
     PROC_INFO = {
         "OSD": {
+            # These are individual threads names: first line for Crimson, second for Classic OSD
+            # We measure their CPU util individually, their MEM is the same for the whole process
             "tname": re.compile(
-                r"^(crimson-osd|alien-store-tp|reactor|bstore|log|cfin|rocksdb|syscall-0).*$"
+                r"^(crimson-osd|alien-store-tp|reactor|bstore|log|cfin|rocksdb|syscall-|ceph-osd|service|admin_socket|signal_handler|io_context_pool|OpHistorySvc|ceph_timer|safe_timer|fn_anonymous|ms_|finisher|osd_srv_|tp_osd_tp).*$"
                 # re.DEBUG,
             ),
+            # These are groups of threads that can be agglutinated
             "regex": {
-                "reactor": re.compile(r"reactor-\d+"),
+                "reactor": re.compile(r"(reactor-|msgr-worker-|syscall-)\d+"),
             },
-            "pids": set([]),
+            # We might need to use the PPID to associate a single MEM value to all threads
+            "pids": set([]), #we init this from the pids.json
             "threads": {},
             "sorted": {},
             "num_samples": 0,
+            "ptree": {}, # each key is a pid, and its value is a dict with the threads
         },
         "FIO": {
             "tname": re.compile(
@@ -125,7 +135,23 @@ class TopEntry(object):
             "threads": {},
             "sorted": {},
             "num_samples": 0,
+            "ptree": {}, # each key is a pid, and its value is a dict with the threads
         },
+        "MSGR": {
+            "tname": re.compile(
+                r"^(perf-crimson|reactor|syscall).*$"
+            ),
+            "regex": {
+                "reactor": re.compile(r"(reactor-|syscall-)\d+"),
+            },
+            "pids": set([]),
+            "threads": {},
+            "sorted": {},
+            "num_samples": 0,
+            "ptree": {}, # each key is a pid, and its value is a dict with the CPU util from its 
+            # threads, and the MEM util from the process
+        },
+
     }
     METRICS = ["cpu", "mem"]
     CPU_RANGE = {
@@ -150,12 +176,16 @@ class TopEntry(object):
         self.proc_groups = {}
         self.num_samples = 0
         self.avg_cpu = {}
+        # We take the process groups/families from the pids.json,
+        # Probably redundant, we might need to refactor this
+        self.pid_groups = {}
 
     def init_avg_cpu(self):
         """
         Initialises the avg_cpu dictionary
         """
-        for pg in self.PROC_INFO:
+        #for pg in self.PROC_INFO:
+        for pg in self.pid_groups: # This comes from the pids.json
             if pg not in self.avg_cpu:
                 self.avg_cpu.update({pg: {}})
             if pg not in self.proc_groups:
@@ -211,11 +241,12 @@ class TopEntry(object):
 
     def update_avg(self, num_samples: int, time_stamp):
         """
-        Update the avg_cpu array
+        Update the avg_cpu array after DEFAULT_NUM_SAMPLES
+        We need to further refine this to take into account the number of threads in the group
         """
         if ((num_samples + 1) % DEFAULT_NUM_SAMPLES) == 0:
             if num_samples > 0:
-                for pg in self.PROC_INFO:  # proc_groups:
+                for pg in self.proc_groups:  # :PROC_INFO
                     for m in self.METRICS:
                         avg_d = self.avg_cpu[pg][m]
                         val = avg_d["total"] / DEFAULT_NUM_SAMPLES
@@ -224,9 +255,12 @@ class TopEntry(object):
                         avg_d["total"] = 0.0
                         avg_d["time"].append(time_stamp)
 
-    def aggregate_proc(self, index, pg, procs, mem_used):
+    def aggregate_proc(self, index, pg, procs):
         """
         Aggregate the procs onto the corresponding pg under pdict
+        No explicit way to differentiate between process /thread entry, so will
+        assume these are all process, then later on during calculating avgs etc
+        will use for threads the same value
         """
         pdict = self.proc_groups[pg]
         for p in procs:
@@ -246,11 +280,9 @@ class TopEntry(object):
                     self.update_pids(pg, p)
                 for m in self.METRICS:
                     # Agglutinate up to num samples
-                    if m == "mem":
-                        _val = (p[f"percent_{m}"] * mem_used) / 100.0
-                    else:
-                        _val = p[f"percent_{m}"]
-                    # Woul dit be a rolling average instead of accumulation? 
+                    # When m == "mem": for threads only a single value is needed
+                    _val = p[f"percent_{m}"]
+                    # Would it be a rolling average instead of accumulation? 
                     pdict[pname][m][index] += _val
                     self.avg_cpu[pg][m]["total"] += _val
 
@@ -262,14 +294,16 @@ class TopEntry(object):
         self.num_samples = len(samples)
         logger.debug(f"Got {self.num_samples}")
         for _i, item in enumerate(samples):
-            mem_used = item["mem_used"]
+            #mem_total = item["mem_total"]
+            #mem_used = item["resident_mem"]
             time_stamp = item["time"]
             self.update_avg(_i,time_stamp )
             # calculate the space used by each thread below
             procs = item["processes"]  # list of dicts jobs
             # Filter those PIDs we are interested
-            for pg in self.PROC_INFO:
-                self.aggregate_proc(_i, pg, procs, mem_used) 
+            #for pg in self.PROC_INFO:
+            for pg in self.proc_groups:
+                self.aggregate_proc(_i, pg, procs ) 
 
         logger.info(f"Parsed {self.num_samples} entries from {self.options.config}")
         logger.debug(f"avg_cpu: {json.dumps(self.avg_cpu, indent=4)}")
@@ -308,8 +342,10 @@ class TopEntry(object):
         """
         pids_list = self.load_json(json_fname)
         for pg in pids_list:
+            # Filter those PIDs we know about
             if pg in self.PROC_INFO:
                 self.PROC_INFO[pg]["pids"] = set(pids_list[pg])
+        self.pid_groups = pids_list
         logger.debug(f"JSON pid loaded: {pformat(self.PROC_INFO)}")
 
     def get_job_stats(self, pg: str, metric: str):
@@ -361,7 +397,7 @@ class TopEntry(object):
         Generate the .dat, .plot files for pg at metric m
         """
         comm_sorted = {}
-        for pg in self.PROC_INFO:
+        for pg in self.proc_groups:
             for m in self.METRICS:
                 if pg not in comm_sorted:
                     comm_sorted.update({pg: {m: {}}})
@@ -396,9 +432,9 @@ class TopEntry(object):
         self.load_top_json(self.options.config)
         self.get_top_procs_util()
         # Check whether the flag to skip plot gneration is on -- atm ignored
-        self.gen_plots()
         self.save_json(self.options.avg, [self.avg_cpu])
         self.save_json(self.options.avg.replace("avg","pg"), self.proc_groups)
+        self.gen_plots()
 
 
 def main(argv):

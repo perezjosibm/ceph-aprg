@@ -84,7 +84,7 @@ class DiskStatEntry(object):
 
         self.directory = directory
         self._diff = {}
-        self.df = None # Pandas dataframe
+        self.df = None  # Pandas dataframe
 
     def filter_metrics(self, ds):
         """
@@ -116,7 +116,7 @@ class DiskStatEntry(object):
                 # else:
                 #     b_data[dev][m] -= a_data[dev][m]
         self._diff = b_data
-        self.df = pd.DataFrame(self._diff) #.T # Transpose
+        self.df = pd.DataFrame(self._diff)  # .T # Transpose
 
     def load_json(self, json_fname):
         """
@@ -154,19 +154,23 @@ class DiskStatEntry(object):
         We end up with at least two heatmaps per workload
         """
         sns.set_theme()
-        # These need to be columns
-        #df.pivot(index="Metric", columns="Device")
+        # These need to be columns
+        # df.pivot(index="Metric", columns="Device")
         # Draw a heatmap with the numeric values in each cell
-        slices = { 'completed': ['reads_completed', 'writes_completed'], 'time': ['read_time_ms', 'write_time_ms'] }
+        slices = {
+            "completed": ["reads_completed", "writes_completed"],
+            "time": ["read_time_ms", "write_time_ms"],
+        }
         for slice_name, slice_columns in slices.items():
             df_slice = df.loc[slice_columns]
             print(df_slice)
             f, ax = plt.subplots(figsize=(9, 6))
             ax.set_title("Diskstat heatmap (preconditioning)")
-            sns.heatmap(df_slice, annot=True, fmt=".1f", linewidths=.5, ax=ax)
-            #plt.show()
-            plt.savefig(self.aname.replace("_diskstat.json", f"_{slice_name}_heatmap.png"))
-
+            sns.heatmap(df_slice, annot=True, fmt=".1f", linewidths=0.5, ax=ax)
+            # plt.show()
+            plt.savefig(
+                self.aname.replace("_diskstat.json", f"_{slice_name}_heatmap.png")
+            )
 
     def run(self):
         """
