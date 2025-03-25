@@ -351,11 +351,11 @@ fun_run_workload() {
     done
     python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
   fi
-  # Post processing: OSD dump_metrics .json
-  for x in $(ls osd*_dump_*.json); do
-    cat $x | jq '[paths(values) as $path | {"key": $path    | join("."), "value": getpath($path)}] | from_entries' > /tmp/temposd.json
-    mv /tmp/temposd.json $x
-  done
+  # Post processing: OSD dump_metrics .json -- disabling this since we are no longer using it
+  # for x in $(ls osd*_dump_*.json); do
+  #   cat $x | jq '[paths(values) as $path | {"key": $path    | join("."), "value": getpath($path)}] | from_entries' > /tmp/temposd.json
+  #   mv /tmp/temposd.json $x
+  # done
 
   # Produce charts from the scripts .plot and .dat files generated
   for x in $(ls *.plot); do

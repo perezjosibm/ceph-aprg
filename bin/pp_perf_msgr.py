@@ -1,0 +1,360 @@
+#!/usr/bin/env python3
+"""
+This script expects as input a list of .out files produced from a client perf_crimson_msgr:
+
+for x in *.zip; do y=${x/.zip/_client.out}; echo "== $y =="; unzip -c $x $y | tail -8; done > msgr_crimson_bal_vs_sep_client.out
+
+It produces a .json file with the following layout: main key is the CPU balance
+value, each of which canbe converted to a pandas dataframe
+
+{
+ "balanced":{
+ "smp": [ 2, 4, 8, 14, 28 ],
+ "clients": [ 2, 4, 8, 14, 28 ],
+ "latency": [ 7.694677, 7.694677, 7.694677, 7.694677, 7.694677 ],
+ "throughput": [ 1039.688596, 1039.688596, 1039.688596, 1039.688596, 1039.688596 ],
+ },
+ "separated":{
+ # same layout as above
+ }
+}
+Produces combined .json (table/dataframe) with the Latency vs Throughput results (and CPU util)
+"""
+
+import argparse
+import logging
+import os
+import sys
+import re
+import json
+import tempfile
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from typing import Dict, List, Any
+from pprint import pformat
+from gnuplot_plate import GnuplotTemplate
+
+__author__ = "Jose J Palacios-Perez"
+
+logger = logging.getLogger(__name__)
+
+
+def serialize_sets(obj):
+    """
+    Serialise sets as lists
+    """
+    if isinstance(obj, set):
+        return list(obj)
+
+    return obj
+
+
+class MsgrStatEntry(object):
+    """
+    Simply capture the following summary from the .out file:
+
+    == msgr_crimson_2smp_2clients_balanced_client.out ==
+    all(depth=2048):
+      connect time: 0.023088s
+      messages received: 47921197
+      messaging time: 180.046387s
+      latency: 7.694677ms
+      IOPS: 266160.280455
+      out throughput: 1039.688596MB/s
+    """
+
+    def __init__(self, iflname: str, out_json: str, directory: str, plot: str = ""):
+        """
+        This class expects two input .json files
+        Calculates the difference b - a and replaces b with this
+        The result is a dict with keys the device names, values the measurements above
+        """
+        self.iflname = iflname
+        self.plot = plot
+        if iflname:
+            if out_json:
+                self.oflname = out_json
+            else:
+                self.oflname = iflname.replace(".out", ".json")
+                self.dflname = iflname.replace(".out", "des.json")
+        else:
+            self.oflname = plot
+        # Gneric key:value regex
+        self._gen_key_value = [
+            re.compile(r"^([^:]+): (.*)$"),  # , re.DEBUG)
+        ]
+        self.descriptions = {
+            "smp": [],
+            "clients": [],
+            "balance": [],
+        }
+        # Current description is the latest
+        self.description = {
+            "regex": re.compile(
+                r"^== msgr_crimson_(\d+)smp_(\d+)clients_(balanced|separated)_client.out =="
+            ),
+        }
+        self.regex_start = re.compile(r"all\(depth=\d+\):")
+        self.measurements = {
+            "connect_time": {
+                "regex": re.compile(r"connect time: (.*)s"),
+                "unit": "s",
+                "value": None,
+            },
+            "messages_received": {
+                "regex": re.compile(r"messages received: (.*)"),
+                "unit": "",
+                "value": None,
+            },
+            "messaging_time": {
+                "regex": re.compile(r"messaging time: (.*)s"),
+                "unit": "s",
+                "value": None,
+            },
+            "latency": {
+                "regex": re.compile(r"latency: (.*)ms"),
+                "unit": "ms",
+                "value": None,
+            },
+            "IOPS": {
+                "regex": re.compile(r"IOPS: (.*)"),
+                "unit": "",
+                "value": None,
+            },
+            "out_throughput": {
+                "regex": re.compile(r"out throughput: (.*)MB/s"),
+                "unit": "MB/s",
+                "value": None,
+            },
+        }
+
+        self.directory = directory
+        self.entry: Dict[str, Dict[str, List[Any]]] = {}
+
+    def load_json(self, json_fname: str) -> Dict[str, Any]:
+        """
+        Load a .json file containing diskstat metrics
+        Returns a dict with keys only those interested device names
+        """
+        try:
+            with open(json_fname, "r") as json_data:
+                ds_list = {}
+                # check for empty file
+                f_info = os.fstat(json_data.fileno())
+                if f_info.st_size == 0:
+                    logger.error(f"JSON input file {json_fname} is empty")
+                    return ds_list
+                ds_list = json.load(json_data)
+                # We need to arrange the data: the metrics each use a "shard" key, so
+                # need to use shard to index the metrics
+                return ds_list
+                # return self.filter_metrics(ds_list)
+        except IOError as e:
+            raise argparse.ArgumentTypeError(str(e))
+
+    def save_json(self, name=None, data=None):
+        """
+        Save the data to a .json file
+        """
+        if name:
+            with open(name, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, sort_keys=True, default=serialize_sets)
+                f.close()
+
+    def parse_entry(self, line):
+        """
+        Parse an entry and update the measurements
+        """
+        match = self.description["regex"].search(line)
+        logger.debug(f"Line: {line}, Match: {match}")
+        if match:
+            self.descriptions["smp"].append(int(match.group(1)))
+            self.descriptions["clients"].append(int(match.group(2)))
+            self.descriptions["balance"].append(match.group(3))
+            _bal = self.descriptions["balance"][-1]
+            if _bal not in self.entry:
+                self.entry.update({_bal: {}})
+            return True
+        else:
+            return False
+
+    def update_descriptions(self, metric, value):
+        """
+        Update the descriptions with the metric and value
+        This is a flat table, with columns each metric, including the smp and num clients
+        """
+        if metric not in self.descriptions:
+            self.descriptions.update({metric: []})
+        self.descriptions[metric].append(value)
+
+    def parse_measurements(self, line, it_lines):
+        """
+        Parse a line from the iterator and update the measurements
+        """
+        match = self.regex_start.search(line)
+        logger.debug(f"Line: {line}, Match: {match}")
+        if match:
+            line = next(it_lines, None)
+            while line:
+                for key, value in self.measurements.items():
+                    match = value["regex"].search(line)
+                    logger.debug(f"Line: {line}, Match: {match}")
+                    if match:
+                        _bal = self.descriptions["balance"][-1]
+                        _d = self.entry[_bal]
+                        if key not in _d:
+                            _d.update({key: []})
+                        _d[key].append(match.group(1))
+                        self.update_descriptions(key, match.group(1))
+                        break
+                line = next(it_lines, None)
+
+    def load_files(self, fname):
+        """
+        Load a file containing summary perf_crimson_msgr metrics
+        Returns a pandas dataframe
+        """
+        lines = []
+        try:
+            with open(fname, "r") as data:
+                f_info = os.fstat(data.fileno())
+                if f_info.st_size == 0:
+                    logger.error(f"input file {fname} is empty")
+                    return []
+                lines = data.read().splitlines()
+                data.close()
+        except IOError as e:
+            raise argparse.ArgumentTypeError(str(e))
+        it_lines = iter(lines)
+        for line in it_lines:
+            if self.parse_entry(line):
+                self.parse_measurements(next(it_lines, None), it_lines)
+
+        logger.debug(f"Entry: {self.entry}\n Descriptions: {pformat(self.descriptions)}")
+        self.save_json(self.oflname, self.entry)
+        self.save_json(self.dflname, self.descriptions)
+        # Circular reference
+        # self.save_json(self.oflname, { "entries": self.entry, "descriptions": self.descriptions })
+        return pd.DataFrame(self.entry)
+
+    def make_response_chart(self, df, title):
+        """
+        Plot a heatmap of the dataframe
+        Need to split the dataframe into two: one for counters (IO completed) and the other for time measurements.
+        We end up with at least two heatmaps per workload
+
+        #print(f"Title:{title} df: {df}")
+        sns.set_theme()
+        # Using "latency" and "out_throughput" for the x,y axis, resp
+        #sns.relplot(data=df, x="latency", y="out_throughput", hue="balance", kind="line") #, title=title)
+        sns.lineplot(data=df, x="latency", y="out_throughput", hue="balance")
+        #plt.show()
+        plt.savefig(self.oflname.replace(".json", "_rc.png"), dpi=300, bbox_inches='tight')
+        """
+        x_data = df["latency"]
+        y_data = df["out_throughput"]
+        # plt.scatter(x_data, y_data, c=df["smp"], cmap='viridis')
+        plt.plot(x_data, y_data, "+-", label=title)
+
+    def prep_response_charts(self):
+        """
+        Traverse the entry dict to produce response charts
+        z = self.entry | self.descriptions # don't work in 3.09
+        # z = self.entry.copy()
+        # z.update(self.descriptions)
+        print(f"descriptions: {self.descriptions}")
+        df = pd.DataFrame(self.descriptions)
+        print(f"DF: {df}")
+        df.sort_values(by=["smp", "clients"], inplace=True)
+        print(f"DF: {df}")
+        #self.make_response_chart(df, "Response Chart") #ugly!
+        """
+        for key, value in self.entry.items():  # balanced, separated
+            #df = pd.DataFrame(value)
+            #self.make_response_chart(df, key)
+            self.make_response_chart(value, key)
+        plt.savefig(
+            self.oflname.replace(".json", "_rc.png"), dpi=300, bbox_inches="tight"
+        )
+        plt.clf()
+
+    def run(self):
+        """
+        Entry point: produces a dataframe  from the .json file
+        """
+        os.chdir(self.directory)
+        if self.plot:
+            self.entry = self.load_json(self.plot)
+            self.prep_response_charts()
+            # self.make_response_chart(pd.read_json(self.plot), "Response Chart")
+            return
+        self.load_files(self.iflname)
+        self.prep_response_charts()
+
+
+def main(argv):
+    examples = """
+    Examples:
+    # Produce a dataframe index by smp/clients and a response chart Throughput vs Latency:
+    #  %prog -i msgr_crimson_bal_vs_sep_client.out -o msgr_crimson_bal_vs_sep_client.json
+    """
+    parser = argparse.ArgumentParser(
+        description="""This tool is used to post-process perf-crimson-msgr measurements""",
+        epilog=examples,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    cmd_grp = parser.add_mutually_exclusive_group()
+    cmd_grp.add_argument(
+        "-i",
+        type=str,
+        required=False,
+        help="Input .out file from perf-crimson-msgr",
+        default=None,
+    )
+    cmd_grp.add_argument(
+        # parser.add_argument(
+        "-p",
+        "--plot",
+        type=str,
+        required=False,
+        default=None,
+        help="Just plot the heatmap of the given .json file",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        required=False,
+        help="Output .json file",
+        default=None,
+    )
+    parser.add_argument(
+        "-d", "--directory", type=str, help="Directory to examine", default="./"
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="True to enable verbose logging mode",
+        default=False,
+    )
+
+    options = parser.parse_args(argv)
+
+    if options.verbose:
+        logLevel = logging.DEBUG
+    else:
+        logLevel = logging.INFO
+
+    with tempfile.NamedTemporaryFile(dir="/tmp", delete=False) as tmpfile:
+        logging.basicConfig(filename=tmpfile.name, encoding="utf-8", level=logLevel)
+
+    logger.debug(f"Got options: {options}")
+
+    msgSt = MsgrStatEntry(options.i, options.output, options.directory, options.plot)
+    msgSt.run()
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

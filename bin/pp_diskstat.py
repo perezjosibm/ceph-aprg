@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-This script expect an input .json file  produced from mdiskstat_diff.py
+This script expect an input .json file  produced from diskstat_diff.py
 Produced a Pandas dataframe with the difference between the two files implicitly and a heatmap using seaborn.
 It could also be extended to process .json from ceph conf osd tell dump_metrics.
 """

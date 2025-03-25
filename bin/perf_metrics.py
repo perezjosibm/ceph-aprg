@@ -1,8 +1,11 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 """
-This script expect [list?, pair?] of input .json file(s) name as argument,
-corresponding to before,after measurements taken from ceph conf osd tell dump_metrics.
-Produces a heatmap with columns the OSDs and rows the metrics (e.g. read_time_ms, write_time_ms).
+This script expects a config for input .json file(s) name as argument,
+corresponding to at least a pair (before,after) or a sequence if measurements taken from
+ ceph conf osd tell dump_metrics.
+Produces a chart with x-axis the (Seastar) Shards y-axis the value of the metric, and columns the metrics
+(e.g. read_time_ms, write_time_ms).
+We use pandas dataframes for the calculations, and seaborn for the plots.
 """
 
 import argparse
@@ -30,6 +33,86 @@ def serialize_sets(obj):
         return list(obj)
 
     return obj
+
+
+def _znormalisation(df):  # df: pd.DataFrame
+    """
+    Normalise the dataframe
+    """
+    # copy the data
+    df_z_scaled = df.copy()
+
+    # apply normalization techniques
+    for column in df_z_scaled.columns:
+        df_z_scaled[column] = (
+            df_z_scaled[column] - df_z_scaled[column].mean()
+        ) / df_z_scaled[column].std()
+
+    # view normalized data
+    # display(df_z_scaled)
+    # df_z_scaled.plot(kind="bar", stacked=True)
+    return df_z_scaled
+
+
+def _minmax_normalisation(df):  # df: pd.dataframe
+    """
+    Apply min-max normalisation to the DataFrame
+    """
+    # copy the data
+    df_minmax_scaled = df.copy()
+
+    # apply normalization techniques
+    for column in df_minmax_scaled.columns:
+        df_minmax_scaled[column] = (
+            df_minmax_scaled[column] - df_minmax_scaled[column].min()
+        ) / (df_minmax_scaled[column].max() - df_minmax_scaled[column].min())
+
+    # view normalized data
+    # print(df_minmax_scaled)
+    # df_minmax_scaled.plot(kind="bar", stacked=True)
+    return df_minmax_scaled
+
+
+def _max_abs_normalisation(df):  # df: pd.dataframe
+    """
+    Apply max-abs normalisation to the dataframe
+    """
+    # copy the data
+    df_maxabs_scaled = df.copy()
+
+    # apply normalization techniques
+    for column in df_maxabs_scaled.columns:
+        df_maxabs_scaled[column] = (
+            df_maxabs_scaled[column] / df_maxabs_scaled[column].abs().max()
+        )
+    # view normalized data
+    # print(df_maxabs_scaled)
+    # df_maxabs_scaled.plot(kind="bar", stacked=True)
+    return df_maxabs_scaled
+
+
+def get_diff(a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calculate the difference of after_data - before_data
+    Assigns the result to self._diff, we use that to make a dataframe and
+    produce heatmaps
+    """
+    for k in b_data:  # keys are shards
+        for m in b_data[k]:  # metrics: can we define a callback for this?
+            a_data[k][m] -= b_data[k][m]
+    return a_data
+
+
+def get_avg(a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calculate the average between (after_data + before_data)/2
+    Assigns the result to self._diff, we use that to make a dataframe and
+    produce heatmaps
+    """
+    for k in b_data:  # keys are shards
+        for m in b_data[k]:
+            a_data[k][m] = (a_data[k][m] + b_data[k][m]) / 2
+    return a_data
 
 
 class PerfMetricEntry(object):
@@ -78,16 +161,55 @@ class PerfMetricEntry(object):
         "value": 0
       }
     },
-
     """
+
+    CPU_CLOCK_SPEED_GHZ = 2.2  # GHz -- need to get this from the system lscpu command
+    METRICS = {
+        "memory_ops": {
+            "regex": re.compile(r"^(memory_.*_operations)"),
+            "normalisation_fn": _minmax_normalisation,
+            "unit": "operations",
+            "reduce": "difference",
+        },
+        "memory": {
+            "regex": re.compile(r"^(memory_.*_memory)"),
+            "normalisation_fn": _minmax_normalisation,
+            "unit": "MBs",
+            "reduce": "difference",
+        },
+        "reactor_cpu": {
+            "regex": re.compile(r"^(reactor_cpu_.*|reactor_sleep_time_ms_total)"),
+            "normalisation_fn": _minmax_normalisation,
+            "unit": "ms",
+            "reduce": "difference",
+        },
+        "reactor_polls": {
+            "regex": re.compile(r"^(reactor_polls)"),
+            "normalisation_fn": _minmax_normalisation,
+            "unit": "polls",
+            "reduce": "difference",
+        },
+        "reactor_utilization": {
+            "regex": re.compile(r"^(reactor_utilization)"),
+            "normalisation_fn": _minmax_normalisation,
+            "unit": "pc",
+            "reduce": "average",
+        },
+    }
 
     def __init__(self, options):
         """
         This class expects a list of .json files
-        Calculates the difference pair wise (as a stack) ending up with a single entry
+        Calculates the (difference| average) pair wise (as a stack) ending up with a single entry
         The result is a dict with keys the device names, values the measurements above
         We only look at the "metrics" key -- probably need to change this to a list of data frames.
             r"^(reactor_cpu_|cache).*|(reactor_polls|reactor_sleep_time_ms_total)"
+        Group the metrics in the following groups:
+        - memory_*_memory (bytes?)
+        - memory_*_operations
+        - reactor_cpu_*_ms (ms)
+        - reactor_polls
+        - reactor_sleep_time_ms_total
         """
         self.options = options
         self.input = options.input
@@ -99,11 +221,10 @@ class PerfMetricEntry(object):
         # Main key : "metrics"
         self.measurements = [
             re.compile(
-                r"^(reactor_cpu_|memory_).*|(reactor_polls|reactor_sleep_time_ms_total)"
+                r"^(reactor_utilization)|(reactor_cpu_|memory_).*|(reactor_polls|reactor_sleep_time_ms_total)"
             ),  # , re.DEBUG)
         ]
-        # We implicitly skip anything else
-
+        # we implicitly skip anything else
         self._diff = {}
         self.df = None  # Pandas dataframe
 
@@ -124,7 +245,6 @@ class PerfMetricEntry(object):
                 # We need to arrange the data: the metrics each use a "shard" key, so
                 # need to use shard to index the metrics
                 return ds_list
-                # return self.filter_metrics(ds_list)
         except IOError as e:
             raise argparse.ArgumentTypeError(str(e))
 
@@ -141,16 +261,13 @@ class PerfMetricEntry(object):
         """
         Filter the (array of dicts) to the measurements we want
         Returns a dict with keys the shard names, values the measurements above
-        TBD. we need to define a dict with key the type of metric (class, crimson)
+        We might extend this for the type of OSD metric (classic, crimson)
         """
         result = {}
         _shard = None
-        # "metrics" might be different for Classic
         for item in ds["metrics"]:
-            # Can we use list comprehension here?
             _key = list(item.keys()).pop()
             for regex in self.measurements:
-                # if self.regex.search(dv):
                 if regex.search(_key):
                     try:
                         _shard = int(item[_key]["shard"])
@@ -160,19 +277,6 @@ class PerfMetricEntry(object):
                     except KeyError:
                         logger.error(f"KeyError: {item} has no shard key")
         return result
-
-    def get_diff(
-        self, a_data: Dict[str, Any], b_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Calculate the difference of after_data - before_data
-        Assigns the result to self._diff, we use that to make a dataframe and
-        produce heatmaps
-        """
-        for k in b_data:  # keys are shards
-            for m in b_data[k]:
-                a_data[k][m] -= b_data[k][m]
-        return a_data
 
     def make_chart(self, df):
         """
@@ -219,6 +323,15 @@ class PerfMetricEntry(object):
         plt.show()
         plt.savefig(outname.replace(".json", "f{slice_name}.png"))
 
+    def save_table(self, name, df):
+        """
+        Save the df in latex format
+        """
+        if name:
+            with open(name, "w", encoding="utf-8") as f:
+                print(df.to_latex(), file=f)
+                f.close()
+
     def make_heatmap(self, df, outname):
         """
         Plot a heatmap of the dataframe
@@ -233,19 +346,109 @@ class PerfMetricEntry(object):
 
         #print(df.columns)
         new_index = map(lambda x: int(x),df.index.to_list())
+        new_index = [int(x) for x in df.index.to_list()]
         df = df.set_index(new_index)
         print(df) # new data frame
+        # might need to define a table file per each slice
+            # Prob best use a table instead of plot
+            #df_des.plot(kind="bar",title=f"{slice_name} desc", xlabel="Describe", ylabel=f"{units[slice_name]}", fontsize=8)
+            #df_des.plot(title=f"{slice_name} desc", xlabel="Shards", ylabel=f"{units[slice_name]}", fontsize=8, table=True, style="o-", table=True)
+            #sns.factorplot(x="slice_name", y="slice_name", data=df_des)
+            # plt.show()
+            # plt.clf()
+
         """
-        df = self._minmax_normalisation(df)
-        print(df) # Main data frame
+        # TBC: can we define this at the top of the class, then extend it with the callbacks to apply the reduction
         slices = {
-            "memory": re.compile(r"^(memory_).*"),
-            "reactor_cpu": re.compile(r"^(reactor_cpu_).*"), 
+            "memory_ops": re.compile(r"^(memory_.*_operations)"),
+            "memory": re.compile(r"^(memory_.*_memory)"),
+            "reactor_cpu": re.compile(r"^(reactor_cpu_.*|reactor_sleep_time_ms_total)"),
+            "reactor_polls": re.compile(r"^(reactor_polls)"),
+            "reactor_utilization": re.compile(r"^(reactor_utilization)"),
         }
-        for slice_name,slice_regex in slices.items():
+        callbacks = {
+            "minmax": _minmax_normalisation,
+            "znorm": _znormalisation,
+            "maxabs": _max_abs_normalisation,
+        }
+        units = {
+            "memory_ops": "operations",
+            "memory": "MBs",
+            "reactor_cpu": "ms",
+            "reactor_polls": "polls",
+            "reactor_utilization": "pc",
+        }
+
+        for slice_name, slice_regex in slices.items():
             df_slice = df.filter(regex=slice_regex, axis=1)
-            print(df_slice)
-            self.plot_heatmap(df_slice, outname, slice_name)
+            df_describe = df_slice.describe()
+            self.save_table(
+                outname.replace(".json", f"_{slice_name}_table.tex"), df_describe
+            )
+            logger.info(f"{slice_name}: {df_describe.info(verbose=False)}")
+
+            # We need the reactor_utilization to be a percentage, then use it to calculate the IOP cost, making a new column in the dataframe
+            if slice_name == "reactor_utilization":
+                self.reactor_utilization = df_slice.mean(axis=1)
+                # self.reactor_utilization = df_describe['mean'] #(axis=1)
+                print(f"Reactor utilization: {self.reactor_utilization}")
+            for cb_name, cb in callbacks.items():
+                print(f"Normalising {slice_name} with {cb_name}")
+                df_slice = cb(df_slice)
+                df_slice.plot(
+                    kind="bar",
+                    stacked=True,
+                    title=f"{slice_name} {cb_name}",
+                    xlabel="Shards",
+                    ylabel=f"{units[slice_name]}",
+                    fontsize=7,
+                )
+                # plt.show()
+                # plt.clf()
+                plt.savefig(
+                    outname.replace(".json", f"_{slice_name}_{cb_name}.png"),
+                    dpi=300,
+                    bbox_inches="tight",
+                )
+                # self.plot_heatmap(df_slice, outname, f"{slice_name}_{cb_name}")
+
+    def reduce(self, a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Reduce the data by applying the operator to the data
+        # We need to apply the operator to the list of dataframes but depending on the metrics
+        # If an operator is not specified, we default to difference
+        if "operator" not in self.config:
+            self.config["operator"] = "difference"
+                return callbacks[self.config["operator"]](a_data, b_data)
+        """
+
+        def _get_metric_group(metric):
+            for k in self.METRICS:
+                if self.METRICS[k]["regex"].search(metric):
+                    return k
+            return None
+
+        def _get_diff(a_data, b_data):
+            return a_data - b_data
+
+        def _get_avg(a_data, b_data):
+            return (a_data + b_data) / 2
+
+        callbacks = {
+            "difference": _get_diff,
+            "average": _get_avg,
+        }
+        for k in b_data:  # keys are shards
+            for m in b_data[k]:  # metrics
+                # Get the metric group
+                m_group = _get_metric_group(m)
+                if m_group is None:
+                    logger.debug(f"Metric {m} not in any group")
+                    cb = callbacks["difference"]
+                else:
+                    cb = callbacks[self.METRICS[m_group]["reduce"]]
+                a_data[k][m] = cb(a_data[k][m], b_data[k][m])
+        return a_data
 
     def load_files(self, json_files: List[str]):  # List[str]
         """
@@ -257,20 +460,35 @@ class PerfMetricEntry(object):
             files.close()
         except IOError as e:
             raise argparse.ArgumentTypeError(str(e))
+        callbacks = {
+            "difference": get_diff,
+            "average": get_avg,
+        }
+        # We need to apply the operator to the list of dataframes but depending on the metrics
+        # If an operator is not specified, we default to difference
+        if "operator" not in self.config:
+            self.config["operator"] = "difference"
         """
+
         print(f"loading {len(json_files)} .json files ...")
         ds_list = []
         for f in json_files:
             ds_list.append(self.filter_metrics(self.load_json(f)))
             # if using data frames:
             # pd.read_json(f)
+        # ds_list = [self.filter_metrics(self.load_json(f)) for f in json_files]
+        # Show ds_list[] as dataframes:
+        for i, ds in enumerate(ds_list):
+            dfs = pd.DataFrame(ds).T
+            logger.info(f"ds_list[{i}]: {dfs}")
         while len(ds_list) > 1:
-            # Take pairwise difference
-            _diff = self.get_diff(ds_list.pop(), ds_list.pop())
+            # Apply pairwise the operator (difference/avg)
+            _diff = self.reduce(ds_list.pop(), ds_list.pop())
+            # _diff = callbacks[self.config["operator"]](ds_list.pop(), ds_list.pop())
             ds_list.append(_diff)
 
         self._diff = ds_list.pop()
-        logger.info(f"Saving the difference to {self.config['output']}")
+        logger.info(f"Saving the reduction to {self.config['output']}")
         self.save_json(self.config["output"], self._diff)
         # Convert the result into a dataframe
         # Transpose, so that the metrics are the columns, and the shards the rows
@@ -288,73 +506,58 @@ class PerfMetricEntry(object):
         if "input" in self.config:
             self.load_files(self.config["input"])
         else:
-            logger.error(f"KeyError: self.config has no input key")
+            logger.error("KeyError: self.config has no input key")
 
-    def _znormalisation(self, df):  # df: pd.DataFrame
+    def aggregate_results(self):
         """
-        Normalise the dataframe
+        Aggregate the results from the benchmark
+        # merge the dataframes self.df and df
+        self.df = pd.merge(self.df, df, on="shard", how="left")
+        # self.df = pd.concat([self.df, df], axis=1)
+        print(self.df)
+        # self.df = self.df.set_index("shard")
+
+        if self.config["benchmark"] == "randbw":
+            bench_df = bench_df.filter(regex=regex)
         """
-        # copy the data
-        df_z_scaled = df.copy()
-
-        # apply normalization techniques
-        for column in df_z_scaled.columns:
-            df_z_scaled[column] = (
-                df_z_scaled[column] - df_z_scaled[column].mean()
-            ) / df_z_scaled[column].std()
-
-        # view normalized data
-        # display(df_z_scaled)
-        df_z_scaled.plot(kind="bar", stacked=True)
-
-    def _minmax_normalisation(self, df):  # df: pd.dataframe
-        """
-        Apply min-max normalisation to the DataFrame
-        """
-        # copy the data
-        df_minmax_scaled = df.copy()
-
-        # apply normalization techniques
-        for column in df_minmax_scaled.columns:
-            df_minmax_scaled[column] = (
-                df_minmax_scaled[column] - df_minmax_scaled[column].min()
-            ) / (df_minmax_scaled[column].max() - df_minmax_scaled[column].min())
-
-        # view normalized data
-        # print(df_minmax_scaled)
-        df_minmax_scaled.plot(kind="bar", stacked=True)
-        return df_minmax_scaled
-
-    def _max_abs_normalisation(self, df):  # df: pd.dataframe
-        """
-        Apply max-abs normalisation to the dataframe
-        """
-        # copy the data
-        df_maxabs_scaled = df.copy()
-
-        # apply normalization techniques
-        for column in df_maxabs_scaled.columns:
-            df_maxabs_scaled[column] = (
-                df_maxabs_scaled[column] / df_maxabs_scaled[column].abs().max()
+        regex = re.compile(r"rand.*")
+        if self.config["benchmark"]:
+            self.benchmark = self.load_json(self.config["benchmark"])
+            bench_df = pd.DataFrame(self.benchmark)
+            m = regex.search(self.config["benchmark"])
+            if m:
+                col = "iops"
+            else:
+                col = "bw"
+            # Aggregate the estimated cost as a new column:
+            bench_df["estimated_cost"] = bench_df[col] / (
+                self.reactor_utilization * self.CPU_CLOCK_SPEED_GHZ
             )
-
-        # view normalized data
-        # print(df_maxabs_scaled)
-        df_maxabs_scaled.plot(kind="bar", stacked=True)
+            # We filter onlly the columns we are interested: 'iops', 'bw',  iodepth iops total_ios   clat_ms  'estimated_cost'
+            bench_df = bench_df.filter(
+                regex=r"^(iops|bw|iodepth|total_ios|clat_ms|estimated_cost)"
+            )
+            logger.info(f"Estimated costs:\n {bench_df}")
+            # Save bench_df as a .tex table file
+            self.save_table(
+                self.config["output"].replace(".json", "_bench_table.tex"), bench_df
+            )
 
     def run(self):
         """
-        Entry point: processes the input files, then produces the diff
-        and saves it back to -a
+        Entry point: processes the input files, reduces them
+        and saves it back to a .json and .tex table files
         """
         os.chdir(self.options.directory)
         if self.options.plot:
-            self.make_heatmap(pd.DataFrame(self.load_json(self.options.plot)).T, self.options.plot)
+            self.make_heatmap(
+                pd.DataFrame(self.load_json(self.options.plot)).T, self.options.plot
+            )
             # self.make_chart(pd.DataFrame(self.load_json(options.plot)).T)
         else:
             self.load_config()
-            self.make_heatmap(self.df,self.config["output"])
-        # self.save_json()
+            self.make_heatmap(self.df, self.config["output"])
+            self.aggregate_results()
 
 
 def main(argv):
@@ -365,7 +568,7 @@ def main(argv):
     < .. run test.. >
     # /ceph/build/bin/ceph tell ${oid} dump_metrics >> ${oid}_${TEST_NAME}_dump_after.json
     < .. Produce a ${TEST_NAME}_conf.json with the input and output files .. >
-    python3 /root/bin/diskstat_diff.py -d ${RUN_DIR} -i ${TEST_NAME}_conf.json 
+    python3 /root/bin/perf_metrics.py -d ${RUN_DIR} -i ${TEST_NAME}_conf.json 
     """
     parser = argparse.ArgumentParser(
         description="""This tool is used to calculate the difference in diskstat measurements""",
@@ -374,8 +577,6 @@ def main(argv):
     )
     cmd_grp = parser.add_mutually_exclusive_group()
     cmd_grp.add_argument(
-        #parser.add_argument(
-        # input .json, with keys: "input", "output", "type", etc.
         "-i",
         "--input",
         type=str,
@@ -385,7 +586,6 @@ def main(argv):
     )
 
     cmd_grp.add_argument(
-        #parser.add_argument(
         "-p",
         "--plot",
         type=str,
@@ -394,7 +594,7 @@ def main(argv):
         help="Just plot the heatmap of the given .json file",
     )
 
-    # The following can also be defined in the input config file
+    # The following should also be defined in the input config file
     parser.add_argument(
         "-r",
         "--regex",
@@ -426,8 +626,8 @@ def main(argv):
         logging.basicConfig(filename=tmpfile.name, encoding="utf-8", level=logLevel)
 
     logger.debug(f"Got options: {options}")
-    dsDiff = PerfMetricEntry(options)
-    dsDiff.run()
+    dsPerf = PerfMetricEntry(options)
+    dsPerf.run()
 
 
 if __name__ == "__main__":
