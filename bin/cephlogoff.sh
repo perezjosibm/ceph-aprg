@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 # TODO: query to know whether the OSD is ready for tell commands
 TIMESLEEP=30
 echo "== Waiting ${TIMESLEEP} secs for the OSD to be ready to accept commands=="

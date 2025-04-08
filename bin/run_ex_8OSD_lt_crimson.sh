@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #
 # Test plan experiment increase num jobs for 8 Crimson OSD latency target
 # can FIO jobs starve IO reactors?

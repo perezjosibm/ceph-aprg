@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 # single FIO instance
 for x in *_1procs_*.zip; do 
 	unzip -d tempo $x; 

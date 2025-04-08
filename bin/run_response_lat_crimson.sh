@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #
 # Test plan to collect response latency curves for Crimson OSD using the same
 # configurations as the latency target

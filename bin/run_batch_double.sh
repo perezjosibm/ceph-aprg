@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #
 # Runs to compare the workloads across unrest, 8,4,1 cpu cores for FIO (Two OSD)
 #

@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #
 #Runs to compare the workloads across the seastar/alien core ratios -- I can't try these since using 8-15 for FIO
 # so would need to think an alternative

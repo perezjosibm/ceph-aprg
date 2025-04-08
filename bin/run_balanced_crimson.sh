@@ -10,7 +10,7 @@
 # distribution tests for the given OSD backend type, 'all' for the three of them.
 # ! -b : Run a single balanced CPU core/reactor distribution tests for all the OSD backend types
 
-#!/usr/bin/bash
+#!/usr/bin/env bash
 # Test plan experiment to compare the effect of balanced vs unbalanced CPU core distribution for the Seastar
 # reactor threads -- using a pure reactor env cyanstore -- extended for Bluestore as well
 #

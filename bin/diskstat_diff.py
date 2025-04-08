@@ -164,12 +164,12 @@ class DiskStatEntry(object):
         for slice_name, slice_columns in slices.items():
             df_slice = df.loc[slice_columns]
             print(df_slice)
-            f, ax = plt.subplots(figsize=(9, 6))
-            ax.set_title("Diskstat heatmap (preconditioning)")
+            _f, ax = plt.subplots(figsize=(9, 6))
+            ax.set_title(f"Diskstat heatmap ({self.aname}: {slice_name})")
             sns.heatmap(df_slice, annot=True, fmt=".1f", linewidths=0.5, ax=ax)
             # plt.show()
             plt.savefig(
-                self.aname.replace("_diskstat.json", f"_{slice_name}_heatmap.png")
+                self.aname.replace(".json", f"_{slice_name}_heatmap.png")
             )
 
     def run(self):

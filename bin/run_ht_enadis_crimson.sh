@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #
 # Test plan experiment to get the CPU distribution for the 2 general cases: 24 physical vs 52 inc. HT
 RED='\033[0;31m'

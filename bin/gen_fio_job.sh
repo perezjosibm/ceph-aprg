@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 # !
 # ! Usage: ./gen_fio_job.sh [-n num volumes] [-l latency_target] [-p vol name prefix]
 # !
@@ -17,7 +17,7 @@ declare -A name=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread [pre]=p
 declare -A bsize=([rw]="4k" [rr]="4k" [sw]="64k" [sr]="64k" [pre]="64k")
 declare -a workloads_order=( rr rw sr sw pre )
 
-NUM_VOLUMES=1
+NUM_VOLUMES=32
 VOLNAME_PREFIX="fio_test"
 BLOCK_SIZE="64k"
 LATENCY_TARGET=false
@@ -107,14 +107,14 @@ EOF
 	# Body is composed of a sequence of [jobs], each associated
 	# with its volume
 	read -r -d '' body <<EOF || true
-
 #############
 [${RBD_NAME}]
 rbdname=${RBD_NAME}
 max_latency=1s
-
+numjobs=\${NUM_JOBS} 
 EOF
-	echo "$body" >> $outfilename
+  echo "
+  $body" >> $outfilename
 	if [ "${WORKLOAD}" == "pre" ]; then
 	  echo "
 size=\${RBD_SIZE}

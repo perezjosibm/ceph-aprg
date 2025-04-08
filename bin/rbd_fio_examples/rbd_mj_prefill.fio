@@ -24,11 +24,13 @@ thread=1
 #numjobs=${NUM_JOBS} # num concurrent clients/processes
 
 # Number of I/O units to keep in flight
-#iodepth=${IO_DEPTH}
+iodepth=${IO_DEPTH}
 #############
 [fio_test_0]
 rbdname=fio_test_0
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -37,6 +39,8 @@ io_size=${RBD_SIZE}
 [fio_test_1]
 rbdname=fio_test_1
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -45,6 +49,8 @@ io_size=${RBD_SIZE}
 [fio_test_2]
 rbdname=fio_test_2
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -53,6 +59,8 @@ io_size=${RBD_SIZE}
 [fio_test_3]
 rbdname=fio_test_3
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -61,6 +69,8 @@ io_size=${RBD_SIZE}
 [fio_test_4]
 rbdname=fio_test_4
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -69,6 +79,8 @@ io_size=${RBD_SIZE}
 [fio_test_5]
 rbdname=fio_test_5
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -77,6 +89,8 @@ io_size=${RBD_SIZE}
 [fio_test_6]
 rbdname=fio_test_6
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -85,6 +99,8 @@ io_size=${RBD_SIZE}
 [fio_test_7]
 rbdname=fio_test_7
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -93,6 +109,8 @@ io_size=${RBD_SIZE}
 [fio_test_8]
 rbdname=fio_test_8
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -101,6 +119,8 @@ io_size=${RBD_SIZE}
 [fio_test_9]
 rbdname=fio_test_9
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -109,6 +129,8 @@ io_size=${RBD_SIZE}
 [fio_test_10]
 rbdname=fio_test_10
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -117,6 +139,8 @@ io_size=${RBD_SIZE}
 [fio_test_11]
 rbdname=fio_test_11
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -125,6 +149,8 @@ io_size=${RBD_SIZE}
 [fio_test_12]
 rbdname=fio_test_12
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -133,6 +159,8 @@ io_size=${RBD_SIZE}
 [fio_test_13]
 rbdname=fio_test_13
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -141,6 +169,8 @@ io_size=${RBD_SIZE}
 [fio_test_14]
 rbdname=fio_test_14
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -149,6 +179,8 @@ io_size=${RBD_SIZE}
 [fio_test_15]
 rbdname=fio_test_15
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -157,6 +189,8 @@ io_size=${RBD_SIZE}
 [fio_test_16]
 rbdname=fio_test_16
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -165,6 +199,8 @@ io_size=${RBD_SIZE}
 [fio_test_17]
 rbdname=fio_test_17
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -173,6 +209,8 @@ io_size=${RBD_SIZE}
 [fio_test_18]
 rbdname=fio_test_18
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -181,6 +219,8 @@ io_size=${RBD_SIZE}
 [fio_test_19]
 rbdname=fio_test_19
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -189,6 +229,8 @@ io_size=${RBD_SIZE}
 [fio_test_20]
 rbdname=fio_test_20
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -197,6 +239,8 @@ io_size=${RBD_SIZE}
 [fio_test_21]
 rbdname=fio_test_21
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -205,6 +249,8 @@ io_size=${RBD_SIZE}
 [fio_test_22]
 rbdname=fio_test_22
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -213,6 +259,8 @@ io_size=${RBD_SIZE}
 [fio_test_23]
 rbdname=fio_test_23
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -221,6 +269,8 @@ io_size=${RBD_SIZE}
 [fio_test_24]
 rbdname=fio_test_24
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -229,6 +279,8 @@ io_size=${RBD_SIZE}
 [fio_test_25]
 rbdname=fio_test_25
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -237,6 +289,8 @@ io_size=${RBD_SIZE}
 [fio_test_26]
 rbdname=fio_test_26
 max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}
@@ -245,6 +299,48 @@ io_size=${RBD_SIZE}
 [fio_test_27]
 rbdname=fio_test_27
 max_latency=1s
+numjobs=${NUM_JOBS}
+
+
+size=${RBD_SIZE}
+io_size=${RBD_SIZE}
+
+#############
+[fio_test_28]
+rbdname=fio_test_28
+max_latency=1s
+numjobs=${NUM_JOBS}
+
+
+size=${RBD_SIZE}
+io_size=${RBD_SIZE}
+
+#############
+[fio_test_29]
+rbdname=fio_test_29
+max_latency=1s
+numjobs=${NUM_JOBS}
+
+
+size=${RBD_SIZE}
+io_size=${RBD_SIZE}
+
+#############
+[fio_test_30]
+rbdname=fio_test_30
+max_latency=1s
+numjobs=${NUM_JOBS}
+
+
+size=${RBD_SIZE}
+io_size=${RBD_SIZE}
+
+#############
+[fio_test_31]
+rbdname=fio_test_31
+max_latency=1s
+numjobs=${NUM_JOBS}
+
 
 size=${RBD_SIZE}
 io_size=${RBD_SIZE}

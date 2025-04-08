@@ -28,6 +28,7 @@ import sys
 import re
 import json
 import tempfile
+from matplotlib import legend
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -77,7 +78,7 @@ class MsgrStatEntry(object):
                 self.oflname = out_json
             else:
                 self.oflname = iflname.replace(".out", ".json")
-                self.dflname = iflname.replace(".out", "des.json")
+                self.dflname = iflname.replace(".out", "_des.json")
         else:
             self.oflname = plot
         # Gneric key:value regex
@@ -92,7 +93,7 @@ class MsgrStatEntry(object):
         # Current description is the latest
         self.description = {
             "regex": re.compile(
-                r"^== msgr_crimson_(\d+)smp_(\d+)clients_(balanced|separated)_client.out =="
+                r"^== msgr_(crimson|async)_(\d+)smp_(\d+)clients_(balanced|separated)_client.out =="
             ),
         }
         self.regex_start = re.compile(r"all\(depth=\d+\):")
@@ -169,9 +170,9 @@ class MsgrStatEntry(object):
         match = self.description["regex"].search(line)
         logger.debug(f"Line: {line}, Match: {match}")
         if match:
-            self.descriptions["smp"].append(int(match.group(1)))
-            self.descriptions["clients"].append(int(match.group(2)))
-            self.descriptions["balance"].append(match.group(3))
+            self.descriptions["smp"].append(int(match.group(2)))
+            self.descriptions["clients"].append(int(match.group(3)))
+            self.descriptions["balance"].append(match.group(4))
             _bal = self.descriptions["balance"][-1]
             if _bal not in self.entry:
                 self.entry.update({_bal: {}})
@@ -231,7 +232,9 @@ class MsgrStatEntry(object):
             if self.parse_entry(line):
                 self.parse_measurements(next(it_lines, None), it_lines)
 
-        logger.debug(f"Entry: {self.entry}\n Descriptions: {pformat(self.descriptions)}")
+        logger.debug(
+            f"Entry: {self.entry}\n Descriptions: {pformat(self.descriptions)}"
+        )
         self.save_json(self.oflname, self.entry)
         self.save_json(self.dflname, self.descriptions)
         # Circular reference
@@ -251,11 +254,91 @@ class MsgrStatEntry(object):
         sns.lineplot(data=df, x="latency", y="out_throughput", hue="balance")
         #plt.show()
         plt.savefig(self.oflname.replace(".json", "_rc.png"), dpi=300, bbox_inches='tight')
-        """
+
+        sns.heatmap(flights, cmap='Blues', annot=True, fmt='d')
+        plt.title('Passengers per month')
+        plt.xlabel('Year')
+        plt.ylabel('Month')
+        # Show the plot
+        plt.show()
+
+        #df.rename(columns={"out_throughput": "out_throughput (K)"}, inplace=True) #.astype(float)
         x_data = df["latency"]
-        y_data = df["out_throughput"]
+        # Needs scaling out_throughput to thousands
+        y_data =  df["out_throughput"].astype(float) / 1000.0
         # plt.scatter(x_data, y_data, c=df["smp"], cmap='viridis')
         plt.plot(x_data, y_data, "+-", label=title)
+
+        """
+        # Format column latency to float .2f
+        df["latency"] = df["latency"].astype(float).map("{:.2f}".format)
+        # Using "latency" and "out_throughput" for the x,y axis, resp
+        # sns.relplot(data=df, x="latency", y="out_throughput", hue="balance", kind="line") #, title=title)
+        g = sns.relplot(
+            data=df,
+            x="latency",
+            y="IOPS",
+            hue="balance",
+            style="balance",
+            kind="line",
+            markers=True,
+        ).set(title=title)
+        g.set_axis_labels("Latency(ms)", "IOPS (K)")
+        g.set(xticks=df["latency"].unique())
+        #df.dataframe(df.style.format(subset=['Position', 'Marks'], formatter="{:.2f}"))
+        g.set_xticklabels(rotation=45)
+        g.legend.remove()
+        plt.legend(title="CPU Balance", loc="center right")
+        # plt.show()
+        out_name = self.oflname.replace(".json", "_rc.png")
+        logger.debug(f"Saving chart: {out_name}")
+        plt.savefig(out_name, dpi=300, bbox_inches="tight")
+
+    def save_table(self, name, df):
+        """
+        Save the df in latex format
+        """
+        if name:
+            with open(name, "w", encoding="utf-8") as f:
+                print(df.to_latex(), file=f)
+                f.close()
+
+    def make_simple_chart(self, df, title):
+        """
+        Plot a simple chart of the dataframe
+        """
+        print(f"DF:\n {df}")
+        df.sort_values(by=["smp", "clients"], inplace=True)
+        print(f"DF sorted:\n {df}")
+        # Apply conversion to thousands to IOPS columns
+        df["IOPS"] = df["IOPS"].astype(float) / 1000.0
+        # df.rename(columns={"IOPS": "IOPS (K)"}, inplace=True) #.astype(float)
+        print(f"DF sorted and converted to thousands:\n {df}")
+        sns.set_theme(
+            style="darkgrid", rc={"figure.figsize": (8, 4)}
+        )  # width=8, height=4
+        g = sns.relplot(
+            data=df,
+            x="clients",
+            y="IOPS",
+            hue="balance",
+            style="balance",
+            kind="line",
+            markers=True,
+        ).set(title=title)
+        g.set_axis_labels("Clients", "IOPS (K)")
+        g.set(xticks=df["clients"].unique())
+        g.legend.remove()
+        plt.legend(title="CPU Balance", loc="center right")
+        # plt.show()
+        out_name = self.oflname.replace(".json", "_table.tex")
+        logger.debug(f"Saving table: {out_name}")
+        self.save_table(out_name, df)
+
+        out_name = self.oflname.replace(".json", "_iops.png")
+        logger.debug(f"Saving chart: {out_name}")
+        plt.savefig(out_name, dpi=300, bbox_inches="tight")
+        # plt.clf()
 
     def prep_response_charts(self):
         """
@@ -268,16 +351,18 @@ class MsgrStatEntry(object):
         print(f"DF: {df}")
         df.sort_values(by=["smp", "clients"], inplace=True)
         print(f"DF: {df}")
-        #self.make_response_chart(df, "Response Chart") #ugly!
+
+                for key, value in self.entry.items():  # balanced, separated
+                    df = pd.DataFrame(value)
+                    self.make_response_chart(df, key)
+                    #self.make_response_chart(value, key)
         """
-        for key, value in self.entry.items():  # balanced, separated
-            #df = pd.DataFrame(value)
-            #self.make_response_chart(df, key)
-            self.make_response_chart(value, key)
-        plt.savefig(
-            self.oflname.replace(".json", "_rc.png"), dpi=300, bbox_inches="tight"
-        )
-        plt.clf()
+        if self.plot:
+            regex = re.compile(r"des.json")
+            if regex.search(self.plot):
+                df = pd.DataFrame(self.entry)
+                self.make_simple_chart(df, self.plot)
+                self.make_response_chart(df, "Response Latency vs Throughput")
 
     def run(self):
         """

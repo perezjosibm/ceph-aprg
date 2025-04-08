@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #
 #Runs to collect response curves for Crimson OSD - o05
 #

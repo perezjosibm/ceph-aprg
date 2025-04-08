@@ -9,7 +9,7 @@
 # !    distribution tests for the given OSD backend type, 'all' for the three of them.
 # ! -b : Run a single balanced CPU core/reactor distribution tests for all the OSD backend types
 
-#!/usr/bin/bash
+#!/usr/bin/env bash
 # Test plan experiment to compare the effect of balanced vs unbalanced CPU core distribution for the Seastar
 # reactor threads -- using a pure reactor env cyanstore -- extended for Bluestore as well
 #
@@ -27,9 +27,11 @@ export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
 
 # Invariant: number of CPU cores for FIO
 # Might try disable HT as well: so we can have the same test running on the two cases, which means that the FIO has two cases
-VSTART_CPU_CORES="0-13,56-69,28-41,84-97" # Latency target comparison vs Classic
+#VSTART_CPU_CORES="0-13,56-69,28-41,84-97" # 56 reactors Latency target comparison vs Classic
+VSTART_CPU_CORES="0-27" # 56 reactors Latency target comparison vs Classic
 #VSTART_CPU_CORES="0-51,56-107" # inc HT
-FIO_CPU_CORES="14-27,70-83,42-55,98-111" # inc HT
+#FIO_CPU_CORES="14-27,70-83,42-55,98-111" # inc HT
+FIO_CPU_CORES="28-55,84-111" # inc HT
 #FIO_CPU_CORES="52-55,108-111" # inc HT
 FIO_JOBS=/root/bin/rbd_fio_examples/
 FIO_SPEC="32fio" # 32 client/jobs
@@ -203,8 +205,8 @@ fun_run_fixed_bal_tests() {
               title="(${OSD_TYPE}) $NUM_OSD OSD classic, fixed ${FIO_SPEC}" #, response latency 
               cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh\
                   --new -x --localhost --without-dashboard\
-                  --redirect-output ${crimson_be_table[blue]}\
-                  --no-restart "
+                  --redirect-output ${crimson_be_table[blue]}"
+                  #--no-restart  -- disabling this
               test_name="${OSD_TYPE}_${NUM_OSD}osd_${FIO_SPEC}_rc"
 
           else
@@ -213,7 +215,7 @@ fun_run_fixed_bal_tests() {
               cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac '${VSTART_CPU_CORES}' /ceph/src/vstart.sh\
                   --new -x --localhost --without-dashboard\
                   --redirect-output ${crimson_be_table[${OSD_TYPE}]} --crimson --crimson-smp ${NUM_REACTORS}\
-                  --no-restart ${bal_ops_table[${BAL_KEY}]}"
+                  ${bal_ops_table[${BAL_KEY}]}"
 
               test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${FIO_SPEC}_${BAL_KEY}_rc"
 

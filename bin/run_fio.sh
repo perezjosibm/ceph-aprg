@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-#!/usr/bin/bash
+#!/usr/bin/env bash
 # ! FIO driver for Ceph 
 # ! Usage: ./run_fio.sh [-a] [-c <osd-cpu-cores>] [-k] [-j] [-d rundir]
 # !  		-w {workload} [-n] -p <test_prefix>, eg "4cores_8img_16io_2job_8proc"
@@ -159,16 +159,19 @@ fun_osd_dump() {
   local SLEEP_SECS=$3
   local OSD_TYPE=$4
   local LABEL=$5
+  local METRICS=$6 #"reactor_utilization"
 
-  #Take a sample each 5 secs, 30 samples in total
+  #Take a sample every 60 secs, 3 samples in total
   for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
-    for oid in ${!osd_id[@]}; do
+    #for oid in ${!osd_id[@]}; do
+    # Use only osd.0 always
       if [ "${OSD_TYPE}" == "crimson" ]; then
-        /ceph/build/bin/ceph tell ${oid} dump_metrics >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
+        /ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS} >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
       else
-        /ceph/build/bin/ceph daemon -c /ceph/build/ceph.conf ${oid} perf dump >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
+        /ceph/build/bin/ceph daemon osd.0 perf dump >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
+        #/ceph/build/bin/ceph daemon -c /ceph/build/ceph.conf ${oid} perf dump >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
       fi
-    done
+    #done
     sleep ${SLEEP_SECS};
   done
 }
@@ -295,6 +298,8 @@ fun_run_workload() {
       fi
       all_pids=$( fun_join_by ',' ${osd_id[@]}  ${fio_id[@]} )
       fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
+      timestamp=$(date +%Y%m%d_%H%M%S)
+      fun_osd_dump ${TEST_RESULT} 3 60 ${OSD_TYPE} ${timestamp} "reactor_utilization" &
 
       wait;
       # Measure the diskstats after the completion of FIO instances

@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #
 #Runs to compare the workloads across 8,4 cpu cores for FIO (Single OSD)
 #

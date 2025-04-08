@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #
 # Test plan to collect latency target response curves for Crimson OSD
 # This configuration uses huge RBD volumes

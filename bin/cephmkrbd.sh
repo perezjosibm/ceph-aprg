@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 
 if pgrep crimson; then
 	bin/ceph daemon -c /ceph/build/ceph.conf osd.0 dump_metrics > /tmp/new_cluster_dump.json
@@ -8,7 +8,7 @@ fi
 # probably add the config opts for the basic/manual here as well
 
 # basic setup
-bin/ceph osd pool create rbd
+bin/ceph osd pool create rbd 128
 bin/ceph osd pool application enable rbd rbd
 # New: set replica size to 1:
 bin/ceph osd pool set rbd size 1 --yes-i-really-mean-it

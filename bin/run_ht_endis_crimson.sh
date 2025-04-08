@@ -1,4 +1,4 @@
-#!/usr/bin/bash
+#!/usr/bin/env bash
 #
 # Test plan experiment to compare the effect of balanced vs unbalanced CPU core distribution for the Seastar
 # reactor threads -- using a pure reactor env cyanstore
