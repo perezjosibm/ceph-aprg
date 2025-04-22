@@ -1,0 +1,781 @@
+This is pdfTeX, Version 3.141592653-2.6-1.40.24 (TeX Live 2022) (preloaded format=pdflatex 2022.9.26)  22 APR 2025 12:00
+entering extended mode
+ restricted \write18 enabled.
+ %&-line parsing enabled.
+**report_crimson_vs_async_b1e4a2b.tex
+(./report_crimson_vs_async_b1e4a2b.tex
+LaTeX2e <2021-11-15> patch level 1
+L3 programming layer <2022-02-24>
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/base/report.cls
+Document Class: report 2021/10/04 v1.4n Standard LaTeX document class
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/base/size10.clo
+File: size10.clo 2021/10/04 v1.4n Standard LaTeX file (size option)
+)
+\c@part=\count185
+\c@chapter=\count186
+\c@section=\count187
+\c@subsection=\count188
+\c@subsubsection=\count189
+\c@paragraph=\count190
+\c@subparagraph=\count191
+\c@figure=\count192
+\c@table=\count193
+\abovecaptionskip=\skip47
+\belowcaptionskip=\skip48
+\bibindent=\dimen138
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/graphics/graphicx.sty
+Package: graphicx 2021/09/16 v1.2d Enhanced LaTeX Graphics (DPC,SPQR)
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/graphics/keyval.sty
+Package: keyval 2014/10/28 v1.15 key=value parser (DPC)
+\KV@toks@=\toks16
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/graphics/graphics.sty
+Package: graphics 2021/03/04 v1.4d Standard LaTeX Graphics (DPC,SPQR)
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/graphics/trig.sty
+Package: trig 2021/08/11 v1.11 sin cos tan (DPC)
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/graphics-cfg/graphics.cfg
+File: graphics.cfg 2016/06/04 v1.11 sample graphics configuration
+)
+Package graphics Info: Driver file: pdftex.def on input line 107.
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/graphics-def/pdftex.def
+File: pdftex.def 2020/10/05 v1.2a Graphics/color driver for pdftex
+))
+\Gin@req@height=\dimen139
+\Gin@req@width=\dimen140
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/booktabs/booktabs.sty
+Package: booktabs 2020/01/12 v1.61803398 Publication quality tables
+\heavyrulewidth=\dimen141
+\lightrulewidth=\dimen142
+\cmidrulewidth=\dimen143
+\belowrulesep=\dimen144
+\belowbottomsep=\dimen145
+\aboverulesep=\dimen146
+\abovetopsep=\dimen147
+\cmidrulesep=\dimen148
+\cmidrulekern=\dimen149
+\defaultaddspace=\dimen150
+\@cmidla=\count194
+\@cmidlb=\count195
+\@aboverulesep=\dimen151
+\@belowrulesep=\dimen152
+\@thisruleclass=\count196
+\@lastruleclass=\count197
+\@thisrulewidth=\dimen153
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/tools/array.sty
+Package: array 2021/10/04 v2.5f Tabular extension package (FMi)
+\col@sep=\dimen154
+\ar@mcellbox=\box50
+\extrarowheight=\dimen155
+\NC@list=\toks17
+\extratabsurround=\skip49
+\backup@length=\skip50
+\ar@cellbox=\box51
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/geometry/geometry.sty
+Package: geometry 2020/01/02 v5.9 Page Geometry
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/iftex/ifvtex.sty
+Package: ifvtex 2019/10/25 v1.7 ifvtex legacy package. Use iftex instead.
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/iftex/iftex.sty
+Package: iftex 2022/02/03 v1.0f TeX engine tests
+))
+\Gm@cnth=\count198
+\Gm@cntv=\count199
+\c@Gm@tempcnt=\count266
+\Gm@bindingoffset=\dimen156
+\Gm@wd@mp=\dimen157
+\Gm@odd@mp=\dimen158
+\Gm@even@mp=\dimen159
+\Gm@layoutwidth=\dimen160
+\Gm@layoutheight=\dimen161
+\Gm@layouthoffset=\dimen162
+\Gm@layoutvoffset=\dimen163
+\Gm@dimlist=\toks18
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/hyperref/hyperref.sty
+Package: hyperref 2022-02-21 v7.00n Hypertext links for LaTeX
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/ltxcmds/ltxcmds.sty
+Package: ltxcmds 2020-05-10 v1.25 LaTeX kernel commands for general use (HO)
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/pdftexcmds/pdftexcmds.sty
+Package: pdftexcmds 2020-06-27 v0.33 Utility functions of pdfTeX for LuaTeX (HO
+)
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/infwarerr/infwarerr.sty
+Package: infwarerr 2019/12/03 v1.5 Providing info/warning/error messages (HO)
+)
+Package pdftexcmds Info: \pdf@primitive is available.
+Package pdftexcmds Info: \pdf@ifprimitive is available.
+Package pdftexcmds Info: \pdfdraftmode found.
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/kvsetkeys/kvsetkeys.sty
+Package: kvsetkeys 2019/12/15 v1.18 Key value parser (HO)
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/kvdefinekeys/kvdefinekeys.
+sty
+Package: kvdefinekeys 2019-12-19 v1.6 Define keys (HO)
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/pdfescape/pdfescape.sty
+Package: pdfescape 2019/12/09 v1.15 Implements pdfTeX's escape features (HO)
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/hycolor/hycolor.sty
+Package: hycolor 2020-01-27 v1.10 Color options for hyperref/bookmark (HO)
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/letltxmacro/letltxmacro.sty
+Package: letltxmacro 2019/12/03 v1.6 Let assignment for LaTeX macros (HO)
+) (/usr/local/texlive/2022basic/texmf-dist/tex/latex/auxhook/auxhook.sty
+Package: auxhook 2019-12-17 v1.6 Hooks for auxiliary files (HO)
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/kvoptions/kvoptions.sty
+Package: kvoptions 2020-10-07 v3.14 Key value format for package options (HO)
+)
+\@linkdim=\dimen164
+\Hy@linkcounter=\count267
+\Hy@pagecounter=\count268
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/hyperref/pd1enc.def
+File: pd1enc.def 2022-02-21 v7.00n Hyperref: PDFDocEncoding definition (HO)
+Now handling font encoding PD1 ...
+... no UTF-8 mapping file for font encoding PD1
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/intcalc/intcalc.sty
+Package: intcalc 2019/12/15 v1.3 Expandable calculations with integers (HO)
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/etexcmds/etexcmds.sty
+Package: etexcmds 2019/12/15 v1.7 Avoid name clashes with e-TeX commands (HO)
+)
+\Hy@SavedSpaceFactor=\count269
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/hyperref/puenc.def
+File: puenc.def 2022-02-21 v7.00n Hyperref: PDF Unicode definition (HO)
+Now handling font encoding PU ...
+... no UTF-8 mapping file for font encoding PU
+)
+Package hyperref Info: Hyper figures OFF on input line 4137.
+Package hyperref Info: Link nesting OFF on input line 4142.
+Package hyperref Info: Hyper index ON on input line 4145.
+Package hyperref Info: Plain pages OFF on input line 4152.
+Package hyperref Info: Backreferencing OFF on input line 4157.
+Package hyperref Info: Implicit mode ON; LaTeX internals redefined.
+Package hyperref Info: Bookmarks ON on input line 4390.
+\c@Hy@tempcnt=\count270
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/url/url.sty
+\Urlmuskip=\muskip16
+Package: url 2013/09/16  ver 3.4  Verb mode for urls, etc.
+)
+LaTeX Info: Redefining \url on input line 4749.
+\XeTeXLinkMargin=\dimen165
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/bitset/bitset.sty
+Package: bitset 2019/12/09 v1.3 Handle bit-vector datatype (HO)
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/bigintcalc/bigintcalc.sty
+Package: bigintcalc 2019/12/15 v1.5 Expandable calculations on big integers (HO
+)
+))
+\Fld@menulength=\count271
+\Field@Width=\dimen166
+\Fld@charsize=\dimen167
+Package hyperref Info: Hyper figures OFF on input line 6027.
+Package hyperref Info: Link nesting OFF on input line 6032.
+Package hyperref Info: Hyper index ON on input line 6035.
+Package hyperref Info: backreferencing OFF on input line 6042.
+Package hyperref Info: Link coloring OFF on input line 6047.
+Package hyperref Info: Link coloring with OCG OFF on input line 6052.
+Package hyperref Info: PDF/A mode OFF on input line 6057.
+LaTeX Info: Redefining \ref on input line 6097.
+LaTeX Info: Redefining \pageref on input line 6101.
+ (/usr/local/texlive/2022basic/texmf-dist/tex/latex/base/atbegshi-ltx.sty
+Package: atbegshi-ltx 2021/01/10 v1.0c Emulation of the original atbegshi
+package with kernel methods
+)
+\Hy@abspage=\count272
+\c@Item=\count273
+\c@Hfootnote=\count274
+)
+Package hyperref Info: Driver (autodetected): hpdftex.
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/hyperref/hpdftex.def
+File: hpdftex.def 2022-02-21 v7.00n Hyperref driver for pdfTeX
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/base/atveryend-ltx.sty
+Package: atveryend-ltx 2020/08/19 v1.0a Emulation of the original atveryend pac
+kage
+with kernel methods
+)
+\Fld@listcount=\count275
+\c@bookmark@seq@number=\count276
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/rerunfilecheck/rerunfilechec
+k.sty
+Package: rerunfilecheck 2019/12/05 v1.9 Rerun checks for auxiliary files (HO)
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/uniquecounter/uniquecounte
+r.sty
+Package: uniquecounter 2019/12/15 v1.4 Provide unlimited unique counter (HO)
+)
+Package uniquecounter Info: New unique counter `rerunfilecheck' on input line 2
+86.
+)
+\Hy@SectionHShift=\skip51
+) (/usr/local/texlive/2022basic/texmf-dist/tex/latex/base/fontenc.sty
+Package: fontenc 2021/04/29 v2.0v Standard LaTeX package
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/listings/listings.sty
+\lst@mode=\count277
+\lst@gtempboxa=\box52
+\lst@token=\toks19
+\lst@length=\count278
+\lst@currlwidth=\dimen168
+\lst@column=\count279
+\lst@pos=\count280
+\lst@lostspace=\dimen169
+\lst@width=\dimen170
+\lst@newlines=\count281
+\lst@lineno=\count282
+\lst@maxwidth=\dimen171
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/listings/lstmisc.sty
+File: lstmisc.sty 2020/03/24 1.8d (Carsten Heinz)
+\c@lstnumber=\count283
+\lst@skipnumbers=\count284
+\lst@framebox=\box53
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/listings/listings.cfg
+File: listings.cfg 2020/03/24 1.8d listings configuration
+))
+Package: listings 2020/03/24 1.8d (Carsten Heinz)
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/xcolor/xcolor.sty
+Package: xcolor 2021/10/31 v2.13 LaTeX color extensions (UK)
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/graphics-cfg/color.cfg
+File: color.cfg 2016/01/02 v1.6 sample color configuration
+)
+Package xcolor Info: Driver file: pdftex.def on input line 227.
+Package xcolor Info: Model `cmy' substituted by `cmy0' on input line 1352.
+Package xcolor Info: Model `hsb' substituted by `rgb' on input line 1356.
+Package xcolor Info: Model `RGB' extended on input line 1368.
+Package xcolor Info: Model `HTML' substituted by `rgb' on input line 1370.
+Package xcolor Info: Model `Hsb' substituted by `hsb' on input line 1371.
+Package xcolor Info: Model `tHsb' substituted by `hsb' on input line 1372.
+Package xcolor Info: Model `HSB' substituted by `hsb' on input line 1373.
+Package xcolor Info: Model `Gray' substituted by `gray' on input line 1374.
+Package xcolor Info: Model `wave' substituted by `hsb' on input line 1375.
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/l3backend/l3backend-pdftex.d
+ef
+File: l3backend-pdftex.def 2022-02-07 L3 backend support: PDF output (pdfTeX)
+\l__color_backend_stack_int=\count285
+\l__pdf_internal_box=\box54
+) (./report_crimson_vs_async_b1e4a2b.aux)
+\openout1 = `report_crimson_vs_async_b1e4a2b.aux'.
+
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 66.
+LaTeX Font Info:    ... okay on input line 66.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 66.
+LaTeX Font Info:    ... okay on input line 66.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 66.
+LaTeX Font Info:    ... okay on input line 66.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 66.
+LaTeX Font Info:    ... okay on input line 66.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 66.
+LaTeX Font Info:    ... okay on input line 66.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 66.
+LaTeX Font Info:    ... okay on input line 66.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 66.
+LaTeX Font Info:    ... okay on input line 66.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 66.
+LaTeX Font Info:    ... okay on input line 66.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 66.
+LaTeX Font Info:    ... okay on input line 66.
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
+[Loading MPS to PDF converter (version 2006.09.02).]
+\scratchcounter=\count286
+\scratchdimen=\dimen172
+\scratchbox=\box55
+\nofMPsegments=\count287
+\nofMParguments=\count288
+\everyMPshowfont=\toks20
+\MPscratchCnt=\count289
+\MPscratchDim=\dimen173
+\MPnumerator=\count290
+\makeMPintoPDFobject=\count291
+\everyMPtoPDFconversion=\toks21
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/epstopdf-pkg/epstopdf-base.s
+ty
+Package: epstopdf-base 2020-01-24 v2.11 Base part for package epstopdf
+Package epstopdf-base Info: Redefining graphics rule for `.eps' on input line 4
+85.
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg
+File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Liv
+e
+))
+*geometry* driver: auto-detecting
+*geometry* detected driver: pdftex
+*geometry* verbose mode - [ preamble ] result:
+* driver: pdftex
+* paper: a4paper
+* layout: <same size as paper>
+* layoutoffset:(h,v)=(0.0pt,0.0pt)
+* modes: 
+* h-part:(L,W,R)=(45.80893pt, 505.89pt, 45.80894pt)
+* v-part:(T,H,B)=(34.48474pt, 758.83499pt, 51.72711pt)
+* \paperwidth=597.50787pt
+* \paperheight=845.04684pt
+* \textwidth=505.89pt
+* \textheight=758.83499pt
+* \oddsidemargin=-26.46106pt
+* \evensidemargin=-26.46106pt
+* \topmargin=-74.78525pt
+* \headheight=12.0pt
+* \headsep=25.0pt
+* \topskip=10.0pt
+* \footskip=30.0pt
+* \marginparwidth=65.0pt
+* \marginparsep=11.0pt
+* \columnsep=10.0pt
+* \skip\footins=9.0pt plus 4.0pt minus 2.0pt
+* \hoffset=0.0pt
+* \voffset=0.0pt
+* \mag=1000
+* \@twocolumnfalse
+* \@twosidefalse
+* \@mparswitchfalse
+* \@reversemarginfalse
+* (1in=72.27pt=25.4mm, 1cm=28.453pt)
+
+Package hyperref Info: Link coloring OFF on input line 66.
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/hyperref/nameref.sty
+Package: nameref 2021-04-02 v2.47 Cross-referencing by name of section
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/refcount/refcount.sty
+Package: refcount 2019/12/15 v3.6 Data extraction from label references (HO)
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/generic/gettitlestring/gettitlestr
+ing.sty
+Package: gettitlestring 2019/12/15 v1.6 Cleanup title references (HO)
+)
+\c@section@level=\count292
+)
+LaTeX Info: Redefining \ref on input line 66.
+LaTeX Info: Redefining \pageref on input line 66.
+LaTeX Info: Redefining \nameref on input line 66.
+ (./report_crimson_vs_async_b1e4a2b.out)
+(./report_crimson_vs_async_b1e4a2b.out)
+\@outlinefile=\write3
+\openout3 = `report_crimson_vs_async_b1e4a2b.out'.
+
+\c@lstlisting=\count293
+ (./title.tex
+<ceph_362px.png, id=16, 87.2058pt x 108.405pt>
+File: ceph_362px.png Graphic file (type png)
+<use ceph_362px.png>
+Package pdftex.def Info: ceph_362px.png  used on input line 8.
+(pdftex.def)             Requested size: 151.76854pt x 188.66782pt.
+LaTeX Font Info:    External font `cmex10' loaded for size
+(Font)              <12> on input line 12.
+LaTeX Font Info:    External font `cmex10' loaded for size
+(Font)              <8> on input line 12.
+LaTeX Font Info:    External font `cmex10' loaded for size
+(Font)              <6> on input line 12.
+ (./abstract.tex)
+LaTeX Font Info:    External font `cmex10' loaded for size
+(Font)              <7> on input line 21.
+LaTeX Font Info:    External font `cmex10' loaded for size
+(Font)              <5> on input line 21.
+
+Overfull \hbox (15.0pt too wide) in paragraph at lines 6--22
+[]$[]$ 
+ []
+
+[1
+
+{/usr/local/texlive/2022basic/texmf-var/fonts/map/pdftex/updmap/pdftex.map} <./
+ceph_362px.png>] (./report_crimson_vs_async_b1e4a2b.toc)
+\tf@toc=\write4
+\openout4 = `report_crimson_vs_async_b1e4a2b.toc'.
+
+)
+(./01-comparison.tex
+pdfTeX warning (ext4): destination with the same identifier (name{page.1}) has 
+been already used, duplicate ignored
+<to be read again> 
+                   \relax 
+l.2 \chapter
+            {Crimson vs. Asynchronous Messenger} [1
+
+]
+Chapter 1.
+<./figures/msgr_crimson_bal_vs_sep_client_des_iops.png, id=38, 342.8007pt x 363
+.9999pt>
+File: ./figures/msgr_crimson_bal_vs_sep_client_des_iops.png Graphic file (type 
+png)
+<use ./figures/msgr_crimson_bal_vs_sep_client_des_iops.png>
+Package pdftex.def Info: ./figures/msgr_crimson_bal_vs_sep_client_des_iops.png 
+ used on input line 10.
+(pdftex.def)             Requested size: 252.94499pt x 268.58923pt.
+<./figures/msgr_async_bal_vs_sep_client_des_iops.png, id=39, 342.8007pt x 363.9
+999pt>
+File: ./figures/msgr_async_bal_vs_sep_client_des_iops.png Graphic file (type pn
+g)
+<use ./figures/msgr_async_bal_vs_sep_client_des_iops.png>
+Package pdftex.def Info: ./figures/msgr_async_bal_vs_sep_client_des_iops.png  u
+sed on input line 14.
+(pdftex.def)             Requested size: 252.94499pt x 268.58923pt.
+(./msgr_crimson_bal_vs_sep_client_des_table.tex
+LaTeX Font Info:    External font `cmex10' loaded for size
+(Font)              <9> on input line 1.
+
+Overfull \hbox (39.76425pt too wide) in paragraph at lines 1--25
+ [][] 
+ []
+
+)
+<./figures/msgr_crimson_bal_vs_sep_client_des_rc.png, id=42, 343.5234pt x 381.1
+038pt>
+File: ./figures/msgr_crimson_bal_vs_sep_client_des_rc.png Graphic file (type pn
+g)
+<use ./figures/msgr_crimson_bal_vs_sep_client_des_rc.png>
+Package pdftex.def Info: ./figures/msgr_crimson_bal_vs_sep_client_des_rc.png  u
+sed on input line 44.
+(pdftex.def)             Requested size: 252.94499pt x 280.61674pt.
+<./figures/msgr_async_bal_vs_sep_client_des_rc.png, id=43, 345.6915pt x 385.44p
+t>
+File: ./figures/msgr_async_bal_vs_sep_client_des_rc.png Graphic file (type png)
+
+<use ./figures/msgr_async_bal_vs_sep_client_des_rc.png>
+Package pdftex.def Info: ./figures/msgr_async_bal_vs_sep_client_des_rc.png  use
+d on input line 48.
+(pdftex.def)             Requested size: 252.94499pt x 282.02757pt.
+LaTeX Font Info:    Trying to load font information for T1+cmtt on input line 6
+3.
+ (/usr/local/texlive/2022basic/texmf-dist/tex/latex/base/t1cmtt.fd
+File: t1cmtt.fd 2019/12/16 v2.5j Standard LaTeX font definitions
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/listings/lstlang1.sty
+File: lstlang1.sty 2020/03/24 1.8d listings language file
+)
+[2
+
+ <./figures/msgr_crimson_bal_vs_sep_client_des_iops.png> <./figures/msgr_async_
+bal_vs_sep_client_des_iops.png>]
+Package hyperref Info: bookmark level for unknown lstlisting defaults to 0 on i
+nput line 65.
+
+
+! LaTeX Error: Invalid UTF-8 byte sequence (�\lst@FillFixed@).
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.66 # Crimson 
+                messenger: seastar cpuset overrides --smp=${SMP}
+? r
+OK, entering \nonstopmode...
+
+! LaTeX Error: Invalid UTF-8 byte "A0.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.66 # Crimson 
+                messenger: seastar cpuset overrides --smp=${SMP}
+The document does not appear to be in UTF-8 encoding.
+Try adding \UseRawInputEncoding as the first line of the file
+or specify an encoding such as \usepackage [latin1]{inputenc}
+in the document preamble.
+Alternatively, save the file in UTF-8 using your editor or another tool
+
+
+! LaTeX Error: Invalid UTF-8 byte sequence (�\lst@FillFixed@).
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.78 # Async 
+              messenger: only the server is async, client is crimson
+The document does not appear to be in UTF-8 encoding.
+Try adding \UseRawInputEncoding as the first line of the file
+or specify an encoding such as \usepackage [latin1]{inputenc}
+in the document preamble.
+Alternatively, save the file in UTF-8 using your editor or another tool
+
+
+! LaTeX Error: Invalid UTF-8 byte "A0.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.78 # Async 
+              messenger: only the server is async, client is crimson
+The document does not appear to be in UTF-8 encoding.
+Try adding \UseRawInputEncoding as the first line of the file
+or specify an encoding such as \usepackage [latin1]{inputenc}
+in the document preamble.
+Alternatively, save the file in UTF-8 using your editor or another tool
+
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/listings/lstlang1.sty
+File: lstlang1.sty 2020/03/24 1.8d listings language file
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/listings/lstlang2.sty
+File: lstlang2.sty 2020/03/24 1.8d listings language file
+)
+(/usr/local/texlive/2022basic/texmf-dist/tex/latex/listings/lstlang3.sty
+File: lstlang3.sty 2020/03/24 1.8d listings language file
+)
+
+! Package Listings Error: Couldn't load requested language.
+
+See the Listings package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.102 ...s and their CPU set, label=lst:table-cpu]
+                                                  
+The following languages weren't loadable:
+    ,python$3
+This may cause errors in the sequel.
+
+
+! Package Listings Error: language 3 of python undefined.
+
+See the Listings package documentation for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.102 ...s and their CPU set, label=lst:table-cpu]
+                                                  
+The language is not loadable. Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+[3 <./figures/msgr_crimson_bal_vs_sep_client_des_rc.png> <./figures/msgr_async_
+bal_vs_sep_client_des_rc.png>]
+<./figures/server_msgr_crimson_2smp_2clients_balanced.png, id=92, 1174.3875pt x
+ 485.815pt>
+File: ./figures/server_msgr_crimson_2smp_2clients_balanced.png Graphic file (ty
+pe png)
+<use ./figures/server_msgr_crimson_2smp_2clients_balanced.png>
+Package pdftex.def Info: ./figures/server_msgr_crimson_2smp_2clients_balanced.p
+ng  used on input line 152.
+(pdftex.def)             Requested size: 252.94499pt x 104.6335pt.
+<./figures/client_msgr_crimson_2smp_2clients_balanced.png, id=93, 881.2925pt x 
+372.39125pt>
+File: ./figures/client_msgr_crimson_2smp_2clients_balanced.png Graphic file (ty
+pe png)
+<use ./figures/client_msgr_crimson_2smp_2clients_balanced.png>
+Package pdftex.def Info: ./figures/client_msgr_crimson_2smp_2clients_balanced.p
+ng  used on input line 156.
+(pdftex.def)             Requested size: 252.94499pt x 106.88266pt.
+<./figures/server_msgr_crimson_56smp_56clients_balanced.png, id=94, 1297.84875p
+t x 350.30875pt>
+File: ./figures/server_msgr_crimson_56smp_56clients_balanced.png Graphic file (
+type png)
+<use ./figures/server_msgr_crimson_56smp_56clients_balanced.png>
+Package pdftex.def Info: ./figures/server_msgr_crimson_56smp_56clients_balanced
+.png  used on input line 167.
+(pdftex.def)             Requested size: 252.94499pt x 68.26984pt.
+<./figures/client_msgr_crimson_56smp_56clients_balanced.png, id=95, 874.26625pt
+ x 268.00125pt>
+File: ./figures/client_msgr_crimson_56smp_56clients_balanced.png Graphic file (
+type png)
+<use ./figures/client_msgr_crimson_56smp_56clients_balanced.png>
+Package pdftex.def Info: ./figures/client_msgr_crimson_56smp_56clients_balanced
+.png  used on input line 171.
+(pdftex.def)             Requested size: 252.94499pt x 77.53842pt.
+<./figures/server_msgr_crimson_28smp_28clients_separated_threads.png, id=97, 85
+7.2025pt x 245.91875pt>
+File: ./figures/server_msgr_crimson_28smp_28clients_separated_threads.png Graph
+ic file (type png)
+<use ./figures/server_msgr_crimson_28smp_28clients_separated_threads.png>
+Package pdftex.def Info: ./figures/server_msgr_crimson_28smp_28clients_separate
+d_threads.png  used on input line 188.
+(pdftex.def)             Requested size: 252.94499pt x 72.56415pt.
+<./figures/client_msgr_crimson_28smp_28clients_separated_threads.png, id=98, 86
+9.2475pt x 245.91875pt>
+File: ./figures/client_msgr_crimson_28smp_28clients_separated_threads.png Graph
+ic file (type png)
+<use ./figures/client_msgr_crimson_28smp_28clients_separated_threads.png>
+Package pdftex.def Info: ./figures/client_msgr_crimson_28smp_28clients_separate
+d_threads.png  used on input line 192.
+(pdftex.def)             Requested size: 252.94499pt x 71.5585pt.
+
+Overfull \hbox (117.65773pt too wide) in paragraph at lines 218--218
+[]\T1/cmtt/m/n/9 1.00516  27043 3.17101e+06  12386.7  8.41057 -- 89,95,95,94,94
+,95,83,95,95,94,95,96,93,94,95,95,95,94,94,96,96,95,94,95,95,95,95,96,[] 
+ []
+
+
+Overfull \hbox (117.65773pt too wide) in paragraph at lines 218--218
+[]\T1/cmtt/m/n/9 1.00233  26903 3.17437e+06  12399.9  8.41014 -- 88,95,95,94,94
+,94,83,94,94,94,95,95,94,94,94,95,94,93,94,96,96,95,94,95,95,95,94,95,[] 
+ []
+
+
+Overfull \hbox (117.65773pt too wide) in paragraph at lines 218--218
+[]\T1/cmtt/m/n/9 1.00368  26989 3.16918e+06  12379.6  8.39509 -- 89,95,95,93,94
+,93,83,94,94,94,94,94,94,94,94,94,94,93,94,95,96,95,94,95,95,95,94,95,[] 
+ []
+
+
+Overfull \hbox (117.65773pt too wide) in paragraph at lines 218--218
+[]\T1/cmtt/m/n/9 1.00298  26925 3.17407e+06  12398.7  8.37066 -- 87,95,95,94,94
+,93,83,94,94,94,95,94,94,94,95,95,94,94,94,95,96,94,94,95,95,94,94,95,[] 
+ []
+
+
+Overfull \hbox (117.65773pt too wide) in paragraph at lines 218--218
+[]\T1/cmtt/m/n/9 1.00247  27358 3.17295e+06  12394.3  8.40587 -- 86,95,95,94,94
+,93,83,93,93,94,94,94,95,95,94,95,94,94,94,95,96,94,94,95,95,94,95,96,[] 
+ []
+
+
+Overfull \hbox (117.65773pt too wide) in paragraph at lines 218--218
+[]\T1/cmtt/m/n/9 1.00475  26056 3.16877e+06    12378   8.4279 -- 86,94,96,93,94
+,93,83,93,93,94,94,94,95,94,94,94,93,94,94,95,96,93,94,95,94,94,94,96,[] 
+ []
+
+
+Overfull \hbox (117.65773pt too wide) in paragraph at lines 218--218
+[]\T1/cmtt/m/n/9 1.00432  27238 3.16835e+06  12376.4  8.37966 -- 86,94,96,93,94
+,93,83,93,94,94,94,95,95,94,94,95,93,94,94,95,96,93,94,95,94,94,94,96,[] 
+ []
+
+[4 <./figures/server_msgr_crimson_2smp_2clients_balanced.png> <./figures/client
+_msgr_crimson_2smp_2clients_balanced.png> <./figures/server_msgr_crimson_56smp_
+56clients_balanced.png> <./figures/client_msgr_crimson_56smp_56clients_balanced
+.png>]
+Overfull \hbox (117.65773pt too wide) in paragraph at lines 218--218
+[]\T1/cmtt/m/n/9 1.00265  27260 3.16951e+06  12380.9  8.43864 -- 87,94,97,94,94
+,93,82,93,94,94,95,95,95,94,94,95,93,94,94,95,96,93,94,94,95,94,95,96,[] 
+ []
+
+
+Overfull \hbox (117.65773pt too wide) in paragraph at lines 218--218
+[]\T1/cmtt/m/n/9 1.00237  27751 3.17079e+06  12385.9  8.42701 -- 87,95,96,93,93
+,93,82,93,93,94,95,95,94,94,94,95,93,93,93,94,95,93,94,94,95,95,95,96,[] 
+ []
+
+
+Overfull \hbox (117.65773pt too wide) in paragraph at lines 218--218
+[]\T1/cmtt/m/n/9 1.00198  27185 3.16717e+06  12371.7  8.41751 -- 87,95,96,93,93
+,93,82,92,94,94,95,95,94,94,94,96,93,93,94,95,95,93,94,94,95,95,95,96,[] 
+ []
+
+
+Overfull \hbox (136.55312pt too wide) in paragraph at lines 238--238
+[]\T1/cmtt/m/n/9 1.01299  27657 2.52677e+06   9870.2  10.7857 -- 87,99,95,82,86
+,100,99,86,90,98,77,93,89,100,95,94,90,83,100,100,97,83,79,91,76,94,92,95,[] 
+ []
+
+
+Overfull \hbox (131.82927pt too wide) in paragraph at lines 238--238
+[]\T1/cmtt/m/n/9 1.00414  27005 2.52559e+06   9865.6  10.7712 -- 88,99,96,83,86
+,100,99,87,89,98,76,92,89,100,95,94,90,83,100,99,97,82,79,91,76,93,92,94,[] 
+ []
+
+
+Overfull \hbox (141.27696pt too wide) in paragraph at lines 238--238
+[]\T1/cmtt/m/n/9 1.00533  27777 2.53035e+06  9884.17  10.7132 -- 89,99,95,85,86
+,100,100,86,89,98,77,92,89,100,95,94,91,83,100,100,97,82,79,91,76,94,93,95,[] 
+ []
+
+
+Overfull \hbox (141.27696pt too wide) in paragraph at lines 238--238
+[]\T1/cmtt/m/n/9 1.00242  27939 2.52323e+06  9856.38  10.8349 -- 89,99,95,84,87
+,100,100,87,89,98,77,92,89,100,94,95,91,84,100,100,97,83,79,91,76,94,93,95,[] 
+ []
+
+
+Overfull \hbox (141.27696pt too wide) in paragraph at lines 238--238
+[]\T1/cmtt/m/n/9 1.00228  28079 2.52348e+06  9857.33  10.8177 -- 90,99,95,84,87
+,100,100,87,90,98,77,92,89,100,94,95,90,83,100,100,97,83,79,90,76,95,93,96,[] 
+ []
+
+
+Overfull \hbox (131.82927pt too wide) in paragraph at lines 238--238
+[]\T1/cmtt/m/n/9 1.0028  28122 2.52358e+06  9857.72  10.8646 -- 90,99,95,84,87,
+100,100,87,90,98,77,92,89,100,94,96,90,83,100,99,97,83,79,90,75,94,93,96,[] 
+ []
+
+
+Overfull \hbox (131.82927pt too wide) in paragraph at lines 238--238
+[]\T1/cmtt/m/n/9 1.0025  28067 2.52335e+06  9856.83   10.816 -- 90,99,95,83,86,
+100,100,87,90,98,77,93,89,100,94,95,91,83,100,99,97,83,79,90,75,94,93,96,[] 
+ []
+
+
+Overfull \hbox (136.55312pt too wide) in paragraph at lines 238--238
+[]\T1/cmtt/m/n/9 1.00353  27610 2.52749e+06     9873  10.7239 -- 90,98,95,82,86
+,100,100,87,90,98,77,93,89,100,94,95,90,82,100,99,97,82,79,90,75,94,92,96,[] 
+ []
+
+
+Overfull \hbox (136.55312pt too wide) in paragraph at lines 238--238
+[]\T1/cmtt/m/n/9 1.00457  27639 2.52251e+06  9853.55  10.8272 -- 91,98,96,83,86
+,100,100,86,90,98,77,93,88,100,95,95,90,82,100,99,98,82,79,90,76,94,92,95,[] 
+ []
+
+
+Overfull \hbox (131.82927pt too wide) in paragraph at lines 238--238
+[]\T1/cmtt/m/n/9 1.00291  27360 2.52387e+06  9858.87  10.8139 -- 91,98,96,82,86
+,100,100,86,90,99,77,92,89,100,94,95,90,83,99,99,98,82,79,91,76,94,92,95,[] 
+ []
+
+[5 <./figures/server_msgr_crimson_28smp_28clients_separated_threads.png> <./fig
+ures/client_msgr_crimson_28smp_28clients_separated_threads.png>]) [6]
+(./report_crimson_vs_async_b1e4a2b.aux)
+Package rerunfilecheck Info: File `report_crimson_vs_async_b1e4a2b.out' has not
+ changed.
+(rerunfilecheck)             Checksum: 97A113AC9FDB9DB59BE978E974295C9A;478.
+ ) 
+Here is how much of TeX's memory you used:
+ 11351 strings out of 479719
+ 177536 string characters out of 5880574
+ 827240 words of memory out of 5000000
+ 29116 multiletter control sequences out of 15000+600000
+ 484963 words of font info for 58 fonts, out of 8000000 for 9000
+ 319 hyphenation exceptions out of 8191
+ 60i,9n,63p,657b,1854s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ </Users/jjperez/Library/texlive/2022basic/texmf-var/fonts/pk/ljfour/jknappen
+/ec/ectt0900.600pk> </Users/jjperez/Library/texlive/2022basic/texmf-var/fonts/p
+k/ljfour/jknappen/ec/ectt0800.600pk> </Users/jjperez/Library/texlive/2022basic/
+texmf-var/fonts/pk/ljfour/jknappen/ec/ecrm0500.600pk> </Users/jjperez/Library/t
+exlive/2022basic/texmf-var/fonts/pk/ljfour/jknappen/ec/ectt1000.600pk> </Users/
+jjperez/Library/texlive/2022basic/texmf-var/fonts/pk/ljfour/jknappen/ec/ecbx144
+0.600pk> </Users/jjperez/Library/texlive/2022basic/texmf-var/fonts/pk/ljfour/jk
+nappen/ec/ecrm0900.600pk> </Users/jjperez/Library/texlive/2022basic/texmf-var/f
+onts/pk/ljfour/jknappen/ec/ecbx2074.600pk> </Users/jjperez/Library/texlive/2022
+basic/texmf-var/fonts/pk/ljfour/jknappen/ec/ecbx2488.600pk> </Users/jjperez/Lib
+rary/texlive/2022basic/texmf-var/fonts/pk/ljfour/jknappen/ec/tcrm1000.600pk> </
+Users/jjperez/Library/texlive/2022basic/texmf-var/fonts/pk/ljfour/jknappen/ec/e
+crm1000.600pk> </Users/jjperez/Library/texlive/2022basic/texmf-var/fonts/pk/ljf
+our/jknappen/ec/ecbx1000.600pk> </Users/jjperez/Library/texlive/2022basic/texmf
+-var/fonts/pk/ljfour/jknappen/ec/ecrm1200.600pk> </Users/jjperez/Library/texliv
+e/2022basic/texmf-var/fonts/pk/ljfour/jknappen/ec/ecrm1728.600pk> </Users/jjper
+ez/Library/texlive/2022basic/texmf-var/fonts/pk/ljfour/jknappen/ec/ecbx1728.600
+pk>
+Output written on report_crimson_vs_async_b1e4a2b.pdf (7 pages, 899541 bytes).
+PDF statistics:
+ 580 PDF objects out of 1000 (max. 8388607)
+ 184 compressed objects within 2 object streams
+ 71 named destinations out of 1000 (max. 500000)
+ 80 words of extra memory for PDF output out of 10000 (max. 10000000)
+

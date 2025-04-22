@@ -1,0 +1,761 @@
+   sec  depth      IOPS     MB/s  lat(ms)
+1.0016  32457    391599  1529.68  83.5071 -- 9,9,9,9,9,9,9,9,8,9,9,9,8,9,9,9,9,9,9,8,8,9,9,9,9,9,9,9,9,9,9,9,
+1.00233  32517    406375   1587.4  79.3375 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,9,9,8,9,9,9,9,9,9,9,9,9,9,9,
+1.00153  32515    406100  1586.33   80.424 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00143  32768    388881  1519.07  83.3661 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,8,9,9,9,9,9,9,9,9,9,9,9,
+1.00149  32724    421033  1644.66  78.4576 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00205  32589    408786  1596.82  78.6532 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,8,9,9,9,9,9,9,9,9,9,9,9,
+1.00202  32634    412438  1611.09  79.4474 -- 9,10,9,9,9,9,9,9,8,9,9,10,9,9,9,9,9,9,9,8,8,9,9,9,9,9,9,9,9,9,9,9,
+1.00146  32512    416812  1628.17  78.9145 -- 9,10,9,9,9,9,9,9,8,9,9,10,9,10,10,9,9,10,9,8,8,9,9,10,9,9,9,9,9,10,10,9,
+1.00142  32768    396184  1547.59  81.6964 -- 9,10,9,9,9,10,9,9,8,9,9,10,9,10,9,9,9,10,9,8,8,9,9,9,9,9,9,9,9,10,10,9,
+1.00107  32768    407449   1591.6  79.4118 -- 9,10,9,9,9,10,9,9,8,9,9,10,9,10,9,9,9,10,9,8,8,9,9,9,9,9,9,9,9,10,10,9,
+-------------- summary --------------
+10.0165     -  405562 1584.23 80.2799
+
+1.00023  32590    407650  1592.38  80.7048 -- 9,10,9,9,9,10,9,9,9,9,9,10,9,10,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,10,9,9,
+1.00124  32768    390267  1524.48  82.9567 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.0002  32513    407931  1593.48  79.2146 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00127  32637    408442  1595.48  79.4539 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.0016  32768    414874   1620.6  79.3752 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00014  32768    398593     1557  80.9386 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00014  32768    398848     1558  81.1269 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00013  32768    411649  1608.01  80.5356 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.0002  32633    403739   1577.1  79.6569 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00121  32768    405375   1583.5  79.6561 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,9,9,
+-------------- summary --------------
+20.0229     -  405150 1582.62 80.3134
+
+1.00066  32621    416429  1626.68  79.3777 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,8,9,9,9,9,9,9,9,9,9,9,9,
+1.00163  32372    401830  1569.65  79.2983 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00135  32768    410515  1603.57  79.4229 -- 9,10,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00023  32485    411553  1607.63   80.033 -- 9,10,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,
+1.00129  32768    402736  1573.19  79.1045 -- 9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,
+1.00096  32768    418144  1633.37  79.6353 -- 9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,
+1.00014  32768    399692   1561.3  80.7781 -- 9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00014  32768    410437  1603.27  79.3448 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00013  32768    400967  1566.28  81.2204 -- 9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00036  32131    405913   1585.6  80.7594 -- 9,10,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+-------------- summary --------------
+30.0316     -  406089 1586.28 80.1733
+
+1.00336  32341    383758  1499.05  84.3549 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00133  32592    400877  1565.93  80.4356 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00145  32768    419408  1638.31  78.3024 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00019  32659    401048  1566.59  79.0003 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00148  32724    413659  1615.86  78.9911 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00146  32499    403903  1577.75  80.6385 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00144  32768    412589  1611.67  78.9221 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00019  32606    412739  1612.26  79.0284 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00201  32687    416425  1626.66  78.8744 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00132  32768    402028  1570.42  80.4138 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+-------------- summary --------------
+ 40.044     -  406190 1586.68  80.094
+
+1.00018  32768    412532  1611.45  78.9762 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00014  32768    399606  1560.96  80.7619 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00014  32768    412820  1612.58  78.4579 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00104  32751    399833  1561.85  81.7834 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00212  32760    413444  1615.02   78.327 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,10,10,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,
+1.00131  32607    423015   1652.4  78.9079 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,10,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,9,
+1.00159  32360    412721  1612.19  79.1921 -- 9,10,9,9,9,9,9,9,9,9,9,10,9,10,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,9,
+1.00148  32768    403209  1575.04  78.9554 -- 9,10,9,9,9,9,9,9,10,9,9,9,9,10,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00103  32647    417273  1629.97  79.2416 -- 9,10,9,9,9,9,9,9,9,9,9,10,9,10,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00256  32427    404415  1579.75  79.0749 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+-------------- summary --------------
+50.0574     -  406945 1589.63 79.9455
+
+1.00336  32210    404514  1580.13  81.3203 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00254  32580    411672  1608.09  78.7005 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00142  32711    412511  1611.37  79.1005 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00131  32768    414840  1620.47  79.1968 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00013  32768    398352  1556.06  80.9044 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00023  32516    414872   1620.6  78.7675 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00149  32766    406605   1588.3  79.0106 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00138  32398    405746  1584.94   79.314 -- 9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00141  32768    415508  1623.08  79.1421 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,10,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+1.00018  32633    418210  1633.63  79.5014 -- 9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+-------------- summary --------------
+60.0702     -  407490 1591.76 79.8686
+
+client0Conn0@0(depth=512):
+  connect time: 0.002114s
+  messages received: 383264
+  messaging time: 60.071870s
+  latency: 79.692528ms
+  IOPS: 6380.091082
+  out throughput: 24.922231MB/s
+client0Conn1@0(depth=512):
+  connect time: 0.002156s
+  messages received: 370906
+  messaging time: 60.072838s
+  latency: 82.517040ms
+  IOPS: 6174.271287
+  out throughput: 24.118247MB/s
+client1Conn0@1(depth=512):
+  connect time: 0.002111s
+  messages received: 392588
+  messaging time: 60.072241s
+  latency: 77.744919ms
+  IOPS: 6535.264815
+  out throughput: 25.528378MB/s
+client1Conn1@1(depth=512):
+  connect time: 0.001581s
+  messages received: 393596
+  messaging time: 60.072534s
+  latency: 77.702881ms
+  IOPS: 6552.012601
+  out throughput: 25.593799MB/s
+client2Conn0@2(depth=512):
+  connect time: 0.002230s
+  messages received: 383937
+  messaging time: 60.072469s
+  latency: 79.610742ms
+  IOPS: 6391.230539
+  out throughput: 24.965744MB/s
+client2Conn1@2(depth=512):
+  connect time: 0.002104s
+  messages received: 381888
+  messaging time: 60.072514s
+  latency: 79.993110ms
+  IOPS: 6357.116997
+  out throughput: 24.832488MB/s
+client3Conn0@3(depth=512):
+  connect time: 0.002468s
+  messages received: 383680
+  messaging time: 60.072103s
+  latency: 79.680549ms
+  IOPS: 6386.991272
+  out throughput: 24.949185MB/s
+client3Conn1@3(depth=512):
+  connect time: 0.001791s
+  messages received: 381577
+  messaging time: 60.072116s
+  latency: 79.918687ms
+  IOPS: 6351.981984
+  out throughput: 24.812430MB/s
+client4Conn0@4(depth=512):
+  connect time: 0.001800s
+  messages received: 382524
+  messaging time: 60.072189s
+  latency: 79.789859ms
+  IOPS: 6367.738652
+  out throughput: 24.873979MB/s
+client4Conn1@4(depth=512):
+  connect time: 0.001647s
+  messages received: 371856
+  messaging time: 60.072343s
+  latency: 82.197205ms
+  IOPS: 6190.136454
+  out throughput: 24.180221MB/s
+client5Conn0@5(depth=512):
+  connect time: 0.002455s
+  messages received: 393546
+  messaging time: 60.071817s
+  latency: 77.597088ms
+  IOPS: 6551.258507
+  out throughput: 25.590854MB/s
+client5Conn1@5(depth=512):
+  connect time: 0.002257s
+  messages received: 392506
+  messaging time: 60.071856s
+  latency: 77.860734ms
+  IOPS: 6533.941664
+  out throughput: 25.523210MB/s
+client6Conn0@6(depth=512):
+  connect time: 0.001949s
+  messages received: 394858
+  messaging time: 60.071890s
+  latency: 77.292028ms
+  IOPS: 6573.091023
+  out throughput: 25.676137MB/s
+client6Conn1@6(depth=512):
+  connect time: 0.001190s
+  messages received: 369811
+  messaging time: 60.072059s
+  latency: 82.676710ms
+  IOPS: 6156.123307
+  out throughput: 24.047357MB/s
+client7Conn0@7(depth=512):
+  connect time: 0.001593s
+  messages received: 382731
+  messaging time: 60.072444s
+  latency: 79.786099ms
+  IOPS: 6371.157494
+  out throughput: 24.887334MB/s
+client7Conn1@7(depth=512):
+  connect time: 0.001081s
+  messages received: 384917
+  messaging time: 60.072494s
+  latency: 79.394664ms
+  IOPS: 6407.541492
+  out throughput: 25.029459MB/s
+client8Conn0@8(depth=512):
+  connect time: 0.002085s
+  messages received: 371127
+  messaging time: 60.072434s
+  latency: 82.373549ms
+  IOPS: 6177.991710
+  out throughput: 24.132780MB/s
+client8Conn1@8(depth=512):
+  connect time: 0.001668s
+  messages received: 372269
+  messaging time: 60.072450s
+  latency: 82.059913ms
+  IOPS: 6197.000470
+  out throughput: 24.207033MB/s
+client9Conn0@9(depth=512):
+  connect time: 0.000935s
+  messages received: 370338
+  messaging time: 60.073045s
+  latency: 82.426481ms
+  IOPS: 6164.794885
+  out throughput: 24.081230MB/s
+client9Conn1@9(depth=512):
+  connect time: 0.001416s
+  messages received: 392953
+  messaging time: 60.073069s
+  latency: 77.707676ms
+  IOPS: 6541.250638
+  out throughput: 25.551760MB/s
+client10Conn0@10(depth=512):
+  connect time: 0.001377s
+  messages received: 371990
+  messaging time: 60.071692s
+  latency: 82.187127ms
+  IOPS: 6192.434246
+  out throughput: 24.189196MB/s
+client10Conn1@10(depth=512):
+  connect time: 0.001492s
+  messages received: 392428
+  messaging time: 60.071866s
+  latency: 77.806931ms
+  IOPS: 6532.642123
+  out throughput: 25.518133MB/s
+client11Conn0@11(depth=512):
+  connect time: 0.002176s
+  messages received: 392821
+  messaging time: 60.072728s
+  latency: 77.754249ms
+  IOPS: 6539.090448
+  out throughput: 25.543322MB/s
+client11Conn1@11(depth=512):
+  connect time: 0.002049s
+  messages received: 394494
+  messaging time: 60.072757s
+  latency: 77.482623ms
+  IOPS: 6566.936865
+  out throughput: 25.652097MB/s
+client12Conn0@12(depth=512):
+  connect time: 0.002056s
+  messages received: 370840
+  messaging time: 60.072376s
+  latency: 82.438605ms
+  IOPS: 6173.220153
+  out throughput: 24.114141MB/s
+client12Conn1@12(depth=512):
+  connect time: 0.001536s
+  messages received: 371717
+  messaging time: 60.072399s
+  latency: 82.224404ms
+  IOPS: 6187.816853
+  out throughput: 24.171160MB/s
+client13Conn0@13(depth=512):
+  connect time: 0.001560s
+  messages received: 393938
+  messaging time: 60.072193s
+  latency: 77.514741ms
+  IOPS: 6557.742947
+  out throughput: 25.616183MB/s
+client13Conn1@13(depth=512):
+  connect time: 0.001190s
+  messages received: 382997
+  messaging time: 60.072229s
+  latency: 79.693640ms
+  IOPS: 6375.608232
+  out throughput: 24.904720MB/s
+client14Conn0@14(depth=512):
+  connect time: 0.002444s
+  messages received: 390463
+  messaging time: 60.071438s
+  latency: 78.164755ms
+  IOPS: 6499.977623
+  out throughput: 25.390538MB/s
+client14Conn1@14(depth=512):
+  connect time: 0.002262s
+  messages received: 383045
+  messaging time: 60.071890s
+  latency: 79.681496ms
+  IOPS: 6376.443319
+  out throughput: 24.907982MB/s
+client15Conn0@15(depth=512):
+  connect time: 0.002338s
+  messages received: 383481
+  messaging time: 60.072589s
+  latency: 79.608961ms
+  IOPS: 6383.627024
+  out throughput: 24.936043MB/s
+client15Conn1@15(depth=512):
+  connect time: 0.001910s
+  messages received: 369791
+  messaging time: 60.072941s
+  latency: 82.727255ms
+  IOPS: 6155.699904
+  out throughput: 24.045703MB/s
+client16Conn0@16(depth=512):
+  connect time: 0.002326s
+  messages received: 369565
+  messaging time: 60.071728s
+  latency: 82.761528ms
+  IOPS: 6152.062048
+  out throughput: 24.031492MB/s
+client16Conn1@16(depth=512):
+  connect time: 0.001981s
+  messages received: 395262
+  messaging time: 60.072197s
+  latency: 77.312108ms
+  IOPS: 6579.782655
+  out throughput: 25.702276MB/s
+client17Conn0@17(depth=512):
+  connect time: 0.002289s
+  messages received: 389505
+  messaging time: 60.071754s
+  latency: 78.404726ms
+  IOPS: 6483.995798
+  out throughput: 25.328109MB/s
+client17Conn1@17(depth=512):
+  connect time: 0.001728s
+  messages received: 383417
+  messaging time: 60.072059s
+  latency: 79.645920ms
+  IOPS: 6382.617932
+  out throughput: 24.932101MB/s
+client18Conn0@18(depth=512):
+  connect time: 0.002205s
+  messages received: 371997
+  messaging time: 60.071765s
+  latency: 82.207641ms
+  IOPS: 6192.543204
+  out throughput: 24.189622MB/s
+client18Conn1@18(depth=512):
+  connect time: 0.001331s
+  messages received: 383015
+  messaging time: 60.071900s
+  latency: 79.703218ms
+  IOPS: 6375.942875
+  out throughput: 24.906027MB/s
+client19Conn0@19(depth=512):
+  connect time: 0.001969s
+  messages received: 372973
+  messaging time: 60.072300s
+  latency: 82.075500ms
+  IOPS: 6208.735111
+  out throughput: 24.252872MB/s
+client19Conn1@19(depth=512):
+  connect time: 0.001679s
+  messages received: 368690
+  messaging time: 60.072468s
+  latency: 82.799072ms
+  IOPS: 6137.420533
+  out throughput: 23.974299MB/s
+client20Conn0@20(depth=512):
+  connect time: 0.002391s
+  messages received: 371789
+  messaging time: 60.072976s
+  latency: 82.256297ms
+  IOPS: 6188.955865
+  out throughput: 24.175609MB/s
+client20Conn1@20(depth=512):
+  connect time: 0.002004s
+  messages received: 371577
+  messaging time: 60.073107s
+  latency: 82.172944ms
+  IOPS: 6185.413349
+  out throughput: 24.161771MB/s
+client21Conn0@21(depth=512):
+  connect time: 0.001765s
+  messages received: 372187
+  messaging time: 60.072365s
+  latency: 82.164913ms
+  IOPS: 6195.644189
+  out throughput: 24.201735MB/s
+client21Conn1@21(depth=512):
+  connect time: 0.001621s
+  messages received: 382142
+  messaging time: 60.072524s
+  latency: 79.882988ms
+  IOPS: 6361.344196
+  out throughput: 24.849001MB/s
+client22Conn0@22(depth=512):
+  connect time: 0.002004s
+  messages received: 383634
+  messaging time: 60.072075s
+  latency: 79.618419ms
+  IOPS: 6386.228492
+  out throughput: 24.946205MB/s
+client22Conn1@22(depth=512):
+  connect time: 0.001548s
+  messages received: 381096
+  messaging time: 60.072091s
+  latency: 80.067975ms
+  IOPS: 6343.977650
+  out throughput: 24.781163MB/s
+client23Conn0@23(depth=512):
+  connect time: 0.001692s
+  messages received: 383723
+  messaging time: 60.072725s
+  latency: 79.613622ms
+  IOPS: 6387.640959
+  out throughput: 24.951722MB/s
+client23Conn1@23(depth=512):
+  connect time: 0.001662s
+  messages received: 393814
+  messaging time: 60.073179s
+  latency: 77.535955ms
+  IOPS: 6555.571162
+  out throughput: 25.607700MB/s
+client24Conn0@24(depth=512):
+  connect time: 0.001537s
+  messages received: 371832
+  messaging time: 60.071051s
+  latency: 82.203884ms
+  IOPS: 6189.870027
+  out throughput: 24.179180MB/s
+client24Conn1@24(depth=512):
+  connect time: 0.001019s
+  messages received: 393514
+  messaging time: 60.071254s
+  latency: 77.721266ms
+  IOPS: 6550.787122
+  out throughput: 25.589012MB/s
+client25Conn0@25(depth=512):
+  connect time: 0.002183s
+  messages received: 383099
+  messaging time: 60.072375s
+  latency: 79.747341ms
+  IOPS: 6377.290685
+  out throughput: 24.911292MB/s
+client25Conn1@25(depth=512):
+  connect time: 0.001837s
+  messages received: 393169
+  messaging time: 60.072400s
+  latency: 77.741366ms
+  IOPS: 6544.919129
+  out throughput: 25.566090MB/s
+client26Conn0@26(depth=512):
+  connect time: 0.001257s
+  messages received: 372015
+  messaging time: 60.072283s
+  latency: 82.068044ms
+  IOPS: 6192.789449
+  out throughput: 24.190584MB/s
+client26Conn1@26(depth=512):
+  connect time: 0.001589s
+  messages received: 382860
+  messaging time: 60.072448s
+  latency: 79.720710ms
+  IOPS: 6373.304491
+  out throughput: 24.895721MB/s
+client27Conn0@27(depth=512):
+  connect time: 0.001863s
+  messages received: 381996
+  messaging time: 60.071965s
+  latency: 80.030580ms
+  IOPS: 6358.972951
+  out throughput: 24.839738MB/s
+client27Conn1@27(depth=512):
+  connect time: 0.001682s
+  messages received: 384575
+  messaging time: 60.072140s
+  latency: 79.351903ms
+  IOPS: 6401.886144
+  out throughput: 25.007368MB/s
+client28Conn0@28(depth=512):
+  connect time: 0.002372s
+  messages received: 392265
+  messaging time: 60.071919s
+  latency: 77.869198ms
+  IOPS: 6529.922886
+  out throughput: 25.507511MB/s
+client28Conn1@28(depth=512):
+  connect time: 0.002049s
+  messages received: 372015
+  messaging time: 60.072112s
+  latency: 82.178256ms
+  IOPS: 6192.807053
+  out throughput: 24.190653MB/s
+client29Conn0@29(depth=512):
+  connect time: 0.002140s
+  messages received: 392757
+  messaging time: 60.071619s
+  latency: 77.594790ms
+  IOPS: 6538.145726
+  out throughput: 25.539632MB/s
+client29Conn1@29(depth=512):
+  connect time: 0.001696s
+  messages received: 383823
+  messaging time: 60.071819s
+  latency: 79.556412ms
+  IOPS: 6389.402004
+  out throughput: 24.958602MB/s
+client30Conn0@30(depth=512):
+  connect time: 0.001513s
+  messages received: 394726
+  messaging time: 60.072865s
+  latency: 77.344500ms
+  IOPS: 6570.786981
+  out throughput: 25.667137MB/s
+client30Conn1@30(depth=512):
+  connect time: 0.001593s
+  messages received: 393084
+  messaging time: 60.072880s
+  latency: 77.647595ms
+  IOPS: 6543.451925
+  out throughput: 25.560359MB/s
+client31Conn0@31(depth=512):
+  connect time: 0.001406s
+  messages received: 371996
+  messaging time: 60.071935s
+  latency: 82.124703ms
+  IOPS: 6192.509069
+  out throughput: 24.189489MB/s
+client31Conn1@31(depth=512):
+  connect time: 0.001431s
+  messages received: 391780
+  messaging time: 60.072254s
+  latency: 77.979717ms
+  IOPS: 6521.812842
+  out throughput: 25.475831MB/s
+
+per client:
+client0(depth=1024):
+  connect time: 0.002135s
+  messages received: 754170
+  messaging time: 60.072354s
+  latency: 81.104784ms
+  IOPS: 12554.362369
+  out throughput: 49.040478MB/s
+client1(depth=1024):
+  connect time: 0.001846s
+  messages received: 786184
+  messaging time: 60.072387s
+  latency: 77.723900ms
+  IOPS: 13087.277416
+  out throughput: 51.122177MB/s
+client2(depth=1024):
+  connect time: 0.002167s
+  messages received: 765825
+  messaging time: 60.072492s
+  latency: 79.801926ms
+  IOPS: 12748.347536
+  out throughput: 49.798233MB/s
+client3(depth=1024):
+  connect time: 0.002129s
+  messages received: 765257
+  messaging time: 60.072110s
+  latency: 79.799618ms
+  IOPS: 12738.973256
+  out throughput: 49.761614MB/s
+client4(depth=1024):
+  connect time: 0.001723s
+  messages received: 754380
+  messaging time: 60.072266s
+  latency: 80.993532ms
+  IOPS: 12557.875105
+  out throughput: 49.054200MB/s
+client5(depth=1024):
+  connect time: 0.002356s
+  messages received: 786052
+  messaging time: 60.071836s
+  latency: 77.728911ms
+  IOPS: 13085.200172
+  out throughput: 51.114063MB/s
+client6(depth=1024):
+  connect time: 0.001570s
+  messages received: 764669
+  messaging time: 60.071974s
+  latency: 79.984369ms
+  IOPS: 12729.214330
+  out throughput: 49.723493MB/s
+client7(depth=1024):
+  connect time: 0.001337s
+  messages received: 767648
+  messaging time: 60.072469s
+  latency: 79.590382ms
+  IOPS: 12778.698986
+  out throughput: 49.916793MB/s
+client8(depth=1024):
+  connect time: 0.001876s
+  messages received: 743396
+  messaging time: 60.072442s
+  latency: 82.216731ms
+  IOPS: 12374.992180
+  out throughput: 48.339813MB/s
+client9(depth=1024):
+  connect time: 0.001175s
+  messages received: 763291
+  messaging time: 60.073057s
+  latency: 80.067078ms
+  IOPS: 12706.045523
+  out throughput: 49.632990MB/s
+client10(depth=1024):
+  connect time: 0.001434s
+  messages received: 764418
+  messaging time: 60.071779s
+  latency: 79.997029ms
+  IOPS: 12725.076369
+  out throughput: 49.707330MB/s
+client11(depth=1024):
+  connect time: 0.002113s
+  messages received: 787315
+  messaging time: 60.072742s
+  latency: 77.618436ms
+  IOPS: 13106.027313
+  out throughput: 51.195419MB/s
+client12(depth=1024):
+  connect time: 0.001796s
+  messages received: 742557
+  messaging time: 60.072387s
+  latency: 82.331504ms
+  IOPS: 12361.037006
+  out throughput: 48.285301MB/s
+client13(depth=1024):
+  connect time: 0.001375s
+  messages received: 776935
+  messaging time: 60.072211s
+  latency: 78.604190ms
+  IOPS: 12933.351179
+  out throughput: 50.520903MB/s
+client14(depth=1024):
+  connect time: 0.002353s
+  messages received: 773508
+  messaging time: 60.071664s
+  latency: 78.923126ms
+  IOPS: 12876.420941
+  out throughput: 50.298519MB/s
+client15(depth=1024):
+  connect time: 0.002124s
+  messages received: 753272
+  messaging time: 60.072765s
+  latency: 81.168108ms
+  IOPS: 12539.326928
+  out throughput: 48.981746MB/s
+client16(depth=1024):
+  connect time: 0.002154s
+  messages received: 764827
+  messaging time: 60.071963s
+  latency: 80.036818ms
+  IOPS: 12731.844702
+  out throughput: 49.733768MB/s
+client17(depth=1024):
+  connect time: 0.002009s
+  messages received: 772922
+  messaging time: 60.071906s
+  latency: 79.025323ms
+  IOPS: 12866.613730
+  out throughput: 50.260210MB/s
+client18(depth=1024):
+  connect time: 0.001768s
+  messages received: 755012
+  messaging time: 60.071832s
+  latency: 80.955430ms
+  IOPS: 12568.486079
+  out throughput: 49.095649MB/s
+client19(depth=1024):
+  connect time: 0.001824s
+  messages received: 741663
+  messaging time: 60.072384s
+  latency: 82.437286ms
+  IOPS: 12346.155645
+  out throughput: 48.227170MB/s
+client20(depth=1024):
+  connect time: 0.002198s
+  messages received: 743366
+  messaging time: 60.073042s
+  latency: 82.214621ms
+  IOPS: 12374.369214
+  out throughput: 48.337380MB/s
+client21(depth=1024):
+  connect time: 0.001693s
+  messages received: 754329
+  messaging time: 60.072444s
+  latency: 81.023950ms
+  IOPS: 12556.988384
+  out throughput: 49.050736MB/s
+client22(depth=1024):
+  connect time: 0.001776s
+  messages received: 764730
+  messaging time: 60.072083s
+  latency: 79.843197ms
+  IOPS: 12730.206142
+  out throughput: 49.727368MB/s
+client23(depth=1024):
+  connect time: 0.001677s
+  messages received: 777537
+  messaging time: 60.072952s
+  latency: 78.574788ms
+  IOPS: 12943.212121
+  out throughput: 50.559422MB/s
+client24(depth=1024):
+  connect time: 0.001278s
+  messages received: 765346
+  messaging time: 60.071153s
+  latency: 79.962575ms
+  IOPS: 12740.657149
+  out throughput: 49.768192MB/s
+client25(depth=1024):
+  connect time: 0.002010s
+  messages received: 776268
+  messaging time: 60.072388s
+  latency: 78.744354ms
+  IOPS: 12922.209815
+  out throughput: 50.477382MB/s
+client26(depth=1024):
+  connect time: 0.001423s
+  messages received: 754875
+  messaging time: 60.072365s
+  latency: 80.894377ms
+  IOPS: 12566.093940
+  out throughput: 49.086304MB/s
+client27(depth=1024):
+  connect time: 0.001772s
+  messages received: 766571
+  messaging time: 60.072052s
+  latency: 79.691242ms
+  IOPS: 12760.859095
+  out throughput: 49.847106MB/s
+client28(depth=1024):
+  connect time: 0.002210s
+  messages received: 764280
+  messaging time: 60.072016s
+  latency: 80.023727ms
+  IOPS: 12722.729939
+  out throughput: 49.698164MB/s
+client29(depth=1024):
+  connect time: 0.001918s
+  messages received: 776580
+  messaging time: 60.071719s
+  latency: 78.575601ms
+  IOPS: 12927.547731
+  out throughput: 50.498233MB/s
+client30(depth=1024):
+  connect time: 0.001553s
+  messages received: 787810
+  messaging time: 60.072872s
+  latency: 77.496047ms
+  IOPS: 13114.238907
+  out throughput: 51.227496MB/s
+client31(depth=1024):
+  connect time: 0.001419s
+  messages received: 763776
+  messaging time: 60.072095s
+  latency: 80.052210ms
+  IOPS: 12714.321911
+  out throughput: 49.665320MB/s
+
+all(depth=32768):
+  connect time: 0.001819s
+  messages received: 24478769
+  messaging time: 60.072256s
+  latency: 79.912662ms
+  IOPS: 407488.761112
+  out throughput: 1591.752973MB/s

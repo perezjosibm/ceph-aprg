@@ -1,0 +1,309 @@
+{
+    "osd_0": {
+        "0": {
+            "admin_socket": [
+                "1271201"
+            ],
+            "ms_dispatch": [
+                "1271205"
+            ],
+            "ms_local": [
+                "1271206"
+            ],
+            "msgr-worker-0": [
+                "1271202"
+            ],
+            "msgr-worker-1": [
+                "1271203"
+            ],
+            "msgr-worker-2": [
+                "1271204"
+            ],
+            "perf-async-msgr": [
+                "1271197"
+            ],
+            "reactor": [
+                "1271199"
+            ],
+            "service": [
+                "1271200"
+            ]
+        },
+        "1": {
+            "admin_socket": [
+                "1271201"
+            ],
+            "ms_dispatch": [
+                "1271205"
+            ],
+            "ms_local": [
+                "1271206"
+            ],
+            "msgr-worker-0": [
+                "1271202"
+            ],
+            "msgr-worker-1": [
+                "1271203"
+            ],
+            "msgr-worker-2": [
+                "1271204"
+            ],
+            "perf-async-msgr": [
+                "1271197"
+            ],
+            "reactor": [
+                "1271199"
+            ],
+            "service": [
+                "1271200"
+            ]
+        },
+        "2": {
+            "admin_socket": [
+                "1271201"
+            ],
+            "ms_dispatch": [
+                "1271205"
+            ],
+            "ms_local": [
+                "1271206"
+            ],
+            "msgr-worker-0": [
+                "1271202"
+            ],
+            "msgr-worker-1": [
+                "1271203"
+            ],
+            "msgr-worker-2": [
+                "1271204"
+            ],
+            "perf-async-msgr": [
+                "1271197"
+            ],
+            "reactor": [
+                "1271199"
+            ],
+            "service": [
+                "1271200"
+            ]
+        },
+        "3": {
+            "admin_socket": [
+                "1271201"
+            ],
+            "ms_dispatch": [
+                "1271205"
+            ],
+            "ms_local": [
+                "1271206"
+            ],
+            "msgr-worker-0": [
+                "1271202"
+            ],
+            "msgr-worker-1": [
+                "1271203"
+            ],
+            "msgr-worker-2": [
+                "1271204"
+            ],
+            "perf-async-msgr": [
+                "1271197"
+            ],
+            "reactor": [
+                "1271199"
+            ],
+            "service": [
+                "1271200"
+            ]
+        },
+        "4": {
+            "admin_socket": [
+                "1271201"
+            ],
+            "ms_dispatch": [
+                "1271205"
+            ],
+            "ms_local": [
+                "1271206"
+            ],
+            "msgr-worker-0": [
+                "1271202"
+            ],
+            "msgr-worker-1": [
+                "1271203"
+            ],
+            "msgr-worker-2": [
+                "1271204"
+            ],
+            "perf-async-msgr": [
+                "1271197"
+            ],
+            "reactor": [
+                "1271199"
+            ],
+            "service": [
+                "1271200"
+            ]
+        },
+        "5": {
+            "admin_socket": [
+                "1271201"
+            ],
+            "ms_dispatch": [
+                "1271205"
+            ],
+            "ms_local": [
+                "1271206"
+            ],
+            "msgr-worker-0": [
+                "1271202"
+            ],
+            "msgr-worker-1": [
+                "1271203"
+            ],
+            "msgr-worker-2": [
+                "1271204"
+            ],
+            "perf-async-msgr": [
+                "1271197"
+            ],
+            "reactor": [
+                "1271199"
+            ],
+            "service": [
+                "1271200"
+            ]
+        },
+        "6": {
+            "admin_socket": [
+                "1271201"
+            ],
+            "ms_dispatch": [
+                "1271205"
+            ],
+            "ms_local": [
+                "1271206"
+            ],
+            "msgr-worker-0": [
+                "1271202"
+            ],
+            "msgr-worker-1": [
+                "1271203"
+            ],
+            "msgr-worker-2": [
+                "1271204"
+            ],
+            "perf-async-msgr": [
+                "1271197"
+            ],
+            "reactor": [
+                "1271199"
+            ],
+            "service": [
+                "1271200"
+            ]
+        },
+        "7": {
+            "admin_socket": [
+                "1271201"
+            ],
+            "ms_dispatch": [
+                "1271205"
+            ],
+            "ms_local": [
+                "1271206"
+            ],
+            "msgr-worker-0": [
+                "1271202"
+            ],
+            "msgr-worker-1": [
+                "1271203"
+            ],
+            "msgr-worker-2": [
+                "1271204"
+            ],
+            "perf-async-msgr": [
+                "1271197"
+            ],
+            "reactor": [
+                "1271199"
+            ],
+            "service": [
+                "1271200"
+            ]
+        },
+        "8": {
+            "admin_socket": [
+                "1271201"
+            ],
+            "ms_dispatch": [
+                "1271205"
+            ],
+            "ms_local": [
+                "1271206"
+            ],
+            "msgr-worker-0": [
+                "1271202"
+            ],
+            "msgr-worker-1": [
+                "1271203"
+            ],
+            "msgr-worker-2": [
+                "1271204"
+            ],
+            "perf-async-msgr": [
+                "1271197"
+            ],
+            "reactor": [
+                "1271199"
+            ],
+            "service": [
+                "1271200"
+            ]
+        },
+        "9": {
+            "admin_socket": [
+                "1271201"
+            ],
+            "ms_dispatch": [
+                "1271205"
+            ],
+            "ms_local": [
+                "1271206"
+            ],
+            "msgr-worker-0": [
+                "1271202"
+            ],
+            "msgr-worker-1": [
+                "1271203"
+            ],
+            "msgr-worker-2": [
+                "1271204"
+            ],
+            "perf-async-msgr": [
+                "1271197"
+            ],
+            "reactor": [
+                "1271199"
+            ],
+            "service": [
+                "1271200"
+            ]
+        },
+        "28": {
+            "msgr-worker-2": [
+                "1271204"
+            ]
+        },
+        "63": {
+            "service": [
+                "1271200"
+            ]
+        },
+        "65": {
+            "msgr-worker-0": [
+                "1271202"
+            ]
+        }
+    }
+}

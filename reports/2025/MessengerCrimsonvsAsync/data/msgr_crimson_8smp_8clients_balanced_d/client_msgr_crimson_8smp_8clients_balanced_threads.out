@@ -1,0 +1,16 @@
+1267499 1267499 perf-crimson-ms   2	pid 1267499's current affinity list: 2
+1267499 1267501 reactor-1         3	pid 1267501's current affinity list: 3
+1267499 1267502 reactor-2        30	pid 1267502's current affinity list: 30
+1267499 1267503 reactor-3        31	pid 1267503's current affinity list: 31
+1267499 1267504 reactor-4        58	pid 1267504's current affinity list: 58
+1267499 1267505 reactor-5        59	pid 1267505's current affinity list: 59
+1267499 1267506 reactor-6        86	pid 1267506's current affinity list: 86
+1267499 1267507 reactor-7        87	pid 1267507's current affinity list: 87
+1267499 1267508 syscall-0         2	pid 1267508's current affinity list: 2
+1267499 1267509 syscall-4        58	pid 1267509's current affinity list: 58
+1267499 1267510 syscall-5        59	pid 1267510's current affinity list: 59
+1267499 1267511 syscall-1         3	pid 1267511's current affinity list: 3
+1267499 1267512 syscall-7        87	pid 1267512's current affinity list: 87
+1267499 1267513 syscall-6        86	pid 1267513's current affinity list: 86
+1267499 1267514 syscall-2        30	pid 1267514's current affinity list: 30
+1267499 1267515 syscall-3        31	pid 1267515's current affinity list: 31

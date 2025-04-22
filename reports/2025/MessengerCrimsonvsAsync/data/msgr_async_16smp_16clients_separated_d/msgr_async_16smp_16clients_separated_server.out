@@ -1,0 +1,2 @@
+server[v2:127.0.0.1:9010](bs=0, crc_enabled=0, worker_threads=16
+async server listening at v2:127.0.0.1:9010/0

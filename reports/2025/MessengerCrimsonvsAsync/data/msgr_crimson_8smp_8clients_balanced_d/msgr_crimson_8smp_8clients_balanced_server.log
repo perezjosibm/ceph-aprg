@@ -1,0 +1,1 @@
+/ceph/build/bin/perf-crimson-msgr --poll-mode --mode=2 --server-fixed-cpu=0  --cpuset=0-1,56-57,28-29,84-85

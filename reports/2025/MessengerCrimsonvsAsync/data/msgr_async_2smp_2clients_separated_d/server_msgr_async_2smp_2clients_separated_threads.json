@@ -1,0 +1,56 @@
+{
+    "osd_0": {
+        "0": {
+            "admin_socket": [
+                "1271517"
+            ],
+            "ms_dispatch": [
+                "1271520"
+            ],
+            "ms_local": [
+                "1271521"
+            ],
+            "msgr-worker-0": [
+                "1271518"
+            ],
+            "msgr-worker-1": [
+                "1271519"
+            ],
+            "perf-async-msgr": [
+                "1271513"
+            ],
+            "reactor": [
+                "1271515"
+            ],
+            "service": [
+                "1271516"
+            ]
+        },
+        "1": {
+            "admin_socket": [
+                "1271517"
+            ],
+            "ms_dispatch": [
+                "1271520"
+            ],
+            "ms_local": [
+                "1271521"
+            ],
+            "msgr-worker-0": [
+                "1271518"
+            ],
+            "msgr-worker-1": [
+                "1271519"
+            ],
+            "perf-async-msgr": [
+                "1271513"
+            ],
+            "reactor": [
+                "1271515"
+            ],
+            "service": [
+                "1271516"
+            ]
+        }
+    }
+}

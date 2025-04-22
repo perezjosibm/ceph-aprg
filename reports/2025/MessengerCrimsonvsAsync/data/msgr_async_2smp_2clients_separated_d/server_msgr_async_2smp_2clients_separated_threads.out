@@ -1,0 +1,8 @@
+1271513 1271513 perf-async-msgr   0	pid 1271513's current affinity list: 0,1
+1271513 1271515 log               1	pid 1271515's current affinity list: 0,1
+1271513 1271516 service           0	pid 1271516's current affinity list: 0,1
+1271513 1271517 admin_socket      0	pid 1271517's current affinity list: 0,1
+1271513 1271518 msgr-worker-0     1	pid 1271518's current affinity list: 0,1
+1271513 1271519 msgr-worker-1     1	pid 1271519's current affinity list: 0,1
+1271513 1271520 ms_dispatch       1	pid 1271520's current affinity list: 0,1
+1271513 1271521 ms_local          1	pid 1271521's current affinity list: 0,1

@@ -1,0 +1,9 @@
+1271839 1271839 perf-async-msgr   5	pid 1271839's current affinity list: 0-27
+1271839 1271841 log               9	pid 1271841's current affinity list: 0-27
+1271839 1271842 service          12	pid 1271842's current affinity list: 0-27
+1271839 1271843 admin_socket     13	pid 1271843's current affinity list: 0-27
+1271839 1271844 msgr-worker-0    14	pid 1271844's current affinity list: 0-27
+1271839 1271845 msgr-worker-1    15	pid 1271845's current affinity list: 0-27
+1271839 1271846 msgr-worker-2    17	pid 1271846's current affinity list: 0-27
+1271839 1271847 ms_dispatch      18	pid 1271847's current affinity list: 0-27
+1271839 1271848 ms_local         19	pid 1271848's current affinity list: 0-27

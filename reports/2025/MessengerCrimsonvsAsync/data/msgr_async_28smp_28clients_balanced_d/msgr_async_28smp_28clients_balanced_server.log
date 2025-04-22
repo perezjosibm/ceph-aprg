@@ -1,0 +1,1 @@
+taskset -ac 0-6,56-62,28-34,84-90 /ceph/build/bin/perf-async-msgr --threads=28

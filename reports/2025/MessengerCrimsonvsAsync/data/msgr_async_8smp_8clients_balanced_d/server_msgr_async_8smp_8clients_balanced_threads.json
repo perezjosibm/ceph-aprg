@@ -1,0 +1,126 @@
+{
+    "osd_0": {
+        "0": {
+            "admin_socket": [
+                "1270767"
+            ],
+            "ms_dispatch": [
+                "1270776"
+            ],
+            "ms_local": [
+                "1270777"
+            ],
+            "msgr-worker-0": [
+                "1270768"
+            ],
+            "msgr-worker-1": [
+                "1270769"
+            ],
+            "msgr-worker-2": [
+                "1270770"
+            ],
+            "msgr-worker-3": [
+                "1270771"
+            ],
+            "msgr-worker-4": [
+                "1270772"
+            ],
+            "msgr-worker-5": [
+                "1270773"
+            ],
+            "msgr-worker-6": [
+                "1270774"
+            ],
+            "msgr-worker-7": [
+                "1270775"
+            ],
+            "perf-async-msgr": [
+                "1270763"
+            ],
+            "reactor": [
+                "1270765"
+            ],
+            "service": [
+                "1270766"
+            ]
+        },
+        "1": {
+            "admin_socket": [
+                "1270767"
+            ],
+            "ms_dispatch": [
+                "1270776"
+            ],
+            "ms_local": [
+                "1270777"
+            ],
+            "msgr-worker-0": [
+                "1270768"
+            ],
+            "msgr-worker-1": [
+                "1270769"
+            ],
+            "msgr-worker-2": [
+                "1270770"
+            ],
+            "msgr-worker-3": [
+                "1270771"
+            ],
+            "msgr-worker-4": [
+                "1270772"
+            ],
+            "msgr-worker-5": [
+                "1270773"
+            ],
+            "msgr-worker-6": [
+                "1270774"
+            ],
+            "msgr-worker-7": [
+                "1270775"
+            ],
+            "perf-async-msgr": [
+                "1270763"
+            ],
+            "reactor": [
+                "1270765"
+            ],
+            "service": [
+                "1270766"
+            ]
+        },
+        "56": {
+            "perf-async-msgr": [
+                "1270763"
+            ]
+        },
+        "57": {
+            "ms_dispatch": [
+                "1270776"
+            ],
+            "ms_local": [
+                "1270777"
+            ],
+            "msgr-worker-1": [
+                "1270769"
+            ],
+            "msgr-worker-2": [
+                "1270770"
+            ],
+            "msgr-worker-3": [
+                "1270771"
+            ],
+            "msgr-worker-4": [
+                "1270772"
+            ],
+            "msgr-worker-5": [
+                "1270773"
+            ],
+            "msgr-worker-6": [
+                "1270774"
+            ],
+            "msgr-worker-7": [
+                "1270775"
+            ]
+        }
+    }
+}

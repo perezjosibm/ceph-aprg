@@ -1,0 +1,4 @@
+1267317 1267317 perf-crimson-ms   1	pid 1267317's current affinity list: 1
+1267317 1267319 reactor-1        57	pid 1267319's current affinity list: 57
+1267317 1267320 syscall-0         1	pid 1267320's current affinity list: 1
+1267317 1267321 syscall-1        57	pid 1267321's current affinity list: 57

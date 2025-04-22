@@ -1,0 +1,8 @@
+1268730 1268730 perf-crimson-ms  28	pid 1268730's current affinity list: 28
+1268730 1268732 reactor-1        29	pid 1268732's current affinity list: 29
+1268730 1268733 reactor-2        30	pid 1268733's current affinity list: 30
+1268730 1268734 reactor-3        31	pid 1268734's current affinity list: 31
+1268730 1268735 syscall-0        28	pid 1268735's current affinity list: 28
+1268730 1268736 syscall-3        31	pid 1268736's current affinity list: 31
+1268730 1268737 syscall-2        30	pid 1268737's current affinity list: 30
+1268730 1268738 syscall-1        29	pid 1268738's current affinity list: 29

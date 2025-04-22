@@ -1,0 +1,16 @@
+1268801 1268801 perf-crimson-ms   0	pid 1268801's current affinity list: 0
+1268801 1268803 reactor-1         1	pid 1268803's current affinity list: 1
+1268801 1268804 reactor-2         2	pid 1268804's current affinity list: 2
+1268801 1268805 reactor-3         3	pid 1268805's current affinity list: 3
+1268801 1268806 reactor-4         4	pid 1268806's current affinity list: 4
+1268801 1268807 reactor-5         5	pid 1268807's current affinity list: 5
+1268801 1268808 reactor-6         6	pid 1268808's current affinity list: 6
+1268801 1268809 reactor-7         7	pid 1268809's current affinity list: 7
+1268801 1268810 syscall-0         0	pid 1268810's current affinity list: 0
+1268801 1268811 syscall-7         7	pid 1268811's current affinity list: 7
+1268801 1268812 syscall-3         3	pid 1268812's current affinity list: 3
+1268801 1268813 syscall-2         2	pid 1268813's current affinity list: 2
+1268801 1268814 syscall-4         4	pid 1268814's current affinity list: 4
+1268801 1268815 syscall-5         5	pid 1268815's current affinity list: 5
+1268801 1268816 syscall-1         1	pid 1268816's current affinity list: 1
+1268801 1268817 syscall-6         6	pid 1268817's current affinity list: 6

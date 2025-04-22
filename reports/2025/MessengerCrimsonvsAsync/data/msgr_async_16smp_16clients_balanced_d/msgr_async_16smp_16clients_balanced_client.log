@@ -1,0 +1,1 @@
+/ceph/build/bin/perf-crimson-msgr --poll-mode --mode=1 --depth=512 --clients=16 --conns-per-client=2 --cpuset=4-7,60-63,32-35,88-91 --msgtime=60 --client-skip-core-0=0

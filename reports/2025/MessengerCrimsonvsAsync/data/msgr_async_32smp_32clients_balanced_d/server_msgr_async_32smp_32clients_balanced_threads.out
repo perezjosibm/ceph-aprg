@@ -1,0 +1,9 @@
+1271071 1271071 perf-async-msgr   1	pid 1271071's current affinity list: 0-7,28-35,56-63,84-91
+1271071 1271073 log               3	pid 1271073's current affinity list: 0-7,28-35,56-63,84-91
+1271071 1271074 service          60	pid 1271074's current affinity list: 0-7,28-35,56-63,84-91
+1271071 1271075 admin_socket     61	pid 1271075's current affinity list: 0-7,28-35,56-63,84-91
+1271071 1271076 msgr-worker-0     6	pid 1271076's current affinity list: 0-7,28-35,56-63,84-91
+1271071 1271077 msgr-worker-1     7	pid 1271077's current affinity list: 0-7,28-35,56-63,84-91
+1271071 1271078 msgr-worker-2    89	pid 1271078's current affinity list: 0-7,28-35,56-63,84-91
+1271071 1271079 ms_dispatch       0	pid 1271079's current affinity list: 0-7,28-35,56-63,84-91
+1271071 1271080 ms_local          2	pid 1271080's current affinity list: 0-7,28-35,56-63,84-91

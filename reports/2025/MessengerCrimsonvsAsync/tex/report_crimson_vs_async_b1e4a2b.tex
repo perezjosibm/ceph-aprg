@@ -1,0 +1,78 @@
+%\title{Automatic Generation of Ceph Performance Reports}
+%\author{Jos\'e J Palacios P\'erez}
+%\maketitle
+\documentclass[titlepage]{report}
+\usepackage{graphicx,booktabs,array}
+\usepackage[a4paper, total={7in, 10.5in}]{geometry}
+\usepackage{hyperref}
+\hypersetup{linkcolor=blue,citecolor=blue,filecolor=blue,urlcolor=blue} % blue links, for printed output
+\usepackage[T1]{fontenc}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\makeatletter
+\def\@makechapterhead#1{%
+  {\parindent \z@ \raggedright \normalfont
+    \ifnum \c@secnumdepth >\m@ne
+        \huge\bfseries \thechapter.\ % <-- Chapter # (without "Chapter")
+    \fi
+    \interlinepenalty\@M
+    #1\par\nobreak% <------------------ Chapter title
+    \vskip 20\p@% <------------------ Space between chapter title and first paragraph
+  }}
+\makeatother
+
+% macro to insert a figure within a table
+\newcommand{\addpic}[1]{\includegraphics[width=0.45\textwidth]{#1}}
+\newcolumntype{C}{>{\centering\arraybackslash}m{0.45\textwidth}}
+\makeatletter
+\newcolumntype{V}[1]{>{\topsep=0pt\@minipagetrue}p{#1}<{\vspace{-\baselineskip}}}
+\makeatother
+\newcommand{\command}[1]{\texttt{\string#1}}
+
+\newcommand{\folder}{../}
+
+%\makeatletter
+%\def\input@path{{/path/to/folder/}}
+%or: \def\input@path{{/path/to/folder/}{/path/to/other/folder/}}
+%\makeatother
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+
+\lstset{style=mystyle}
+
+\begin{document}
+
+\input{title}
+
+\input{01-comparison}
+\clearpage
+
+%\appendix
+%\input{estimation}
+
+\end{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
