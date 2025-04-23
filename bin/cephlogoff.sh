@@ -26,3 +26,6 @@ bin/ceph tell mgr.x config set debug_mon 0/0
 # Disable scrub -- didnt work
 #bin/ceph osd set noscrub set noscrub
 #bin/ceph osd set nodeep-scrub set nodeep-scrub
+
+# Set stats frequency to 2 secs
+bin/ceph tell osd.0 config set crimson_osd_stat_interval 5

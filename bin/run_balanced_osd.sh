@@ -27,8 +27,9 @@ export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
 
 # Invariant: number of CPU cores for FIO
 # Might try disable HT as well: so we can have the same test running on the two cases, which means that the FIO has two cases
-#VSTART_CPU_CORES="0-13,56-69,28-41,84-97" # 56 reactors Latency target comparison vs Classic
-VSTART_CPU_CORES="0-27" # 56 reactors Latency target comparison vs Classic
+VSTART_CPU_CORES="0-27,56-83"
+##"0-13,56-69,28-41,84-97" # 56 reactors Latency target comparison vs Classic
+##VSTART_CPU_CORES="0-27" # 56 reactors Latency target comparison vs Classic-- fails recently in Crimson
 #VSTART_CPU_CORES="0-51,56-107" # inc HT
 #FIO_CPU_CORES="14-27,70-83,42-55,98-111" # inc HT
 FIO_CPU_CORES="28-55,84-111" # inc HT
@@ -36,11 +37,14 @@ FIO_CPU_CORES="28-55,84-111" # inc HT
 FIO_JOBS=/root/bin/rbd_fio_examples/
 FIO_SPEC="32fio" # 32 client/jobs
 OSD_TYPE=cyan
+#############################################################################################
+# Single OSD for IOPs cost estimation
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
 STORE_DEVS='/dev/nvme9n1p2'
 #STORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2,/dev/nvme2n1p2,/dev/nvme6n1p2,/dev/nvme3n1p2,/dev/nvme5n1p2,/dev/nvme0n1p2,/dev/nvme4n1p2'
 export NUM_RBD_IMAGES=32
 export RBD_SIZE=2GB
+#############################################################################################
 
 ALIEN_THREADS=8 # fixed- num alien threads per CPU core
 RUN_DIR="/tmp"
@@ -53,6 +57,7 @@ NUMA_NODES_OUT=/tmp/numa_nodes.json
 # Globals:
 LATENCY_TARGET=false 
 MULTI_JOB_VOL=false
+PRECOND=false
 
 declare -A test_table
 declare -A test_row
@@ -180,10 +185,10 @@ fun_run_fio(){
   fi
   #MULTI_VOL Debug flag in place since recent RBD hangs -- temporarily disabling in favour of prefilling via rbd bench at cephmkrbd.sh
   #RBD_NAME=fio_test_0 fio --debug=io ${FIO_JOBS}rbd_prefill.fio  2>&1 > /dev/null && rbd du fio_test_0 && \
-    echo "/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p \"${TEST_NAME}\" -n -x -d ${RUN_DIR}"
-    /root/bin/run_fio.sh -s ${OPTS} -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n -x -d ${RUN_DIR}
-    #/root/bin/run_fio.sh -s -w hockey -r -a -c "0-111" -f $FIO_CPU_CORES -p "${TEST_NAME}" -n -x
-      # w/o osd dump_metrics, x: skip response curves stop heuristic
+  cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p \"${TEST_NAME}\" -n -x -d ${RUN_DIR}"
+  # x: skip response curves stop heuristic
+  echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
+  eval "${cmd}"
 }
 
 #########################################
@@ -204,19 +209,18 @@ fun_run_fixed_bal_tests() {
           if [ "$OSD_TYPE" == "classic" ]; then
               title="(${OSD_TYPE}) $NUM_OSD OSD classic, fixed ${FIO_SPEC}" #, response latency 
               cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh\
-                  --new -x --localhost --without-dashboard\
-                  --redirect-output ${crimson_be_table[blue]}"
+ --new -x --localhost --without-dashboard\
+ --redirect-output ${crimson_be_table[blue]}"
                   #--no-restart  -- disabling this
               test_name="${OSD_TYPE}_${NUM_OSD}osd_${FIO_SPEC}_rc"
 
           else
               title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor,  fixed ${FIO_SPEC}" 
-              # Default does not respect the balance VSTART_CPU_CORES
+              # Default does not respect the balance VSTART_CPU_CORES, but balanced does
               cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac '${VSTART_CPU_CORES}' /ceph/src/vstart.sh\
-                  --new -x --localhost --without-dashboard\
-                  --redirect-output ${crimson_be_table[${OSD_TYPE}]} --crimson --crimson-smp ${NUM_REACTORS}\
-                  ${bal_ops_table[${BAL_KEY}]}"
-
+ --new -x --localhost --without-dashboard --redirect-output ${crimson_be_table[${OSD_TYPE}]}\
+ --crimson ${bal_ops_table[${BAL_KEY}]}"
+#--crimson-smp ${NUM_REACTORS}
               test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${FIO_SPEC}_${BAL_KEY}_rc"
 
               if [ "$OSD_TYPE" == "blue" ]; then
@@ -288,7 +292,7 @@ fun_run_precond(){
 #
 cd /ceph/build/
 
-while getopts 'ab:d:t:s:r:jl' option; do
+while getopts 'ab:d:t:s:r:jlp' option; do
   case "$option" in
     a) fun_show_all_tests
        exit
@@ -309,13 +313,17 @@ while getopts 'ab:d:t:s:r:jl' option; do
         ;;
     l) LATENCY_TARGET=true
         ;;
+    j) PRECOND=true
+        ;;
     :) printf "missing argument for -%s\n" "$OPTARG" >&2
        usage >&2
        exit 1
        ;;
   esac
  done
- fun_run_precond "precond"
+  if [ "$PRECOND" = true ]; then
+      fun_run_precond "precond"
+  fi
 
  if [ "$OSD_TYPE" == "all" ]; then
    for OSD_TYPE in classic sea; do # cyan blue 

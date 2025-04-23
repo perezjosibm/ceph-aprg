@@ -165,10 +165,13 @@ fun_osd_dump() {
   for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
     #for oid in ${!osd_id[@]}; do
     # Use only osd.0 always
+     #timestamp=$(date +'%Y-%m-%dT%H:%M:%S') 
+     #echo "{ \"timestamp\": \"$timestamp\" }," >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
       if [ "${OSD_TYPE}" == "crimson" ]; then
-        /ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS} >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
+        /ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS} >> ${TEST_NAME}_dump_${LABEL}.json
       else
-        /ceph/build/bin/ceph daemon osd.0 perf dump >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
+        /ceph/build/bin/ceph daemonperf osd.0 >> ${TEST_NAME}_dump_${LABEL}.json
+        #/ceph/build/bin/ceph daemon osd.0 perf dump >> ${TEST_NAME}_dump_${LABEL}.json
         #/ceph/build/bin/ceph daemon -c /ceph/build/ceph.conf ${oid} perf dump >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
       fi
     #done
@@ -299,7 +302,7 @@ fun_run_workload() {
       all_pids=$( fun_join_by ',' ${osd_id[@]}  ${fio_id[@]} )
       fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
       timestamp=$(date +%Y%m%d_%H%M%S)
-      fun_osd_dump ${TEST_RESULT} 3 60 ${OSD_TYPE} ${timestamp} "reactor_utilization" &
+      fun_osd_dump ${TEST_RESULT} 24 5 ${OSD_TYPE} ${timestamp} "reactor_utilization" &
 
       wait;
       # Measure the diskstats after the completion of FIO instances
