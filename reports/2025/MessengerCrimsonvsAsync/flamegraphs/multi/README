@@ -1,0 +1,3 @@
+Fri 25 Apr 2025 16:31:39 BST -- scp o05:~/containers/c_results/_b1e4a2b/msgr_crimson_11/_03_async_crimson_lr_fg/*_msgr_async_*.perf.out_merged.svg .
+
+# for x in *msgr_async*perf.out_fold.gz; do y=${x/fold.gz/merged}; echo "== $y =="; gzip -d -c $x |  sed -e 's/msgr-worker-[0-9]\+/msgr-worker/g' > ${y}; flamegraph.pl --title "${y}" ${y} > ${y}.svg; done

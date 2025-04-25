@@ -381,9 +381,33 @@ following CPU profiles:
 
 # Profiling via Flamegraphs
 
-We use differential [flamegraphs](https://www.brendangregg.com/blog/2014-11-09/differential-flame-graphs.html) for this section.
 
-We produced the flamegraphs as follows: on the left is the single instance, on the right the dual instance.
+The methodology for analysis is described as follows:
+
+- Identification of plateaus - these show significant CPU time spent on a
+function, candidate for optimisation.
+
+- Identify the functions that are taking a considerable amount of CPU time, and
+are not inlined. These are candidates for inlining.
+
+- Identify the same or a hierarchy of functions being called from many
+different places, the sum total of many calls of the same function might take
+considerable fraction of CPU
+
+- Identification of atomics, normally shown by thin towers that are called in
+multiple places.
+
+- memcpy/memmove
+
+- functions that are taking what appears to be an unreasonably large amount of
+CPU time for what the function is achieving (for example, disposing of an
+object).
+
+We use the `perf` Linux tool to collect the CPU profile, and then we use the
+`flamegraph.pl` script to generate the flamegraph.
+
+We produced the flamegraphs as follows: on the left is the single instance, on
+the right the dual instance.
 
 ```bash
 tmp/_b1e4a2b/msgr_crimson_11
@@ -395,6 +419,112 @@ difffolded.pl _server_msgr_crimson_28smp_clients_separated.perf.out_merged _03_a
 difffolded.pl  _server_msgr_async_28smp_clients_separated.perf.out_merged _03_async_crimson_lr_fg/left_server_msgr_async_14smp_clients_separated.perf.out_merged | flamegraph.pl > server_msgr_async_28smp_vs_left_14smp_sep_merged.svg
 
 ```
+## Dual 2x14 reactor Crimson server, Separated CPU allocation
+
+The first flamegraph shows the CPU profile comparison for the dual (two messenger servers) each running 14 reactor/cores for the NUMA Separated allocation. 
+
+<!-- file:///Users/jjperez/Work/cephdev/Ceph_Profiling/tracker_66525/_o05/_b1e4a2b_round_02/msgr_crimson_11_fg_dual/right_server_msgr_crimson_14smp_clients_separated.perf.out_merged.svg?x=10.0&y=8245 -->
+Here is the proportion of CPU time spent for the most relevant functions,
+
+- ```do_run()```: 87.75% (main bulk of work),
+<!--
+but notice the right-hand side towers of ```seastar::app_template::run_deprecated```7.15%, which respectively goes to ```keep_doing()```, ```then< IOHandler::doit_in_dispatch()>```: 6%, which seems like a different code path leading to ```IOHandler::read_message()```  
+-->
+  - ```IOHandler::doit_in_dispatch()>```: 82.05% -- immediately above run_and_dispose(), leading to
+  - ```IOHandler::read_message()```: 76.21% -- what appears to be the normal code path, which in turn is split into:
+    - ```read_frame_payload()```: 15.59%, (which is a future, resolved later upwards in the same stack)
+    - ``` then<crimson::net:IOHandler::read_message()```: 60.36% -- this is the continuation, which consists of:
+        - ``` MessageFrame Decode```: 0.42%,
+        - ``` MessageFrame destructor```: 2.04%,
+        - ``` ms_dispatch()```: **41.52%**,
+        - ``` decode_message()```: 9.67%
+
+<details>
+<summary>Click to see the flamegraph.</summary>
+
+![server_msgr_crimson_14smp_sep_merged](flamegraphs/multi/right_server_msgr_crimson_14smp_clients_separated.perf.out_merged.svg)
+
+</details>
+
+Taking a closer look to the base of the tall tower leading to the ```seastar::deleter()```, we see
+
+- ``` reactor::poll_once()```: 0.2%
+- ``` seastar::object_deleter_impl```: 3.7% (from _deleter) is the huge tower
+  at the right end, but do we need to multiply it by the height of the tower for
+  the actual CPU utilisation? Or it just represent the chain of invocations
+  (busywait) for the lambda/(future/promise) to resolve?
+- similar huge tower for the code path (``` seastar::deleter::~deleter```) leading from ``` seastar::reactor::flush_tcp_batches()```, 2.01%.
+
+![server_msgr_crimson_14smp_sep_merged_deleter](flamegraphs/multi/crimson_2x14reactor_msgr_server_deleter_from_flush.png)
+
+## Single 1x28 reactor server, Separated CPU allocation
+
+The following flamegraph shows the CPU profile comparison for the single server running 28 reactor/cores for the NUMA Separated allocation.
+
+<details>
+<summary>Click to see the flamegraph.</summary>
+
+![server_msgr_crimson_28smp_sep_merged](flamegraphs/single/_server_msgr_crimson_28smp_clients_separated.perf.out_merged.svg)
+
+</details>
+
+Looking at the same code paths as above, to have a rough estimation:
+
+- ```do_run()```: 93.03% (+5% from dual server above)
+
+    - ```IOHandler::doit_in_dispatch()>```: 89.64% (+7%)
+
+    - ```IOHandler::read_message()```: 74.17% (+2%)
+
+        - ```read_frame_payload()```: 7.12% (+8.47%)
+        - ```then<crimson::net:IOHandler::read_message()```: 74.19% (-13.83%)
+
+            - ```MessageFrame Decode```: 0.30% (-0.12%)
+            - ```MessageFrame destructor```: 1.44% (-1.60%)
+            - ```ms_dispatch()```: 46.96% (+5.44%)
+            - ```decode_message()```: 9.67% (same).
+            
+<!--
+The above comparisoon suggest to look at the code path leading to
+```ms_dispatch()```, which is the main function for dispatching the 
+messages to the corresponding handler.
+ -->
+The above comparisoon suggest to look at the memory profile to get further details on the 
+```ms_dispatch()```, which is the main function for dispatching the 
+messages to the corresponding handler.
+
+## Dual 2x14 SMP Asynchronous server, Separated CPU allocation
+
+The following flamegraph shows the CPU profile comparison for the dual (two asynchronous messenger servers) each running 14 client/cores for the NUMA Separated allocation.
+
+- ```msgr-worker()```: 100%, split on three main code paths:
+    - ```PosixConnectedSocketImpl::send()```: 3.89%,
+    - ```EventCenter::process_events()```: 95.48%, split into two main segments
+        - ```AsyncConnection::process()```: 78.90%, this unfolds up to ```ProtocolV2::run_continuation()``` 78.87%, which is the main code path for the async messenger.
+            - ```ProtocolV2::handle_message()```: 51.33%.
+        - ```ProtocolV2::write_event()```: 16.54%
+
+![server_msgr_async_14smp_sep_merged](flamegraphs/multi/left_server_msgr_async_14smp_clients_separated.perf.out_merged.svg)
+
+## Single 1x28 SMP Asynchronous server, Separated CPU allocation
+
+Similarly, we look at the main codepaths for the single server running 28 reactor/cores for the NUMA Separated allocation.
+
+- ```msgr-worker()```: 100%, split on three main code paths:
+    - ```PosixConnectedSocketImpl::send()```: 4.433%,
+    - ```EventCenter::process_events()```: 94.90% (-0.58%), split into two main segments
+        - ```AsyncConnection::process()```: 72.23% (+6.77%), this unfolds up to ```ProtocolV2::run_continuation()``` 72.21% (-6.66%), which is the main code path for the async messenger.
+            - ```ProtocolV2::handle_message()```: 51.62 (+0.29%).
+        - ```ProtocolV2::write_event()```: 22.63% (+6.09%)
+
+![server_msgr_async_28smp_sep_merged](flamegraphs/single/_server_msgr_async_28smp_clients_separated.perf.out_merged.svg)
+
+## Comparison dual vs. single, Separated CPU allocation
+
+We use differential [flamegraphs](https://www.brendangregg.com/blog/2014-11-09/differential-flame-graphs.html) for this section.
+
+The following differential flamegraph shows a single instance running 28 reactors Crimson Messenger server, vs. two instances of the Crimson messenger server each running 14 reactors. 
+
 *Notes:*
 
 - to make the comparison possible, all the reactors have been merged into a
@@ -416,10 +546,13 @@ difffolded.pl  _server_msgr_async_28smp_clients_separated.perf.out_merged _03_as
   tower is proportional to the number of lambda resolutions required to complete
   the asynchronous operation.
 
-The first flamegraph shows the CPU profile comparison for a single instance running 28
-reactors Crimson Messenger server, vs. two instances of the Crimson messenger server each running 14 reactors. 
+
+<details>
+<summary>Click to see the flamegraph.</summary>
 
 ![server_msgr_crimson_28smp_vs_14smp_sep_merged](flamegraphs/single_vs_multi/server_msgr_crimson_28smp_vs_14smp_sep_merged.svg)
+
+</details>
 
 The second flamegraph shows the corresponding CPU profile comparison for the Asynchronous messenger.
 
