@@ -155,7 +155,10 @@ the `cpuset` option, and `taskset`, as appropriate.
     "2": "0,56",
     "4": "0,56,28,84",
     "8": "0-1,56-57,28-29,84-85",
+    "14": "0-3,56-59,28-30,84-86",
     "16": "0-3,56-59,28-31,84-87",
+    "20": "0-4,56-60,28-32,84-88",
+    "24": "0-5,56-61,28-33,84-89",
     "28": "0-6,56-62,28-34,84-90",
     "32": "0-7,56-63,28-35,84-91",
     "40": "0-9,56-65,28-37,84-93",
@@ -165,7 +168,10 @@ the `cpuset` option, and `taskset`, as appropriate.
     "2": "1,57",
     "4": "1,57,29,85",
     "8": "2-3,58-59,30-31,86-87",
+    "14": "4-7,60-63,32-34,88-90",
     "16": "4-7,60-63,32-35,88-91",
+    "20": "5-9,61-65,33-37,90-94",
+    "24": "6-11,62-67,34-39,90-95",
     "28": "7-13,63-69,35-41,91-97",
     "32": "8-15,64-71,36-43,92-99",
     "40": "10-19,66-75,38-47,94-103",
@@ -177,14 +183,22 @@ the `cpuset` option, and `taskset`, as appropriate.
     "2": "0-1",
     "4": "0-3",
     "8": "0-7",
+    "14": "0-13",
     "16": "0-15",
+    "18": "0-17",
+    "20": "0-19",
+    "24": "0-23",
     "28": "0-27"
   },
   "client": {
     "2": "28-29",
     "4": "28-31",
     "8": "28-35",
+    "14": "28-41",
     "16": "28-43",
+    "18": "28-45",
+    "20": "28-47",
+    "24": "28-51",
     "28": "28-55"
   }
 }
@@ -406,19 +420,76 @@ object).
 We use the `perf` Linux tool to collect the CPU profile, and then we use the
 `flamegraph.pl` script to generate the flamegraph.
 
-We produced the flamegraphs as follows: on the left is the single instance, on
-the right the dual instance.
+<details>
+<summary>Click to see details of how we capture and process data for the flamegraphs.</summary>
+
+- We collect the (user space CPU cycles) perf data for the server and client independently, for only 10 seconds:
 
 ```bash
-tmp/_b1e4a2b/msgr_crimson_11
-[17:55:51]$ # 
-difffolded.pl  _server_msgr_async_28smp_clients_separated.perf.out_merged _03_async_crimson_lr_fg/left_server_msgr_async_14smp_clients_balanced.perf.out_merged | flamegraph.pl > server_msgr_async_28smp_sep_vs_left_14smp_bal_merged.svg
-
-difffolded.pl _server_msgr_crimson_28smp_clients_separated.perf.out_merged _03_async_crimson_lr_fg/left_server_msgr_crimson_14smp_clients_separated.perf.out_merged | flamegraph.pl > server_msgr_crimson_28smp_vs_14smp_merged.svg
-
-difffolded.pl  _server_msgr_async_28smp_clients_separated.perf.out_merged _03_async_crimson_lr_fg/left_server_msgr_async_14smp_clients_separated.perf.out_merged | flamegraph.pl > server_msgr_async_28smp_vs_left_14smp_sep_merged.svg
-
+fun_perf() {
+  local PID=$1
+  local TEST_NAME=$2
+  if [ "${FLAME}" == "true" ]; then
+      perf record -e cycles:u --call-graph dwarf -i -p ${PID} -o ${TEST_NAME}.perf.out sleep 10 2>&1 >/dev/null &
+  fi
+}
 ```
+- We then process the perf data using the `perf script` command, and we merge
+several reactors/workers into a single stack. We then apply the coalescing
+transformation  (to be mentioned later in the text) using our custom made Python script:
+
+```bash
+fun_pp_flamegraphs() {
+  for x in $(ls *perf.out); do
+  perf script -i $x | c++filt | stackcollapse-perf.pl  |\
+  sed -e 's/perf-crimson-ms/reactor/g' -e 's/reactor-[0-9]\+/reactor/g' \
+   -e 's/msgr-worker-[0-9]\+/msgr-worker/g' > ${x}_merged
+  python3 /root/bin/pp_crimson_flamegraphs.py -i ${x}_merged | flamegraph.pl --title "${x}" > ${x}_coalesced.svg
+done
+}
+```
+</details>
+
+In order to compare a single server instance versus a dual server instance, we
+need to process the output from the perf script into a format where all the
+code paths for each individual reactor have been merged into a single stack.
+Furthermore, the flamegraphs still show huge tall towers for asynchronous
+computation, that is code paths involving future/promise (leading to its
+eventual lambda resolution). This makes the analysis very difficult, so we need
+to coalesce the multiple occurences of the same function in the code path. 
+
+<details>
+<summary>Click to see an example of a huge tall tower of asynchronous computation in the flamegraph.</summary>
+
+The screenshot below shows the flamegraph for the single instance of the
+Crimson messenger, the detail focus on the start of a huge tower involving the
+asynchronous deletion of objects.
+
+![server_msgr_crimson_hugetower](flamegraphs/server_msgr_crimson_hugetower.png)
+
+</details>
+
+We can achieve a coalescing transformation that does not loose any information by using a
+'multiset' per code path, which is essentially a set with the number of occurrences of its
+elements. We replace the original code path by a corresponding multiset,
+preserving the order of first occurrence of each function symbol. This is given by the fact that Python
+honours the insertion order in dictionaries. We can prove that our approach
+does not loose any information via mathematical induction on the lenght of the code path.
+
+<details>
+<summary>Click to see the reduction transformation of the previous tall tower.</summary>
+
+The resulting flamegraph of applying the reduction transformation is shown
+below, where the code path now contains annotations with the number of
+occurrences of each function symbol. The order of occurrence is preserved.
+
+![server_msgr_crimson_reduction](flamegraphs/server_msgr_crimson_reduced.png)
+
+</details>
+
+We still need to experiment whether this coalescing transformation is useful for asynchronous computation using coroutines.
+
+
 ## Dual 2x14 reactor Crimson server, Separated CPU allocation
 
 The first flamegraph shows the CPU profile comparison for the dual (two messenger servers) each running 14 reactor/cores for the NUMA Separated allocation. 
@@ -440,7 +511,14 @@ but notice the right-hand side towers of ```seastar::app_template::run_deprecate
         - ``` decode_message()```: 9.67%
 
 <details>
-<summary>Click to see the flamegraph.</summary>
+<summary>Click to see the coalesced flamegraph.</summary>
+
+![server_msgr_crimson_14smp_sep_coalesced](flamegraphs/multi/right_server_msgr_crimson_14smp_clients_separated.perf.out_merged_coalesced.svg)
+
+</details>
+
+<details>
+<summary>Click to see the original flamegraph (with huge towers).</summary>
 
 ![server_msgr_crimson_14smp_sep_merged](flamegraphs/multi/right_server_msgr_crimson_14smp_clients_separated.perf.out_merged.svg)
 
@@ -462,7 +540,22 @@ Taking a closer look to the base of the tall tower leading to the ```seastar::de
 The following flamegraph shows the CPU profile comparison for the single server running 28 reactor/cores for the NUMA Separated allocation.
 
 <details>
-<summary>Click to see the flamegraph.</summary>
+<summary>Click to see the coalesced flamegraph.</summary>
+
+![server_msgr_crimson_28smp_sep_coalesced](flamegraphs/single/_server_msgr_crimson_28smp_clients_separated.perf.out_merged_coalesced.svg)
+
+</details>
+
+<details>
+<summary>Click to see the original flamegraph.</summary>
+
+- The tallest tower represents the object deletion: since this is an
+  asynchronous operation, it is expected to be the more expensive on a Balanced
+  CPU allocation since it involves evicting from the CPU cache memory lines being
+  used by the other reactor running in the physical core id. The height of the
+  tower is proportional to the number of lambda resolutions required to complete
+  the asynchronous operation.
+
 
 ![server_msgr_crimson_28smp_sep_merged](flamegraphs/single/_server_msgr_crimson_28smp_clients_separated.perf.out_merged.svg)
 
@@ -488,7 +581,8 @@ Looking at the same code paths as above, to have a rough estimation:
 The above comparisoon suggest to look at the code path leading to
 ```ms_dispatch()```, which is the main function for dispatching the 
 messages to the corresponding handler.
- -->
+-->
+
 The above comparisoon suggest to look at the memory profile to get further details on the 
 ```ms_dispatch()```, which is the main function for dispatching the 
 messages to the corresponding handler.
@@ -519,9 +613,36 @@ Similarly, we look at the main codepaths for the single server running 28 reacto
 
 ![server_msgr_async_28smp_sep_merged](flamegraphs/single/_server_msgr_async_28smp_clients_separated.perf.out_merged.svg)
 
-## Comparison dual vs. single, Separated CPU allocation
+## Comparison dual server instance vs. single server instance
+<!--, Separated CPU allocation -->
 
 We use differential [flamegraphs](https://www.brendangregg.com/blog/2014-11-09/differential-flame-graphs.html) for this section.
+
+<details>
+<summary>Click to see details on the construction of the differential flamegraphs.</summary>
+
+We construct the differential flamegraphs as follows: on the left is the single server instance, on
+the right the dual server instance.
+
+```bash
+tmp/_b1e4a2b/msgr_crimson_11
+# Single Crimson instance server 1x28 SMP NUMA separated vs. dual 2x14 SMP Crimson server also NUMA separated:
+difffolded.pl  _server_msgr_crimson_28smp_clients_separated.coalesced ../_03_async_crimson_lr_fg/left_server_msgr_crimson_14smp_clients_separated.coalesced | flamegraph.pl --title "server_msgr_crimson_28smp_vs_14smp" > server_msgr_crimson_28smp_vs_14smp_coalesced.svg
+
+# Single Crimson instance server 1x28 SMP Balanced vs. dual server 2x14 SMP Crimson also Balanced:
+difffolded.pl _server_msgr_crimson_28smp_clients_balanced.coalesced ../_03_async_crimson_lr_fg/left_server_msgr_crimson_14smp_clients_balanced.coalesced | flamegraph.pl --title "server_msgr_crimson_28smp_vs_14smp_Balanced" > server_msgr_crimson_28smp_vs_14smp_bal_coalesced.svg
+
+# Single Crimson instance server 1x28 SMP Balanced vs. dual 2x14 SMP Crimson server NUMA Separated:
+difffolded.pl _server_msgr_crimson_28smp_clients_balanced.coalesced  ../_03_async_crimson_lr_fg/left_server_msgr_crimson_14smp_clients_separated.coalesced | flamegraph.pl --title "server_msgr_crimson_28bal_vs_14sep_bal" > server_msgr_crimson_28bal_vs_14sep_coalesced.svg
+
+# Single asynchronous instance 1x28 SMP server NUMA separated vs. dual server asynchronous 2x14 SMP NUMA Separated:
+difffolded.pl  _server_msgr_async_28smp_clients_separated.perf.out_merged _03_async_crimson_lr_fg/left_server_msgr_async_14smp_clients_separated.perf.out_merged | flamegraph.pl  --title "server_msgr_async_28sep_vs_14sep" > server_msgr_async_28smp_vs_left_14smp_sep_merged.svg
+
+# Single asynchronous instance 1x28 SMP server NUMA separated vs. dual server asynchronous 2x14 SMP CPU Balanced:
+difffolded.pl  _server_msgr_async_28smp_clients_balanced.perf.out_merged _03_async_crimson_lr_fg/left_server_msgr_async_14smp_clients_balanced.perf.out_merged | flamegraph.pl --title "server_msgr_async_28sep_vs_14bal" > server_msgr_async_28sep_vs_14bal_merged.svg
+```
+
+</details>
 
 The following differential flamegraph shows a single instance running 28 reactors Crimson Messenger server, vs. two instances of the Crimson messenger server each running 14 reactors. 
 
@@ -533,24 +654,18 @@ The following differential flamegraph shows a single instance running 28 reactor
 - The CPU allocation strategy is NUMA Separated, using physical
   cores only.
 
-- The client for the former is also using 28 cores, but on the other NUMA socket. The clients for the latter are using 14 cores each, on the other NUMA socket. 
+- The client for the former is also using 28 cores, but on the other NUMA
+  socket. The clients for the latter are using 14 cores each, on the other NUMA
+  socket. 
 
 - The flamegraph shows the difference in blue to indicate when the
   performance is worse for the single instance (28 cores) vs. the
   dual instance (14 cores each). The opposite is shown in red.
 
-- The tallest tower represents the object deletion: since this is an
-  asynchronous operation, it is expected to be the more expensive on a Balanced
-  CPU allocation since it involves evicting from the CPU cache memory lines being
-  used by the other reactor running in the physical core id. The height of the
-  tower is proportional to the number of lambda resolutions required to complete
-  the asynchronous operation.
-
-
 <details>
-<summary>Click to see the flamegraph.</summary>
+<summary>Click to see the flamegraph (server_msgr_crimson_28smp_vs_14smp_sep).</summary>
 
-![server_msgr_crimson_28smp_vs_14smp_sep_merged](flamegraphs/single_vs_multi/server_msgr_crimson_28smp_vs_14smp_sep_merged.svg)
+![server_msgr_crimson_28smp_vs_14smp_sep](flamegraphs/single_vs_multi/server_msgr_crimson_28smp_vs_14smp_coalesced.svg)
 
 </details>
 
@@ -558,5 +673,30 @@ The second flamegraph shows the corresponding CPU profile comparison for the Asy
 
 ![server_msgr_async_28smp_vs_left_14smp_sep_merged](flamegraphs/single_vs_multi/server_msgr_async_28smp_vs_left_14smp_sep_merged.svg)
 
-
+<!-- 
 More profiles would be added to this section, including the original ones showing the multiple reactor/workers, as appropriate.
+-->
+
+The third flamegraph shows the comparison for the single server running 28 reactor/cores vs. dual instance server running 14 reactors, both using the NUMA Balanced allocation.
+
+<details>
+<summary>Click to see the flamegraph (server_msgr_crimson_28smp_vs_14smp_bal).</summary>
+
+![server_msgr_crimson_28smp_vs_14smp_bal](flamegraphs/single_vs_multi/server_msgr_crimson_28smp_vs_14smp_bal_coalesced.svg)
+
+</details>
+
+Finally, we show a comparison involving Balanced vs. Separated CPU allocation.
+
+
+<details>
+<summary>Click to see the flamegraph (server_msgr_crimson_28bal_vs_14sep).</summary>
+
+![server_msgr_crimson_28bal_vs_14sep](flamegraphs/single_vs_multi/server_msgr_crimson_28bal_vs_14sep_coalesced.svg)
+
+</details>
+
+
+
+We will continue with the analysis of the flamegraphs, and we will add more as
+required for comparing Separated vs. Balanced CPU allocation, as appropriate.

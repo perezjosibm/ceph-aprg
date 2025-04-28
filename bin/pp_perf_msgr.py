@@ -2,6 +2,9 @@
 """
 This script expects as input a list of .out files produced from a client perf_crimson_msgr:
 
+(We might consider to refact this to use as input a .json config file to describe the list of input .out files,
+potentially with the option to compare against another run)
+
 for x in *.zip; do y=${x/.zip/_client.out}; echo "== $y =="; unzip -c $x $y | tail -8; done > msgr_crimson_bal_vs_sep_client.out
 
 It produces a .json file with the following layout: main key is the CPU balance

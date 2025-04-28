@@ -1,3 +1,18 @@
 Fri 25 Apr 2025 16:31:39 BST -- scp o05:~/containers/c_results/_b1e4a2b/msgr_crimson_11/_03_async_crimson_lr_fg/*_msgr_async_*.perf.out_merged.svg .
 
 # for x in *msgr_async*perf.out_fold.gz; do y=${x/fold.gz/merged}; echo "== $y =="; gzip -d -c $x |  sed -e 's/msgr-worker-[0-9]\+/msgr-worker/g' > ${y}; flamegraph.pl --title "${y}" ${y} > ${y}.svg; done
+
+Thu Apr 17 15:21:09 UTC 2025 -- #/root/bin/run_mesgr.sh -d /tmp/_b1e4a2b/msgr_crimson_11 -t all -b all -x # 2x14 crimson + async
+
+
+for x in *perf.out_fold.gz; do y=${x/_fold.gz/_merged}; echo "== $y =="; gzip -d -c $x |  sed -e 's/perf-crimson-ms/reactor/g' -e 's/reactor-[0-9]\+/reactor/g' > $y; flamegraph.pl ${y} > ${y}.svg; done
+# gzip -d -c left_server_msgr_async_14smp_clients_separated.perf.out_fold.gz |  sed -e 's/msgr-worker-[0-9]\+/msgr-worker/g' > left_server_msgr_async_14smp_clients_separated.perf.out_merged
+
+
+for x in msgr_crimson*zip; do echo "== $x =="; unzip -c $x "*_client.out" | tail -8; done > dual_msgr_crimson_bal_vs_sep_client.out
+for x in msgr_async*zip; do echo "== $x =="; unzip -c $x "*_client.out" | tail -8; done > dual_msgr_async_bal_vs_sep_client.out_fold
+
+
+# To produce the coalesced flamegraphs:
+/tmp/_b1e4a2b/msgr_crimson_11/_03_async_crimson_lr_fg
+# for x in  *crimson*merged; do y=${x}_coalesced.svg; z=${x/perf.out_merged/coalesced}; echo "== $y: $z  =="; python3 /root/bin/pp_crimson_flamegraphs.py -i $x | flamegraph.pl --title "${z}" > ${y}; done

@@ -452,8 +452,8 @@ fun_pp_flamegraphs() {
       echo "==$(date) == Perf script $x: $y =="
       perf script -i $x | c++filt | stackcollapse-perf.pl > ${x}_fold # orig multi-reactor
       flamegraph.pl ${x}_fold > $z
-      sed -e 's/perf-crimson-ms/reactor/g' -e 's/reactor-[0-9]\+/reactor/g' ${x}_fold > ${x}_merged
-      flamegraph.pl ${x}_merged > ${x}_merged.svg
+      sed -e 's/perf-crimson-ms/reactor/g' -e 's/reactor-[0-9]\+/reactor/g'  -e 's/msgr-worker-[0-9]\+/msgr-worker/g'  ${x}_fold > ${x}_merged
+      python3 /root/bin/pp_crimson_flamegraphs.py -i ${x}_merged | flamegraph.pl --title "${x}" > ${x}_coalesced.svg
       gzip -9 $x ${x}_fold
       # Need to merge the reactors into a single one to compare
       # diff:
