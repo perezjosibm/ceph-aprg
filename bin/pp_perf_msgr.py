@@ -138,8 +138,8 @@ class MsgrStatEntry(object):
 
     def load_json(self, json_fname: str) -> Dict[str, Any]:
         """
-        Load a .json file containing diskstat metrics
-        Returns a dict with keys only those interested device names
+        Load a .json file containing perf metrics
+        Returns a dict with keys only those interested names
         """
         try:
             with open(json_fname, "r") as json_data:

@@ -386,13 +386,14 @@ fun_run_workload() {
     for x in $(ls *perf.out); do
       #y=${x/perf.out/scripted.gz}
       z=${x/perf.out/fg.svg}
+      y=${x/perf.out}
       echo "==$(date) == Perf script $x: $y =="
-      perf script -i $x | c++filt | ${PACK_DIR}/FlameGraph/stackcollapse-perf.pl | ${PACK_DIR}/FlameGraph/flamegraph.pl > $z
-      # I needed the raw data to experiment compaction of tall lambda calls, I'll disable compression by the time being
+      perf script -i $x | c++filt | ${PACK_DIR}/FlameGraph/stackcollapse-perf.pl | sed -e 's/perf-crimson-ms/reactor/g' -e 's/reactor-[0-9]\+/reactor/g'  -e 's/msgr-worker-[0-9]\+/msgr-worker/g' > ${x}_merged
+      python3 /root/bin/pp_crimson_flamegraphs.py -i ${x}_merged |  ${PACK_DIR}/FlameGraph/flamegraph.pl --title "${y}" > ${z}
       #perf script -i $x | c++filt | gzip -9 > $y
       # Option whether want to keep the raw data
       #perf script -i $x | c++filt | ./stackcollapse-perf.pl | ./flamegraph.pl > $z
-      rm -f $x
+      rm -f ${x} ${x}_merged
     done
   fi
   # Remove empty .err files

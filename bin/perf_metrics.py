@@ -114,6 +114,18 @@ def get_avg(a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
             a_data[k][m] = (a_data[k][m] + b_data[k][m]) / 2
     return a_data
 
+def get_max(a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calculate the maximum between a_data and b_data
+    Assigns the result to self._diff, we use that to make a dataframe and
+    produce heatmaps
+    """
+    for k in b_data:  # keys are shards
+        for m in b_data[k]:
+            a_data[k][m] = max(a_data[k][m], b_data[k][m])
+    return a_data
+
+
 
 class PerfMetricEntry(object):
     """
@@ -193,7 +205,7 @@ class PerfMetricEntry(object):
             "regex": re.compile(r"^(reactor_utilization)"),
             "normalisation_fn": _minmax_normalisation,
             "unit": "pc",
-            "reduce": "average",
+            "reduce": "maximum", #average
         },
     }
 
@@ -228,20 +240,21 @@ class PerfMetricEntry(object):
         self._diff = {}
         self.df = None  # Pandas dataframe
 
-    def load_json(self, json_fname: str) -> Dict[str, Any]:
+    def load_json(self, json_fname: str) -> List[Dict[str, Any]]:
         """
         Load a .json file containing diskstat metrics
         Returns a dict with keys only those interested device names
         """
         try:
             with open(json_fname, "r") as json_data:
-                ds_list = {}
+                ds_list = []
                 # check for empty file
                 f_info = os.fstat(json_data.fileno())
                 if f_info.st_size == 0:
                     logger.error(f"JSON input file {json_fname} is empty")
                     return ds_list
                 ds_list = json.load(json_data)
+                logger.info(f"{json_fname} loaded")
                 # We need to arrange the data: the metrics each use a "shard" key, so
                 # need to use shard to index the metrics
                 return ds_list
@@ -257,7 +270,7 @@ class PerfMetricEntry(object):
                 json.dump(data, f, indent=4, sort_keys=True, default=serialize_sets)
                 f.close()
 
-    def filter_metrics(self, ds) -> Dict[str, Any]:
+    def filter_metrics(self, dsList) -> Dict[str, Any]:
         """
         Filter the (array of dicts) to the measurements we want
         Returns a dict with keys the shard names, values the measurements above
@@ -265,17 +278,18 @@ class PerfMetricEntry(object):
         """
         result = {}
         _shard = None
-        for item in ds["metrics"]:
-            _key = list(item.keys()).pop()
-            for regex in self.measurements:
-                if regex.search(_key):
-                    try:
-                        _shard = int(item[_key]["shard"])
-                        if _shard not in result:
-                            result.update({_shard: {}})
-                        result[_shard].update({_key: item[_key]["value"]})
-                    except KeyError:
-                        logger.error(f"KeyError: {item} has no shard key")
+        for ds in dsList:
+            for item in ds["metrics"]:
+                _key = list(item.keys()).pop()
+                for regex in self.measurements:
+                    if regex.search(_key):
+                        try:
+                            _shard = int(item[_key]["shard"])
+                            if _shard not in result:
+                                result.update({_shard: {}})
+                            result[_shard].update({_key: item[_key]["value"]})
+                        except KeyError:
+                            logger.error(f"KeyError: {item} has no shard key")
         return result
 
     def make_chart(self, df):
@@ -360,11 +374,11 @@ class PerfMetricEntry(object):
         """
         # TBC: can we define this at the top of the class, then extend it with the callbacks to apply the reduction
         slices = {
+            "reactor_utilization": re.compile(r"^(reactor_utilization)"),
             "memory_ops": re.compile(r"^(memory_.*_operations)"),
             "memory": re.compile(r"^(memory_.*_memory)"),
             "reactor_cpu": re.compile(r"^(reactor_cpu_.*|reactor_sleep_time_ms_total)"),
             "reactor_polls": re.compile(r"^(reactor_polls)"),
-            "reactor_utilization": re.compile(r"^(reactor_utilization)"),
         }
         callbacks = {
             "minmax": _minmax_normalisation,
@@ -372,45 +386,79 @@ class PerfMetricEntry(object):
             "maxabs": _max_abs_normalisation,
         }
         units = {
+            "reactor_utilization": "pc",
             "memory_ops": "operations",
             "memory": "MBs",
             "reactor_cpu": "ms",
             "reactor_polls": "polls",
-            "reactor_utilization": "pc",
         }
+
+        def _plot_df(df, slice_name, cb_name, outname):
+            """
+            Plot the dataframe
+            """
+            # f, ax = plt.subplots(figsize=(9, 6))
+            # sns.heatmap(df, annot=False, fmt=".1f", linewidths=0.5, ax=ax)
+            # plt.show()
+            # plt.savefig(outname.replace(".json", f"{slice_name}.png"))
+            df.plot(
+                kind="bar",
+                stacked=True,
+                title=f"{slice_name} {cb_name}",
+                xlabel="Shards",
+                ylabel=f"{units[slice_name]}",
+                fontsize=7,
+            )
+            # plt.show()
+            # plt.clf()
+            plt.savefig(
+                outname.replace(".json", f"_{slice_name}_{cb_name}.png"),
+                dpi=300,
+                bbox_inches="tight",
+            )
+            # self.plot_heatmap(df_slice, outname, f"{slice_name}_{cb_name}")                        
+
+        # We need to get the reactor_utilization from the df, and use it to calculate the IOP cost
+        def _get_reactor_util(self,df, outname):
+            """
+            If the method does not produce a self.reactor_utilization, then slicing failed, so
+            this might be a case of list of dump_perf metrics from the reactor_utilization, try the whole df
+            instead.
+            """
+            self.reactor_utilization = df.mean()
+            # self.reactor_utilization = df_describe['mean'] #(axis=1)
+            #print(f"Reactor utilization: {self.reactor_utilization}")
+            print(f"Normalising with minmax: {self.reactor_utilization}")
+            cb= callbacks["minmax"]
+            df = cb(df)
+            _plot_df(df=df, slice_name="reactor_utilization", cb_name="minmax", outname=outname )
+
 
         for slice_name, slice_regex in slices.items():
             df_slice = df.filter(regex=slice_regex, axis=1)
-            df_describe = df_slice.describe()
-            self.save_table(
-                outname.replace(".json", f"_{slice_name}_table.tex"), df_describe
-            )
-            logger.info(f"{slice_name}: {df_describe.info(verbose=False)}")
+            if not df_slice.empty:
+                df_describe = df_slice.describe()
+                self.save_table(
+                    outname.replace(".json", f"_{slice_name}_table.tex"), df_describe
+                )
+                logger.info(f"{slice_name} description: {df_describe.info(verbose=False)}")
 
-            # We need the reactor_utilization to be a percentage, then use it to calculate the IOP cost, making a new column in the dataframe
-            if slice_name == "reactor_utilization":
-                self.reactor_utilization = df_slice.mean(axis=1)
-                # self.reactor_utilization = df_describe['mean'] #(axis=1)
-                print(f"Reactor utilization: {self.reactor_utilization}")
-            for cb_name, cb in callbacks.items():
-                print(f"Normalising {slice_name} with {cb_name}")
-                df_slice = cb(df_slice)
-                df_slice.plot(
-                    kind="bar",
-                    stacked=True,
-                    title=f"{slice_name} {cb_name}",
-                    xlabel="Shards",
-                    ylabel=f"{units[slice_name]}",
-                    fontsize=7,
-                )
-                # plt.show()
-                # plt.clf()
-                plt.savefig(
-                    outname.replace(".json", f"_{slice_name}_{cb_name}.png"),
-                    dpi=300,
-                    bbox_inches="tight",
-                )
-                # self.plot_heatmap(df_slice, outname, f"{slice_name}_{cb_name}")
+                # We need the reactor_utilization to be a percentage,
+                # then use it to calculate the IOP cost, making a new column in the dataframe
+                if slice_name == "reactor_utilization":
+                    self.reactor_utilization = df.loc[:,slice_name].mean()
+                    #self.reactor_utilization = df_slice.mean()
+                    #self.reactor_utilization = df_slice.mean(axis=1)
+                    # self.reactor_utilization = df_describe['mean'] #(axis=1)
+                    print(f"Reactor utilization mean is:\n{self.reactor_utilization}")
+                    logger.info(f"Reactor utilization:\n{self.reactor_utilization}")
+                for cb_name, cb in callbacks.items():
+                    print(f"Normalising {slice_name} with {cb_name}")
+                    df_slice = cb(df_slice)
+                    _plot_df(df=df_slice, slice_name=slice_name, cb_name=cb_name, outname=outname)
+
+        if self.reactor_utilization is None:
+            _get_reactor_util(self,df, outname)
 
     def reduce(self, a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -434,10 +482,15 @@ class PerfMetricEntry(object):
         def _get_avg(a_data, b_data):
             return (a_data + b_data) / 2
 
+        def _get_max(a_data, b_data):
+            return max(a_data, b_data)
+
         callbacks = {
             "difference": _get_diff,
             "average": _get_avg,
+            "maximum": _get_max,
         }
+
         for k in b_data:  # keys are shards
             for m in b_data[k]:  # metrics
                 # Get the metric group
@@ -493,6 +546,7 @@ class PerfMetricEntry(object):
         # Convert the result into a dataframe
         # Transpose, so that the metrics are the columns, and the shards the rows
         self.df = pd.DataFrame(self._diff).T
+        logger.info(f"Reduced dataframe is: {self.df}")
 
     def load_config(self):
         """
@@ -530,10 +584,14 @@ class PerfMetricEntry(object):
             else:
                 col = "bw"
             # Aggregate the estimated cost as a new column:
+            # ru = self.reactor_utilization.mul(self.CPU_CLOCK_SPEED_GHZ) #.to_numpy()
+            # print(f"Factor utilization: {ru}")
+            # bench_df["estimated_cost"] = bench_df[col].div(ru)
             bench_df["estimated_cost"] = bench_df[col] / (
-                self.reactor_utilization * self.CPU_CLOCK_SPEED_GHZ
+                 self.reactor_utilization * self.CPU_CLOCK_SPEED_GHZ
             )
-            # We filter onlly the columns we are interested: 'iops', 'bw',  iodepth iops total_ios   clat_ms  'estimated_cost'
+            # We filter onlly the columns we are interested: 'iops', 'bw',
+            # iodepth iops total_ios   clat_ms  'estimated_cost'
             bench_df = bench_df.filter(
                 regex=r"^(iops|bw|iodepth|total_ios|clat_ms|estimated_cost)"
             )
