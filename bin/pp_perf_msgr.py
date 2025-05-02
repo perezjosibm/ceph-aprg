@@ -70,9 +70,9 @@ class MsgrStatEntry(object):
 
     def __init__(self, iflname: str, out_json: str, directory: str, plot: str = ""):
         """
-        This class expects two input .json files
-        Calculates the difference b - a and replaces b with this
-        The result is a dict with keys the device names, values the measurements above
+        This class expects an input list of messenger result files to process
+        The result is a dict with keys the number of reactors/SMP, number of clients,
+        the CPU balance strategy (separated, NUMA balanced)
         """
         self.iflname = iflname
         self.plot = plot
@@ -218,6 +218,7 @@ class MsgrStatEntry(object):
         """
         Load a file containing summary perf_crimson_msgr metrics
         Returns a pandas dataframe
+        TBC. we might expect a generic config .json file with the list of files to process
         """
         lines = []
         try:
@@ -246,9 +247,7 @@ class MsgrStatEntry(object):
 
     def make_response_chart(self, df, title):
         """
-        Plot a heatmap of the dataframe
-        Need to split the dataframe into two: one for counters (IO completed) and the other for time measurements.
-        We end up with at least two heatmaps per workload
+        Plot a response graph (IOPs vs Latency) of the dataframe
 
         #print(f"Title:{title} df: {df}")
         sns.set_theme()

@@ -49,13 +49,18 @@ fun_gen_perf_config() {
             "benchmark": "${x}"
         }
 EOF
-    echo "$json" > $y
+    echo "$json" | jq . > $y
     python3 ${PYTHONMODULES}/perf_metrics.py -i ${y} -v -d ${RUN_DIR}
 done
 }
 
 #############################################################################################
 # config .json for dump_metrics (reactor_utilisation)
+# while IFS= read -r line; do
+#     my_array+=( "\"$line\"" )
+# done < <( ls ${x}_dump*.json | grep -v "before" | grep -v "after" )
+# Need to validate the array of json files, probably via jq
+# echo ${my_array[@]} | jq -R 'split(" ")' | jq -c '.[]'
 fun_gen_reactor_config() {
     local workload=$1
 
@@ -70,12 +75,6 @@ fun_gen_reactor_config() {
         # get the list of metric jsons
         declare -a my_array
         my_array=( $( ls ${workload}_dump*.json | grep -v "before" | grep -v "after" | awk '{ print "\""$0"\""}' ) )
-        # while IFS= read -r line; do
-        #     my_array+=( "\"$line\"" )
-        # done < <( ls ${x}_dump*.json | grep -v "before" | grep -v "after" )
-        # # Need to validate the array of json files, probably via jq
-        # echo ${my_array[@]}
-        # echo ${my_array[@]} | jq -R 'split(" ")' | jq -c '.[]'
         metric_list=$( fun_join_by ',' ${my_array[@]} )
         read -r -d '' json <<EOF || true
         { "input": [
@@ -143,5 +142,5 @@ else
     echo "== $table =="
     ${pp_metrics_table[$table]} $workload
  fi    
-for x in *_table.tex; do gsed -i -e 's/_/ /g' -e 's/%/\\%/g' $x; done
+#for x in *_table.tex; do gsed -i -e 's/_/ /g' -e 's/%/\\%/g' $x; done
 echo "$(date)== Done =="
