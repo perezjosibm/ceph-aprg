@@ -3,7 +3,8 @@
 # !		 
 # ! Generate config .json file for perf_metrics.py
 
-PYTHONMODULES=~/Work/cephdev/ceph-aprg/bin
+#PYTHONMODULES=~/Work/cephdev/ceph-aprg/bin # laptop
+PYTHONMODULES=/root/bin # o05 box
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
@@ -19,10 +20,12 @@ fun_join_by() {
 fun_apply_filter() {
     local workload=$1
 
-    for x in  ${workload}_dump*.json; do
-        jq -s '[.[]]' $x > /tmp/tmpo
-        mv /tmp/tmpo $x
-    done
+    if [ "$FORCE" = false ]; then
+        for x in  ${workload}_dump*.json; do
+            jq -s '[.[]]' $x > /tmp/tmpo
+            mv /tmp/tmpo $x
+        done
+    fi
 }
 #############################################################################################
 fun_gen_perf_config() {
@@ -50,7 +53,8 @@ fun_gen_perf_config() {
         }
 EOF
     echo "$json" | jq . > $y
-    python3 ${PYTHONMODULES}/perf_metrics.py -i ${y} -v -d ${RUN_DIR}
+    # need to force install jinja2 in sepia lab box
+    #python3 ${PYTHONMODULES}/perf_metrics.py -i ${y} -v #-d ${RUN_DIR}
 done
 }
 
@@ -82,12 +86,13 @@ fun_gen_reactor_config() {
             ],
             "output": "${workload}_perf_rutil.json",
             "type": "crimson",
-            "operator": "maximum",
+            "operator": "average",
+            "time_sequence": "_dump_(.*).json",
             "benchmark": "${x}"
         }
 EOF
     echo "$json" | jq . > $y
-    python3 ${PYTHONMODULES}/perf_metrics.py -i ${y} -v -d ${RUN_DIR}
+    #python3 ${PYTHONMODULES}/perf_metrics.py -i ${y} -v #-d ${RUN_DIR}
 done
 }
 

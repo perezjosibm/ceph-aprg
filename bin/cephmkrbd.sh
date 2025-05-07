@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
 if pgrep crimson; then
-	bin/ceph daemon -c /ceph/build/ceph.conf osd.0 dump_metrics > /tmp/new_cluster_dump.json
+	bin/ceph tell osd.0 dump_metrics > /tmp/new_crimson_cluster.json
 else
-	bin/ceph daemon -c /ceph/build/ceph.conf osd.0 perf dump > /tmp/new_cluster_dump.json
+    # not an equivalent for Classic so far found, so disabling
+	#bin/ceph daemonperf osd.0 > /tmp/new_cluster_dump.json
+  bin/ceph -f json -o /tmp/classic_perf.json daemonperf osd.0 allocated,stored,op_in_bytes,op_out_bytes,op_latency 5 3 > /tmp/classic_daemon_perf.out
 fi
 # probably add the config opts for the basic/manual here as well
 

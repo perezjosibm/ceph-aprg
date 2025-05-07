@@ -238,7 +238,7 @@ fun_validate_set() {
   local TEST_NAME=$1
   # On multiple instances, this could be a race hazard
   [ ! -f "${NUMA_NODES_OUT}" ] && lscpu --json > ${NUMA_NODES_OUT}
-  # Needs extending to support multiple msgrs type client vs server
+  # Needs extending to support multiple msgrs type client vs server, and lscpu -e --json layout as well
   python3 /root/bin/tasksetcpu.py -c $TEST_NAME -u ${NUMA_NODES_OUT} -d ${RUN_DIR}
 }
 

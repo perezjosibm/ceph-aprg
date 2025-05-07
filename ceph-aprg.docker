@@ -31,6 +31,8 @@ RUN yum install smartmontools -y
 RUN yum install logrotate -y
 RUN yum install lnav -y
 RUN yum install perf -y
+# Clag, wouldit not clash with gcc?
+yum install clang-19.1.7-1.el9
 # Extra packages needed to run cbt
 RUN yum install python3-lxml -y
 RUN yum install python3-yaml -y

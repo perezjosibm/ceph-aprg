@@ -169,10 +169,9 @@ fun_osd_dump() {
      #echo "{ \"timestamp\": \"$timestamp\" }," >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
       if [ "${OSD_TYPE}" == "crimson" ]; then
         /ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS} >> ${TEST_NAME}_dump_${LABEL}.json
-      else
-        /ceph/build/bin/ceph daemonperf osd.0 >> ${TEST_NAME}_dump_${LABEL}.json
-        #/ceph/build/bin/ceph daemon osd.0 perf dump >> ${TEST_NAME}_dump_${LABEL}.json
-        #/ceph/build/bin/ceph daemon -c /ceph/build/ceph.conf ${oid} perf dump >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
+      #else
+        # Classic does not seem to support a similar command
+        #/ceph/build/bin/ceph daemonperf osd.0 >> ${TEST_NAME}_dump_${LABEL}.json
       fi
     #done
     sleep ${SLEEP_SECS};
@@ -291,6 +290,8 @@ fun_run_workload() {
       fio_pids=$( fun_join_by ',' ${fio_id[@]} )
       top_out_name=${TEST_NAME}
       echo "== Monitoring OSD: $osd_pids FIO: $fio_pids =="
+      # Need to make it more resilient if the process being monitored dies
+      #
       if [ "$RESPONSE_CURVE" = true ]; then
         #fio_pids_acc="$fio_pids_acc,$fio_pids"
         top_out_name=${TEST_RESULT}
@@ -379,6 +380,7 @@ fun_run_workload() {
   #  fi
   #cd # location of FIO .log data
   #fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280 # Made some tweaks, so will keep it in my priv repo
+  # Neeed coalescing by volume
   /root/bin/fio_generate_plots ${TEST_NAME} 650 280 2>&1 > /dev/null
 
   # Process perf if any
@@ -393,13 +395,18 @@ fun_run_workload() {
       #perf script -i $x | c++filt | gzip -9 > $y
       # Option whether want to keep the raw data
       #perf script -i $x | c++filt | ./stackcollapse-perf.pl | ./flamegraph.pl > $z
-      rm -f ${x} ${x}_merged
+      gzip -9 ${x}_merged
+      rm -f ${x}
     done
   fi
   # Remove empty .err files
   find . -type f -name "fio*.err" -size 0c -exec rm {} \;
   # Remove empty tmp  files
   find . -type f -name "tmp*" -size 0c -exec rm {} \;
+  #Archive FIO err files:
+  zip -9mqj fio_${TEST_RESULT}_err.zip *.err
+  # Curate perf_metrics (Crimson only):
+  /root/bin/pp_get_config_json.sh -d ${RUN_DIR} -w ${TEST_RESULT}
   # Generate report: use the template, integrate the tables/charts -- per workload
   # /root/tinytex/tools/texlive/bin/x86_64-linux/pdflatex -interaction=nonstopmode ${TEST_RESULT}.tex
   # Run it again to get the rences, TOC, etc
