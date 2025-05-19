@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!env python3
 """
 This script traverses the dir tree to select .JSON entries to
 generate a report in .tex
@@ -11,12 +11,21 @@ import sys
 import json
 import glob
 import tempfile
+# import re
+# import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from typing import List, Dict, Any
+from common import load_json, save_json
 
 __author__ = 'Jose J Palacios-Perez'
 
 logger = logging.getLogger(__name__)
+#root_logger = logging.getLogger(__name__)
 
 class Reporter(object):
+    WORKLOAD_LIST = ["randread", "randwrite", "seqread", "seqwrite"]
     OSD_LIST = [1,3,8]
     REACTOR_LIST = [1,2,4]
     ALIEN_LIST = [7,14,21]
@@ -27,12 +36,23 @@ class Reporter(object):
    \hline 
 """
     
-    def __init__(self, jsonName:str=""):
+    def __init__(self, json_name:str=""):
         """
-        This class expects a list of result files to process into a report
+        This class expects a config .json file containing:
+        - list of directories (at least a singleton) containing result files to
+          process into a report: this is described as a dictionary, keys is an
+          alias (short name to use for the comparison), value is the directory
+          path
+        - path to the target directory to produce the report (some subfolder
+          would be created if not already present)
+        - path to the .tex template file to used
+        - flag to indicate the comparison (we assume by default that the
+          comparison is across the directories, with the same structure)
         """
-        self.jsonName = jsonName
+        self.json_name = json_name
+        self.config = {} 
         self.entries = {}
+        self.ds_list= {}
         self.body = {}
 
     def traverse_dir(self):
@@ -40,14 +60,6 @@ class Reporter(object):
         Traverse the given list (.JSON) use .tex template to generate document
         """
         pass
-
-    def find(name, path):
-        """
-        find a name file in path
-        """
-        for root, dirs, files in os.walk(path):
-            if name in files:
-                return os.path.join(root, name)
 
     def start_fig_table(self, header:list[str]):
         """
@@ -174,7 +186,7 @@ class Reporter(object):
 
     def start(self):
         """
-        Entry point
+        Entry point: this is a fixed structure, using the config .json we traverse in the order given
         """
         self.entries.update({'OSD': {}})
         self.body.update({'OSD': {}})
@@ -192,6 +204,7 @@ class Reporter(object):
                 self.get_iops_entry(osd_num, reactor_num)
                 self.gen_iops_table(osd_num, reactor_num)
                 self.gen_charts_table(osd_num, reactor_num)
+        save_json(self.json_name.replace('.json', '_report.json'), self.entries)
 
     def compile(self):
         """
@@ -210,10 +223,93 @@ class Reporter(object):
                 #print(dt["table"])
                 print(dt["charts_table"])
         #print(self.body)
-        if self.jsonName:
-            with open(self.jsonName, 'w', encoding='utf-8') as f:
+        if self.json_name:
+            with open(self.json_name, 'w', encoding='utf-8') as f:
                 json.dump(self.entries, f, indent=4 ) #, sort_keys=True, cls=TopEntryJSONEncoder)
                 f.close()
+
+    def load_files(self, input_dirs:Dict[str,str]):
+        """
+        Load the .json files from the directories given in the input_dirs
+        dictionary. The keys are aliases for the directories, the values are
+        the paths to the directories.
+        """
+        for dir_alias, dir_path in input_dirs.items():
+            logger.info(f"Loading {dir_alias} from {dir_path}")
+            # Check if the directory exists
+            if not os.path.isdir(dir_path) or not os.listdir(dir_path):
+                logger.error(f"Directory {dir_path} does not exist or is empty")
+                continue
+
+            # Each dir contains the four typical workloads: randomread,
+            # randomwrite, sequentialread, sequentialwrite, need to traverse
+            # those
+            for workload in self.WORKLOAD_LIST:
+                # Check if the directory is empty
+                dp = os.path.join(dir_path, workload)
+                if not os.path.isdir(dp) or not os.listdir(dp):
+                    logger.error(f"Directory {dp} does not exist is empty")
+                    continue
+                # Load .json files in the directory as indicated by the benchmark field in the config
+                # glob.glob(dir_path + "/*_bench_df.json")
+                # We probably only need the first one
+                json_files = glob.glob(os.path.join(dir_path, f"{self.config['benchmark']}")) # *.json
+                for json_file in json_files:
+                    logger.info(f"Loading {json_file}")
+                    self.ds_list[dir_alias]['json'] = load_json(json_file)
+
+        # Transform each .json into a pandas DataFrame
+        for dir_alias, ds in self.ds_list.items():
+            # Assuming each entry is a dataframe
+            self.ds_list[dir_alias]['frame'] = pd.DataFrame.from_dict(ds, orient='tight')
+
+    def plot_dfs(self, ds_list:Dict[str, Any], output:str):
+        """
+        Plot the dataframes from the list of .json files
+        """
+        for workload in self.WORKLOAD_LIST:
+            for name, ds in ds_list.items():
+                #plt.figure()
+                # We only need to plot the columns we are interested in, iops, latency, etc
+
+                sns.lineplot(data=ds['frame'], x='x_column', y='y_column')
+                plt.title(f"{workload} {name}")
+            # We need to specify the output path, eg report_dir/figures
+            # And keep the output name so we can use it in the .tex files
+            plt.savefig(f"{workload}{output}.png")
+            # Emit .tex code to include the figures and tables, use the report output name
+            # Each workload name is a section
+            
+            plt.close()
+
+    def load_config(self):
+        """
+        Load the configuration .json input file
+        The config file should contain the following keys:
+        - input: (dictionary) list of directories to load the .json files from,
+          each key is an alias, the values are paths (folders) containing the
+          .json files (*_bench_df.json)
+        - output: (dictionary)
+           'name': prefix for the of the output .json file, as well as the title of the charts, 
+            eg. 'cmp_sea_classic_build.json' 
+           'path': the path to the report structure:
+          tex/ -- tex contents, from template, and tables
+          figures/ -- figures to be included in the report
+          data/ -- raw data from the results
+        - benchmark: name of the benchmark file to load, as a regex (default _bench_df.json)
+        """
+        try:
+            with open(self.json_name, "r") as config:
+                self.config = json.load(config)
+        except IOError as e:
+            raise argparse.ArgumentTypeError(str(e))
+
+        if "input" in self.config:
+            self.load_files(self.config["input"])
+            self.plot_dfs(self.ds_list, self.config["output"])
+        else:
+            logger.error("KeyError: self.config has no 'input' key")
+
 
 def main(argv):
     examples = """
@@ -230,11 +326,15 @@ def main(argv):
                                      epilog=examples, formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("jsonName", type=str, default=None,
-                        help="JSON specifying the performance test results")
+                        help="Output JSON config file specifying the performance test results to compile/compare")
     parser.add_argument("-l", "--latarget", action='store_true',
-                        help="True to assume latency target run", default=False)
+                        help="True to assume latency target run (default is response latency)", default=False)
     parser.add_argument("-v", "--verbose", action='store_true',
                         help="True to enable verbose logging mode", default=False)
+    parser.add_argument("-c", "--config", 
+                        type=str,
+                        required=True,
+                        help="Input config .json describing the config schema: [list] of input .json files,", default=None)
 
     options = parser.parse_args(argv)
 
@@ -244,12 +344,11 @@ def main(argv):
         logLevel = logging.INFO
 
     with tempfile.NamedTemporaryFile(dir='/tmp', delete=False) as tmpfile:
-        #print(f"logname: {tmpfile.name}")
         logging.basicConfig(filename=tmpfile.name, encoding='utf-8',level=logLevel)
 
     logger.debug(f"Got options: {options}")
 
-    report = Reporter(options.jsonName)
+    report = Reporter(options.config)
     report.start()
     report.compile()
 

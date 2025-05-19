@@ -1,14 +1,18 @@
-#!/usr/bin/env python3
+#!env python3
 """
 This script expects as input a list of .out files produced from a client perf_crimson_msgr:
 
 (We might consider to refact this to use as input a .json config file to describe the list of input .out files,
 potentially with the option to compare against another run)
 
-for x in *.zip; do y=${x/.zip/_client.out}; echo "== $y =="; unzip -c $x $y | tail -8; done > msgr_crimson_bal_vs_sep_client.out
+for x in *.zip; do 
+  y=${x/.zip/_client.out};
+  echo "== $y ==";
+  unzip -c $x $y | tail -8; 
+done > msgr_crimson_bal_vs_sep_client.out
 
 It produces a .json file with the following layout: main key is the CPU balance
-value, each of which canbe converted to a pandas dataframe
+value, each of which can be converted to a pandas dataframe
 
 {
  "balanced":{
@@ -21,7 +25,13 @@ value, each of which canbe converted to a pandas dataframe
  # same layout as above
  }
 }
+
+python pp_perf_msgr.py -d $MYDIR -i msgr_crimson_bal_vs_sep_client.out -v
+
 Produces combined .json (table/dataframe) with the Latency vs Throughput results (and CPU util)
+
+Example:
+_b1e4a2b_round_02/msgr_crimson_07/msgr_crimson_bal_vs_sep_clientdes.json
 """
 
 import argparse
@@ -37,21 +47,12 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, List, Any
 from pprint import pformat
-from gnuplot_plate import GnuplotTemplate
+#from gnuplot_plate import GnuplotTemplate
+from common import load_json, save_json
 
 __author__ = "Jose J Palacios-Perez"
 
 logger = logging.getLogger(__name__)
-
-
-def serialize_sets(obj):
-    """
-    Serialise sets as lists
-    """
-    if isinstance(obj, set):
-        return list(obj)
-
-    return obj
 
 
 class MsgrStatEntry(object):
@@ -136,36 +137,6 @@ class MsgrStatEntry(object):
         self.directory = directory
         self.entry: Dict[str, Dict[str, List[Any]]] = {}
 
-    def load_json(self, json_fname: str) -> Dict[str, Any]:
-        """
-        Load a .json file containing perf metrics
-        Returns a dict with keys only those interested names
-        """
-        try:
-            with open(json_fname, "r") as json_data:
-                ds_list = {}
-                # check for empty file
-                f_info = os.fstat(json_data.fileno())
-                if f_info.st_size == 0:
-                    logger.error(f"JSON input file {json_fname} is empty")
-                    return ds_list
-                ds_list = json.load(json_data)
-                # We need to arrange the data: the metrics each use a "shard" key, so
-                # need to use shard to index the metrics
-                return ds_list
-                # return self.filter_metrics(ds_list)
-        except IOError as e:
-            raise argparse.ArgumentTypeError(str(e))
-
-    def save_json(self, name=None, data=None):
-        """
-        Save the data to a .json file
-        """
-        if name:
-            with open(name, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4, sort_keys=True, default=serialize_sets)
-                f.close()
-
     def parse_entry(self, line):
         """
         Parse an entry and update the measurements
@@ -239,8 +210,8 @@ class MsgrStatEntry(object):
         logger.debug(
             f"Entry: {self.entry}\n Descriptions: {pformat(self.descriptions)}"
         )
-        self.save_json(self.oflname, self.entry)
-        self.save_json(self.dflname, self.descriptions)
+        save_json(self.oflname, self.entry)
+        save_json(self.dflname, self.descriptions)
         # Circular reference
         # self.save_json(self.oflname, { "entries": self.entry, "descriptions": self.descriptions })
         return pd.DataFrame(self.entry)
@@ -372,7 +343,7 @@ class MsgrStatEntry(object):
         """
         os.chdir(self.directory)
         if self.plot:
-            self.entry = self.load_json(self.plot)
+            self.entry = load_json(self.plot).pop()
             self.prep_response_charts()
             # self.make_response_chart(pd.read_json(self.plot), "Response Chart")
             return

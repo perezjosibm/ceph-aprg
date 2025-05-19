@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """
-This script expects a config for input .json file(s) name as argument,
-corresponding to at least a pair (before,after) or a sequence if measurements
-taken from
+This script expects a config for input .json file(s) name as argument, which
+describes the input .json files containing performance measurements from a
+Crimson OSD process.
 
 /ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS} >>
 ${TEST_NAME}_dump_${LABEL}.json
 
-Produces a chart with x-axis the (Seastar)
-Shards, y-axis the value of the metric. The coresponding dataframe consists of
-columns for the metrics, each row corresponds to a shard, which contains an
-array of values for the metric (e.g. read_time_ms, write_time_ms). We use
-pandas dataframes for the calculations, and seaborn for the plots. consider to
-extend this to a list of dataframes, one per test run, so we can compare the
-results. """
+The script produces a chart with x-axis the (Seastar) Shards, y-axis the value
+of the metric. The coresponding dataframe consists of columns for the metrics,
+each row corresponds to a shard, which contains an array of values for the
+metric (e.g. read_time_ms, write_time_ms). We use pandas dataframes for the
+calculations, and seaborn for the plots. consider to extend this to a list of
+dataframes, one per test run, so we can compare the results.
+"""
 
 import argparse
 import logging
@@ -22,25 +22,16 @@ import sys
 import re
 import json
 import tempfile
-import numpy as np
+#import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import List, Dict, Any
+from common import load_json, save_json
 
 __author__ = "Jose J Palacios-Perez"
 
 logger = logging.getLogger(__name__)
-
-
-def serialize_sets(obj):
-    """
-    Serialise sets as lists
-    """
-    if isinstance(obj, set):
-        return list(obj)
-
-    return obj
 
 
 def _znormalisation(df):  # df: pd.DataFrame
@@ -98,9 +89,10 @@ def _max_abs_normalisation(df):  # df: pd.dataframe
     # df_maxabs_scaled.plot(kind="bar", stacked=True)
     return df_maxabs_scaled
 
+
 # Reductors: these operate on the given lists:
-# a_data and b_data, applying the reduction operation
-# to the values in the lists, and returning the results
+# a_data and b_data, applying the reduction operation
+# to the values in the lists, and returning the results
 def get_diff(a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Calculate the difference of after_data - before_data
@@ -124,6 +116,7 @@ def get_avg(a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
             a_data[k][m] = (a_data[k][m] + b_data[k][m]) / 2
     return a_data
 
+
 def get_max(a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Calculate the maximum between a_data and b_data
@@ -134,7 +127,6 @@ def get_max(a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
         for m in b_data[k]:
             a_data[k][m] = max(a_data[k][m], b_data[k][m])
     return a_data
-
 
 
 class PerfMetricEntry(object):
@@ -152,13 +144,13 @@ class PerfMetricEntry(object):
 
     # The following are the reduction operations we can apply to the input data samples
     REDUCTORS = {
-        "difference": get_diff, # default
+        "difference": get_diff,  # default
         "average": get_avg,
         "maximum": get_max,
     }
     # The following are the metrics we are interested in
     # These are the default if not specified in in the config file
-    # These apply to Crimson OSD only, need extending for classic OSD
+    # These apply to Crimson OSD only, need extending for classic OSD
     METRICS = {
         "memory_ops": {
             "regex": re.compile(r"^(memory_.*_operations)"),
@@ -188,14 +180,14 @@ class PerfMetricEntry(object):
             "regex": re.compile(r"^(reactor_utilization)"),
             "normalisation": "minmax",
             "unit": "pc",
-            "reduce": "average", 
+            "reduce": "average",
         },
     }
 
     def __init__(self, options):
         """
         This class expects a config .json which specifies:
-        
+
         * the input .json files to process, each is a processed list of dicts.
         Each dict has the main key "metrics" and the values are the
         measurements we are interested in. Each item in the list corresponds to
@@ -269,7 +261,7 @@ class PerfMetricEntry(object):
         metric names, values the measurements (per shard).
         """
         self.options = options
-        self.input = options.input # list of input .json files
+        self.input = options.input  # list of input .json files
         self.regex = re.compile(options.regex)  # , re.DEBUG)
         self.directory = options.directory
         self.config = {}
@@ -281,46 +273,19 @@ class PerfMetricEntry(object):
                 r"^(reactor_utilization)|(reactor_cpu_|memory_).*|(reactor_polls|reactor_sleep_time_ms_total)"
             ),  # , re.DEBUG)
         ]
-        
+
         # The reduced dataframe will have the metrics as columns, and the shards as rows:
         self.reduced_df = {}
         self.df = None  # Pandas dataframe
         self.ds_list = []  # List of dataframes, reduced to a single one for (before/after) sample set
 
-        self.metrics_seen = set() # metrics seen in the input files
-        self.shards_seen = set() # shards seen in the input files
+        self.metrics_seen = set()  # metrics seen in the input files
+        self.shards_seen = set()  # shards seen in the input files
         # Inner class instance object: time_sequence type of data metrics:
         self.time_sequence = None
-        self.reactor_utilization_df = None # Reactor utilization, we need to calculate this
-
-    def load_json(self, json_fname: str) -> List[Dict[str, Any]]:
-        """
-        Load a sample .json file containing Crimson OSD metrics
-        It is expected to be a list of dicts, each dict contains the "metrics" key.
-        Returns a list of dicts
-        """
-        try:
-            with open(json_fname, "r") as json_data:
-                ds_list = []
-                # check for empty file
-                f_info = os.fstat(json_data.fileno())
-                if f_info.st_size == 0:
-                    logger.error(f"JSON input file {json_fname} is empty")
-                    return ds_list
-                ds_list = json.load(json_data)
-                logger.info(f"{json_fname} loaded")
-                return ds_list
-        except IOError as e:
-            raise argparse.ArgumentTypeError(str(e))
-
-    def save_json(self, name=None, data=None):
-        """
-        Save the data in a <name>.json file 
-        """
-        if name:
-            with open(name, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4, sort_keys=True, default=serialize_sets)
-                f.close()
+        self.reactor_utilization_df = (
+            None  # Reactor utilization, we need to calculate this
+        )
 
     def make_chart(self, df):
         """
@@ -376,7 +341,7 @@ class PerfMetricEntry(object):
         """
         if name:
             df.rename_axis("shard")
-            df.rename(columns=lambda x: x.replace("_","\\_"), inplace=True)
+            df.rename(columns=lambda x: x.replace("_", "\\_"), inplace=True)
             print(f"++ Dataframe ${name} is ++:\n{df}")
             with open(name, "w", encoding="utf-8") as f:
                 print(df.to_latex(), file=f)
@@ -454,9 +419,9 @@ class PerfMetricEntry(object):
                 dpi=300,
                 bbox_inches="tight",
             )
-            # self.plot_heatmap(df_slice, outname, f"{slice_name}_{cb_name}")                        
+            # self.plot_heatmap(df_slice, outname, f"{slice_name}_{cb_name}")
 
-        def _get_reactor_util(self,df, outname):
+        def _get_reactor_util(self, df, outname):
             """
             If the method does not produce a self.reactor_utilization, then slicing failed, so
             this might be a case of list of dump_perf metrics from the reactor_utilization,
@@ -466,10 +431,14 @@ class PerfMetricEntry(object):
             """
             self.reactor_utilization = df.mean()
             print(f"Normalising with minmax: {self.reactor_utilization}")
-            cb= callbacks["minmax"]
+            cb = callbacks["minmax"]
             df = cb(df)
-            _plot_df(df=df, slice_name="reactor_utilization", cb_name="minmax", outname=outname )
-
+            _plot_df(
+                df=df,
+                slice_name="reactor_utilization",
+                cb_name="minmax",
+                outname=outname,
+            )
 
         # Each slice of the dataframe is a different metric
         for slice_name, slice_regex in slices.items():
@@ -479,29 +448,35 @@ class PerfMetricEntry(object):
                 self.save_table(
                     outname.replace(".json", f"_{slice_name}_table.tex"), df_describe
                 )
-                logger.info(f"{slice_name} description: {df_describe.info(verbose=False)}")
+                logger.info(
+                    f"{slice_name} description: {df_describe.info(verbose=False)}"
+                )
 
                 # We need the reactor_utilization to be a percentage,
-                # then use it to calculate the IOP cost, making a new column in the dataframe
+                # then use it to calculate the IOP cost, making a new column in the dataframe
                 if slice_name == "reactor_utilization":
-                    self.reactor_utilization = df.loc[:,slice_name].mean()
+                    self.reactor_utilization = df.loc[:, slice_name].mean()
                     print(f"Reactor utilization mean is: {self.reactor_utilization}")
                     logger.info(f"Reactor utilization: {self.reactor_utilization}")
-                #for cb_name, cb in callbacks.items():
+                # for cb_name, cb in callbacks.items():
                 cb_name = self.METRICS[slice_name]["normalisation"]
                 print(f"Normalising {slice_name} with {cb_name}")
                 if cb_name not in callbacks:
                     logger.error(f"Callback {cb_name} not in callbacks")
                     cb_name = "minmax"
                 cb = callbacks[cb_name]
-                # df_slice = df_slice.apply(lambda x: cb(x))
+                # df_slice = df_slice.apply(lambda x: cb(x))
                 df_slice = cb(df_slice)
-                _plot_df(df=df_slice, slice_name=slice_name, cb_name=cb_name, outname=outname)
+                _plot_df(
+                    df=df_slice, slice_name=slice_name, cb_name=cb_name, outname=outname
+                )
 
         if self.reactor_utilization is None:
-            _get_reactor_util(self,df, outname)
+            _get_reactor_util(self, df, outname)
 
-    def reduce(self, a_data: Dict[str, Any], b_data: Dict[str, Any], cb_name=None) -> Dict[str, Any]:
+    def reduce(
+        self, a_data: Dict[str, Any], b_data: Dict[str, Any], cb_name=None
+    ) -> Dict[str, Any]:
         """
         We might want to refactor this since wehave similar code above, this is pairwise.
         Reduce the data by applying the operator to the dataframes using the callback cb_name if provided,
@@ -530,6 +505,7 @@ class PerfMetricEntry(object):
             "average": _get_avg,
             "maximum": _get_max,
         }
+
         def _get_cb(m, cb_name=None):
             if cb_name is not None and cb_name in callbacks:
                 # Use the callback provided in the config file
@@ -566,18 +542,18 @@ class PerfMetricEntry(object):
         Returns a single dict with keys the shard names, values the metric names above
         We might extend this for the type of OSD metric (classic, crimson)
         Need to change the structure: as a data frame, the index are the shards (N),
-        the columns are the metrics (M), and the values the measurements (arrays: N*M), but 
+        the columns are the metrics (M), and the values the measurements (arrays: N*M), but
         we have K samples per shard, so we need to keep the samples as a list, or reduce per
         shard eg. take the avg of each K samples to produce a single value per shard.
         """
-        result = {} # This needs to be a cummulative dict, since we might want the full sequence
+        result = {}  # This needs to be a cummulative dict, since we might want the full sequence
         _shard = None
         for ds in ds_list:
             for item in ds["metrics"]:
-                #_key = list(item.keys()).pop()
+                # _key = list(item.keys()).pop()
                 for _metric in item.keys():
-                    # We need to check if the key matches the regex for the metric name
-                    # This is a list of regexes, so we need to check each one
+                    # We need to check if the key matches the regex for the metric name
+                    # This is a list of regexes, so we need to check each one
                     for regex in self.metric_name_re:
                         if regex.search(_metric):
                             try:
@@ -586,8 +562,8 @@ class PerfMetricEntry(object):
                                     result.update({_shard: {}})
                                 if _metric not in result[_shard]:
                                     result[_shard][_metric] = []
-                                result[_shard][_metric].append( item[_metric]["value"] )
-                                # We need to keep track of the metrics metrics_seen and shards seen
+                                result[_shard][_metric].append(item[_metric]["value"])
+                                # We need to keep track of the metrics metrics_seen and shards seen
                                 if _metric not in self.metrics_seen:
                                     self.metrics_seen.add(_metric)
                                 if _shard not in self.shards_seen:
@@ -600,16 +576,22 @@ class PerfMetricEntry(object):
         # plot the time series, consider whether return the full sequence, and
         # then proceed to reduce it accordingly, as well as produce the second
         # form above, metrics first
+
     def transform_metrics(self, ds_list: Dict[str, Any]) -> Dict[str, Any]:
         """
         Transform the the ds_list (that is shard first) into a dictionary with
         metrics first, then shards which contain the measurements as valules.
         This form might easier to use for a time_sequence indexed dataframe.
         """
-        result = {m: {shard: ds_list[shard][m] for shard in ds_list} for m in self.metrics_seen}
+        result = {
+            m: {shard: ds_list[shard][m] for shard in ds_list}
+            for m in self.metrics_seen
+        }
         return result
 
-    def aggregate_metrics(self, ds_src: Dict[str, Any], ds_dest: Dict[str,Any]) -> None: #Dict[str, Any]:
+    def aggregate_metrics(
+        self, ds_src: Dict[str, Any], ds_dest: Dict[str, Any]
+    ) -> None:  # Dict[str, Any]:
         """
         Aggregate the metrics from ds_src into ds_dest, this is a dictionary with keys the
         shard names, values dicts of keys metric names and values array of measurements.
@@ -626,11 +608,12 @@ class PerfMetricEntry(object):
         """
         Reduces the values per shard via mean of the lists
         """
-        result = {k: {m: sum(v)/len(v) for m, v in ds_list[k].items()} for k in ds_list}
+        result = {
+            k: {m: sum(v) / len(v) for m, v in ds_list[k].items()} for k in ds_list
+        }
         return result
 
-
-    def load_files(self, json_files: List[str]) -> None: #List[Dict[str,Any]]: 
+    def load_files(self, json_files: List[str]) -> None:  # List[Dict[str,Any]]:
         """
         Load the .json files specified in the list: "input" config option key
         Filter the metrics we are interested in, and aggregate them in the
@@ -639,7 +622,7 @@ class PerfMetricEntry(object):
         # if using data frames:
         # pd.read_json(f)
         # ds_list = [pd.DataFrame(ds).T for ds in ds_list]
-            ds_list.append(self.filter_metrics(self.load_json(f)))
+            ds_list.append(self.filter_metrics(load_json(f)))
         # self.ds_list = [pd.DataFrame(ds).T for ds in self.ds_list]
         # We need to the values per shard, so we take the mean of the lists
         #self.ds_list[i][m] = sum(ds[m])/len(ds[m])
@@ -652,15 +635,15 @@ class PerfMetricEntry(object):
         logger.info(f"ds_d.describe(): {df_describe.info(verbose=False)}")
         """
         print(f"loading {len(json_files)} .json files ...")
-        self.ds_list = [ self.filter_metrics(self.load_json(f)) for f in json_files ]
+        self.ds_list = [self.filter_metrics(load_json(f)) for f in json_files]
 
     def _reduce_metrics_df(self):
         """
         # Prepare a dataframe with the data, the index are the samples in ds_list,
         # the columns are the shards, the values are the metrics -- similar to what we did for slicing
         """
-        ds_d = {} 
-        for m in self.metrics_seen: 
+        ds_d = {}
+        for m in self.metrics_seen:
             ds_d[m] = {}
             for ds in self.ds_list:
                 for shard in ds:
@@ -668,23 +651,29 @@ class PerfMetricEntry(object):
                         ds_d[m][shard] = []
                     ds_d[m][shard].append(ds[shard][m])
             # Experiment: a dataframe for each metric:
-            df_list = [ pd.DataFrame(ds) for ds in ds_d.values() ]
-            #df_list = [ pd.DataFrame(ds).T for ds in ds_d.values() ]
-            #logger.info(f"ds_list: {df_list}")
-            # From this df we might need to reduce the values per sample across shards
+            df_list = [pd.DataFrame(ds) for ds in ds_d.values()]
+            # df_list = [ pd.DataFrame(ds).T for ds in ds_d.values() ]
+            # logger.info(f"ds_list: {df_list}")
+            # From this df we might need to reduce the values per sample across shards
 
             for i, df in enumerate(df_list):
-                #df = df.rename_axis("shard") # if .T
+                # df = df.rename_axis("shard") # if .T
                 df = df.rename_axis("samples")
                 df_describe = df.describe(include="all")
-                # df = df.rename(columns=lambda x: x.replace("_","\\_"), inplace=True)
+                # df = df.rename(columns=lambda x: x.replace("_","\\_"), inplace=True)
                 logger.info(f"ds_list[{i}]: {df}\n{df_describe.info(verbose=False)}")
-                df.plot(kind="line", title=f"{m}", figsize=(8, 4), grid=True, 
-                    xlabel="shard", ylabel="metric", fontsize=8)
-            #plt.show()
-        #exit(0)
+                df.plot(
+                    kind="line",
+                    title=f"{m}",
+                    figsize=(8, 4),
+                    grid=True,
+                    xlabel="shard",
+                    ylabel="metric",
+                    fontsize=8,
+                )
+            # plt.show()
+        # exit(0)
 
-        
     def load_time_sequence(self, json_files: List[str]):
         """
         Load the files in the list: "input" key, this is a special case that we also want to
@@ -701,23 +690,27 @@ class PerfMetricEntry(object):
             if m:
                 logger.info(f"Loading time sequence from {f}")
                 ts = m.group(1)
-                # Each sample .json contains a list of dicts
-                _d = self.filter_metrics(self.load_json(f))
-                # Aggregate each sample, then transform all at the end
-                self.aggregate_metrics( _d, ds_full_seq ) # full sequence
-                ds_d[ts] = self.reduce_metrics(_d) # average per shard, single .json sample
-        # indexes are time stamps -- should be same size as the benchmark df
+                # Each sample .json contains a list of dicts
+                _d = self.filter_metrics(load_json(f))
+                # Aggregate each sample, then transform all at the end
+                self.aggregate_metrics(_d, ds_full_seq)  # full sequence
+                ds_d[ts] = self.reduce_metrics(
+                    _d
+                )  # average per shard, single .json sample
+        # indexes are time stamps -- should be same size as the benchmark df
         # This dataframe has keys the shards, values array of metrics
         _full_sequence = self.transform_metrics(ds_full_seq)
         self.time_sequence = self.PerfMetricTimeSequence(
-            metric="reactor_utilization",time_sequence=ds_d,
-            full_sequence=_full_sequence)
+            metric="reactor_utilization",
+            time_sequence=ds_d,
+            full_sequence=_full_sequence,
+        )
         self.time_sequence.display()
-        # The following is a mean per shard on each time sample: 1-1 mapping to the benchmark df
-        self.df = self.time_sequence.avg_per_shard 
-        #logger.info(f"After import df:\n{self.df}")
+        # The following is a mean per shard on each time sample: 1-1 mapping to the benchmark df
+        self.df = self.time_sequence.avg_per_shard
+        # logger.info(f"After import df:\n{self.df}")
 
-    def apply_reduction(self, ds_list: List[Dict[str,Any]]) -> None:
+    def apply_reduction(self, ds_list: List[Dict[str, Any]]) -> None:
         """
         Traverses the list of dicts, applies the operator (difference/avg)
         and saves the result in self.reduced_df
@@ -728,17 +721,19 @@ class PerfMetricEntry(object):
             logger.info(f"ds_list[{i}]: {dfs}")
         # special case for the reactor_utilization, we need to plot the timeline sequence, for that
         # we need to create a new dataframe with shards as columns, the X-axis the time sequence,
-        # the values the array from the reactor_utilization
-        
+        # the values the array from the reactor_utilization
+
         while len(ds_list) > 1:
             # Apply pairwise the operator (difference/avg)
-            _diff = self.reduce(ds_list.pop(), ds_list.pop(), cb_name=self.config["operator"])
+            _diff = self.reduce(
+                ds_list.pop(), ds_list.pop(), cb_name=self.config["operator"]
+            )
             # _diff = callbacks[self.config["operator"]](ds_list.pop(), ds_list.pop())
             ds_list.append(_diff)
 
         self.reduced_df = ds_list.pop()
         logger.info(f"Saving the reduction to {self.config['output']}")
-        self.save_json(self.config["output"], self.reduced_df)
+        save_json(self.config["output"], self.reduced_df)
         # Convert the result into a dataframe
         # Transpose, so that the metrics are the columns, and the shards the rows
         self.df = pd.DataFrame(self.reduced_df).T
@@ -748,9 +743,9 @@ class PerfMetricEntry(object):
         """
         Aggregate the results from the benchmark into a single dataframe
         """
-        regex = re.compile(r"rand.*") # random workloads always report IOPs
+        regex = re.compile(r"rand.*")  # random workloads always report IOPs
         if self.config["benchmark"]:
-            self.benchmark = self.load_json(self.config["benchmark"])
+            self.benchmark = load_json(self.config["benchmark"])
             bench_df = pd.DataFrame(self.benchmark)
             m = regex.search(self.config["benchmark"])
             if m:
@@ -758,10 +753,14 @@ class PerfMetricEntry(object):
             else:
                 col = "bw"
 
-            bench_df['reactor_utilization'] = self.time_sequence.get_avg_per_timestamp()
-            logger.info(f"bench_df[reactor_utilization]:\n{bench_df['reactor_utilization']}")
+            bench_df["reactor_utilization"] = self.time_sequence.get_avg_per_timestamp()
+            logger.info(
+                f"bench_df[reactor_utilization]:\n{bench_df['reactor_utilization']}"
+            )
 
-            bench_df["estimated_cost"] = bench_df[col] / ( bench_df["reactor_utilization"] * self.CPU_CLOCK_SPEED_GHZ )
+            bench_df["estimated_cost"] = bench_df[col] / (
+                bench_df["reactor_utilization"] * self.CPU_CLOCK_SPEED_GHZ
+            )
             bench_df = bench_df.filter(
                 regex=r"^(iops|bw|iodepth|total_ios|clat_ms|reactor_utilization|estimated_cost)"
             )
@@ -770,6 +769,12 @@ class PerfMetricEntry(object):
             self.save_table(
                 self.config["output"].replace(".json", "_bench_table.tex"), bench_df
             )
+            # Save the bench_df as a .json file
+            _bname = self.config["output"].replace(".json", "_bench_df.json")
+            save_json( _bname, bench_df.to_dict('tight')) # split
+            # Test we get the same data back
+            _bench_df = pd.DataFrame.from_dict(load_json(_bname), orient='tight')
+            logger.info(f"Bench_df loaded from { _bname }:\n{_bench_df}")
 
     def define_operator(self):
         """
@@ -780,7 +785,7 @@ class PerfMetricEntry(object):
                 logger.error(
                     f"KeyError: {self.config['operator']} not in self.METRICS, using default"
                 )
-                self.config["operator"] =  "difference"
+                self.config["operator"] = "difference"
         else:
             logger.error("KeyError: self.config has no 'operator' key")
             self.config["operator"] = "difference"
@@ -803,9 +808,9 @@ class PerfMetricEntry(object):
                 self.config = json.load(config)
         except IOError as e:
             raise argparse.ArgumentTypeError(str(e))
-        
+
         self.define_operator()
-        
+
         if "input" in self.config:
             if "time_sequence" in self.config:
                 self.load_time_sequence(self.config["input"])
@@ -823,16 +828,16 @@ class PerfMetricEntry(object):
         os.chdir(self.options.directory)
         if self.options.plot:
             self.make_metrics_chart(
-                pd.DataFrame(self.load_json(self.options.plot)).T, self.options.plot
+                pd.DataFrame(load_json(self.options.plot)).T, self.options.plot
             )
-            # self.make_chart(pd.DataFrame(self.load_json(options.plot)).T)
+            # self.make_chart(pd.DataFrame(load_json(options.plot)).T)
         else:
             self.load_config()
             # This expects a single, coalesced dataframe, so we need to either reduce the time_sequence,
             # in addition to produce the time sequence plot
             self.make_metrics_chart(self.df, self.config["output"])
             # This only applies to the time_sequence, so we need to filter it
-            # self.df = self.df.filter(regex=r"^(reactor_utilization)")
+            # self.df = self.df.filter(regex=r"^(reactor_utilization)")
             if self.time_sequence is not None:
                 self.aggregate_results()
                 self.make_metrics_chart(
@@ -845,8 +850,9 @@ class PerfMetricEntry(object):
         """
         Exception class for PerfMetricEntry
         """
+
         pass
-    
+
     class PerfMetricTimeSequence:
         """
         This class is used to load the time sequence of the reactor_utilization
@@ -855,17 +861,26 @@ class PerfMetricEntry(object):
         We reduce each such sample .json as indicated (normally average).
         Since this metric is a gauge, we might need to extend it for some other similar.
         """
+
         # avg_per_shard = None  # Average per shard
         # avg_per_timestamp = None  # Average per timestamp
         # time_sequence = {}  # Dictionary keys are timestsamps (each sample), used for the time sequence
         # full_sequence = {}  # Dictionary: keys are metrics, values are dicts with shards as keys,
-         # values arrays of metrics, used for the time sequence
+        # values arrays of metrics, used for the time sequence
 
-        def __init__(self, metric="reactor_utilization", time_sequence = None, full_sequence = None):
+        def __init__(
+            self, metric="reactor_utilization", time_sequence=None, full_sequence=None
+        ):
             # Need to plot these two:
-            self.full_sequence = pd.DataFrame(full_sequence) # shards as keys, values arrays of measurements
-            self.avg_per_timestamp = self.prep_avg_per_timestamp_df(metric=metric, time_sequence=time_sequence)
-            self.avg_per_shard = self.prep_avg_per_shard_df(full_sequence) # shards as keys, values arrays of measurements
+            self.full_sequence = pd.DataFrame(
+                full_sequence
+            )  # shards as keys, values arrays of measurements
+            self.avg_per_timestamp = self.prep_avg_per_timestamp_df(
+                metric=metric, time_sequence=time_sequence
+            )
+            self.avg_per_shard = self.prep_avg_per_shard_df(
+                full_sequence
+            )  # shards as keys, values arrays of measurements
 
         def get_avg_per_timestamp(self):
             """
@@ -886,28 +901,30 @@ class PerfMetricEntry(object):
                     for _s in time_sequence[ts]:
                         time_sequence[ts][_s] = time_sequence[ts][_s][metric]
                 indices = list(time_sequence.keys())
-                columns = list(time_sequence[indices[0]].keys()) # aka shards
-                d_ts  = { _shard: [] for _shard in columns }
+                columns = list(time_sequence[indices[0]].keys())  # aka shards
+                d_ts = {_shard: [] for _shard in columns}
                 for _ts in indices:
                     for _shard in columns:
                         d_ts[_shard].append(time_sequence[_ts][_shard])
                 dts_df = pd.DataFrame(d_ts, index=indices, columns=columns)
-                dts_df = dts_df.mean(axis=1).to_frame(name=metric) 
+                dts_df = dts_df.mean(axis=1).to_frame(name=metric)
                 dts_df.rename_axis("time_stamp", axis=0, inplace=True)
-                dts_df.rename(columns = {0:metric}, inplace=True)
+                dts_df.rename(columns={0: metric}, inplace=True)
                 return dts_df
 
         def prep_avg_per_shard_df(self, full_sequence):
             """
             Prepare the avg per shard dataframe from the full_sequence dict
             """
-            # Reduce the full_sequence via average (per shard)
+            # Reduce the full_sequence via average (per shard)
             if full_sequence is not None:
                 for m in full_sequence:
                     for _s in full_sequence[m]:
                         if isinstance(full_sequence[m][_s], list):
-                            full_sequence[m][_s] = sum(full_sequence[m][_s]) / len(full_sequence[m][_s])
-                            #full_sequence[m][_s] = np.average(full_sequence[m][_s])
+                            full_sequence[m][_s] = sum(full_sequence[m][_s]) / len(
+                                full_sequence[m][_s]
+                            )
+                            # full_sequence[m][_s] = np.average(full_sequence[m][_s])
                 return pd.DataFrame(full_sequence)
 
         def __str__(self):
@@ -921,7 +938,7 @@ class PerfMetricEntry(object):
             f, ax = plt.subplots(figsize=(9, 6))
             ax.set_title(f"{name}")
             # df = df.rename_index(lambda x: int(x))
-            sns.lineplot(data=df, ax=ax) #x="shard", y="reactor_utilization", 
+            sns.lineplot(data=df, ax=ax)  # x="shard", y="reactor_utilization",
             # df.plot(
             #     kind="line",
             #     title=f"{name}",
@@ -930,7 +947,7 @@ class PerfMetricEntry(object):
             #     fontsize=7,
             # )
             plt.show()
-            #plt.savefig(self.config["output"].replace(".json", f"_ts_{name}.png"))
+            # plt.savefig(self.config["output"].replace(".json", f"_ts_{name}.png"))
 
         def _plot_bar(self, df, name):
             """
@@ -940,7 +957,7 @@ class PerfMetricEntry(object):
             f, ax = plt.subplots(figsize=(9, 6))
             ax.set_title(f"{name}")
             # df = df.rename_index(lambda x: int(x))
-            sns.barplot(data=df, ax=ax ) #x="shard", y="reactor_utilization", 
+            sns.barplot(data=df, ax=ax)  # x="shard", y="reactor_utilization",
             # df.plot(
             #     kind="line",
             #     title=f"{name}",
@@ -949,19 +966,18 @@ class PerfMetricEntry(object):
             #     fontsize=7,
             # )
             plt.show()
-            #plt.savefig(self.config["output"].replace(".json", f"_ts_{name}.png"))
+            # plt.savefig(self.config["output"].replace(".json", f"_ts_{name}.png"))
 
         def display(self):
             """
             Display the time sequence
             """
             logger.info(f"Full sequence is:\n{self.full_sequence}")
-            logger.info(f"Avg per shard is:\n{self.avg_per_shard}") 
+            logger.info(f"Avg per shard is:\n{self.avg_per_shard}")
             # aka reactor_utilization_df to embed into the table:
-            logger.info(f"Avg per timestamp is:\n{self.avg_per_timestamp}") 
-            #self._plot_ln(self.full_sequence, "full_sequence") # FIXME
-            #self._plot(self.avg_per_timestamp, "avg_per_timestamp")
-
+            logger.info(f"Avg per timestamp is:\n{self.avg_per_timestamp}")
+            # self._plot_ln(self.full_sequence, "full_sequence") # FIXME
+            # self._plot(self.avg_per_timestamp, "avg_per_timestamp")
 
 
 def main(argv):
