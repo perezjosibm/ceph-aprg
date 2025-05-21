@@ -27,7 +27,7 @@ export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
 
 # Use a associative array to describe a test case, so we can recreate it faithfully
 OSD_RANGE="1" #"" 2 4 8 16"
-REACTOR_RANGE="28" #"1 2 4 8 16"
+REACTOR_RANGE="56" #"1 2 4 8 16"
 VSTART_CPU_CORES="0-27,56-83"
 # Might try disable HT as well: so we can have the same test running on the two cases, which means that the FIO has two cases
 #VSTART_CPU_CORES="0-27" #,56-83" # osd_1_range16reactor_28fio_sea
@@ -209,8 +209,8 @@ fun_run_fixed_bal_tests() {
 
   # TODO: consider refactor to a single loop: list all the combinations of NUM_OSD and NUM_REACTORS, which does
   # not apply to classic OSD
-  for NUM_OSD in 2; do
-      for NUM_REACTORS in 28; do
+  for NUM_OSD in "${OSD_RANGE}"; do
+      for NUM_REACTORS in "${REACTOR_RANGE}"; do
 
           if [ "$OSD_TYPE" == "classic" ]; then
               title="(${OSD_TYPE}) $NUM_OSD OSD classic, fixed ${FIO_SPEC}" #, response latency 
@@ -330,6 +330,10 @@ while getopts 'ab:d:t:s:r:jlp' option; do
       fun_run_precond "precond"
   fi
 
+  # Produce a .json with the test plan parameters:
+  json="{VSTART_CPU_CORES: \"${VSTART_CPU_CORES}\", FIO_CPU_CORES: \"${FIO_CPU_CORES}\", FIO_JOBS: \"${FIO_JOBS}\", FIO_SPEC: \"${FIO_SPEC}\", OSD_TYPE: \"${OSD_TYPE}\", STORE_DEVS: \"${STORE_DEVS}\", NUM_RBD_IMAGES: \"${NUM_RBD_IMAGES}\", RBD_SIZE: \"${RBD_SIZE}, OSD_RANGE:\"${OSD_RANGE}\", REACTOR_RANGE:\"${REACTOR_RANGE}\"}}"
+    echo $json | jq . > ${RUN_DIR}/test_plan.json
+    
  if [ "$OSD_TYPE" == "all" ]; then
    for OSD_TYPE in classic sea; do # cyan blue 
      fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}

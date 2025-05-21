@@ -191,6 +191,7 @@ fun_set_fio_job_spec() {
 
 #############################################################################################
 fun_set_globals() {
+    # Probably best to save this info in a .json, named eg 'keymap.json' so we can retrieve easily
   local WORKLOAD=$1
   local SINGLE=$2
   local WITH_PERF=$3
@@ -224,6 +225,10 @@ fun_set_globals() {
   OSD_CPU_AVG="${TEST_RESULT}_cpu_avg.json"
   DISK_STAT="${TEST_RESULT}_diskstat.json"
   DISK_OUT="${TEST_RESULT}_diskstat.out"
+  # Produce the keymap.json:
+  json="{\"workload\":\"${WORKLOAD}\",\"workload_name\":\"${WORKLOAD_NAME}\",\"test_prefix\":\"${TEST_PREFIX}\",\"osd_type\":\"${OSD_TYPE}\",\"num_procs\":${NUM_PROCS},\"iodepth\":\"${RANGE_IODEPTH}\",\"numjobs\":\"${RANGE_NUMJOBS}\",\"block_size_kb\":${BLOCK_SIZE_KB},\"latency_target\":${LATENCY_TARGET},\"response_curve\":${RESPONSE_CURVE},\"test_result\":\"${TEST_RESULT}\",\"osd_cpu_avg\":\"${OSD_CPU_AVG}\",\"osd_test_list\":\"${OSD_TEST_LIST}\",\"top_out_list\":\"${TOP_OUT_LIST}\",\"top_pid_list\":\"${TOP_PID_LIST}\",\"top_pid_json\":\"${TOP_PID_JSON}\",\"disk_stat\":\"${DISK_STAT}\",\"disk_out\":\"${DISK_OUT}\"}"
+  echo $json | jq . > keymap.json
+  
 }
 
 #############################################################################################
@@ -381,7 +386,8 @@ fun_run_workload() {
   #cd # location of FIO .log data
   #fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280 # Made some tweaks, so will keep it in my priv repo
   # Neeed coalescing by volume
-  /root/bin/fio_generate_plots ${TEST_NAME} 650 280 2>&1 > /dev/null
+  # Deprecating this, will try using pandas instead
+  #/root/bin/fio_generate_plots ${TEST_NAME} 650 280 2>&1 > /dev/null
 
   # Process perf if any
   if [ "$WITH_PERF" = true ]; then
@@ -413,9 +419,9 @@ fun_run_workload() {
   # Archiving:
   zip -9mqj ${TEST_RESULT}.zip ${_TEST_LIST} ${TEST_RESULT}_json.out \
     *_top.out *.json *.plot *.dat *.png *.gif ${TOP_OUT_LIST} \
-    osd*_threads.out *_list ${TOP_PID_LIST} *.svg *.tex *_cpu_distro.log numa_args*.out *_diskstat.out
+    osd*_threads.out *_list ${TOP_PID_LIST} *.svg *.tex *_cpu_distro.log numa_args*.out *_diskstat.out *.log
       # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
-      rm -f *.log
+      #rm -f *.log
     }
 
 #############################################################################################

@@ -764,6 +764,20 @@ class PerfMetricEntry(object):
             bench_df = bench_df.filter(
                 regex=r"^(iops|bw|iodepth|total_ios|clat_ms|reactor_utilization|estimated_cost)"
             )
+            plt.figure()
+            plt.plot(
+                bench_df["iops"],
+                bench_df["clat_ms"],
+                #bench_df["estimated_cost"],
+                marker="o",
+                linestyle="--",
+            )
+            plt.xlabel("IOPs")
+            plt.ylabel("Latency (ms)")
+            #plt.ylabel("Estimated cost (IOPs per GHz)")
+            #plt.legend(title=f"{self.config["output"]}", loc="upper left") #FIXME
+            plt.show()
+
             logger.info(f"Aggregated df:\n{bench_df}")
             # Save bench_df as a .tex table file
             self.save_table(
@@ -775,7 +789,7 @@ class PerfMetricEntry(object):
             # Test we get the same data back
             _bench_df = pd.DataFrame.from_dict(load_json(_bname), orient='tight')
             logger.info(f"Bench_df loaded from { _bname }:\n{_bench_df}")
-
+            
     def define_operator(self):
         """
         Define the operator to be used for the reduction
@@ -874,7 +888,7 @@ class PerfMetricEntry(object):
             # Need to plot these two:
             self.full_sequence = pd.DataFrame(
                 full_sequence
-            )  # shards as keys, values arrays of measurements
+            )  # shards as keys, values arrays of measurements: this is used for the reactor_utilization
             self.avg_per_timestamp = self.prep_avg_per_timestamp_df(
                 metric=metric, time_sequence=time_sequence
             )
@@ -930,6 +944,25 @@ class PerfMetricEntry(object):
         def __str__(self):
             return f"PerfMetricTimeSequence: {self.full_sequence}"
 
+        def plot_reactor_utilization(self):
+            """
+            Plot the reactor utilization as a time series
+            """
+            if self.avg_per_timestamp is not None:
+                plt.figure()
+                plt.plot(
+                    self.avg_per_timestamp.index,
+                    self.avg_per_timestamp[self.avg_per_timestamp.columns[0]],
+                    marker="o",
+                    linestyle="--",
+                )
+                plt.xlabel("Time")
+                plt.ylabel("Reactor utilization")
+                plt.show()
+            else:
+                logger.error("No time sequence available to plot")
+
+
         def _plot_ln(self, df, name):
             """
             Plot the time sequence using lineplot
@@ -976,6 +1009,7 @@ class PerfMetricEntry(object):
             logger.info(f"Avg per shard is:\n{self.avg_per_shard}")
             # aka reactor_utilization_df to embed into the table:
             logger.info(f"Avg per timestamp is:\n{self.avg_per_timestamp}")
+            self.plot_reactor_utilization()
             # self._plot_ln(self.full_sequence, "full_sequence") # FIXME
             # self._plot(self.avg_per_timestamp, "avg_per_timestamp")
 
