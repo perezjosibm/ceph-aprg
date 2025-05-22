@@ -27,8 +27,8 @@ export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
 
 # Use a associative array to describe a test case, so we can recreate it faithfully
 OSD_RANGE="1" #"" 2 4 8 16"
-REACTOR_RANGE="56" #"1 2 4 8 16"
-VSTART_CPU_CORES="0-27,56-83"
+REACTOR_RANGE="4 8" #"1 2 4 8 16"
+VSTART_CPU_CORES="0-27,56-83" # inc HT -- highest performance
 # Might try disable HT as well: so we can have the same test running on the two cases, which means that the FIO has two cases
 #VSTART_CPU_CORES="0-27" #,56-83" # osd_1_range16reactor_28fio_sea
 ##"0-13,56-69,28-41,84-97" # 56 reactors Latency target comparison vs Classic
@@ -64,6 +64,7 @@ NUMA_NODES_OUT=/tmp/numa_nodes.json
 LATENCY_TARGET=false 
 MULTI_JOB_VOL=false
 PRECOND=false
+WATCHDOG=false
 
 declare -A test_table
 declare -A test_row
@@ -191,10 +192,21 @@ fun_run_fio(){
   fi
   #MULTI_VOL Debug flag in place since recent RBD hangs -- temporarily disabling in favour of prefilling via rbd bench at cephmkrbd.sh
   #RBD_NAME=fio_test_0 fio --debug=io ${FIO_JOBS}rbd_prefill.fio  2>&1 > /dev/null && rbd du fio_test_0 && \
-  cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p \"${TEST_NAME}\" -x -n -d ${RUN_DIR}"
+#########################################
+  # Oficial FIO command:
   # x: skip response curves stop heuristic, n:no perf
+  #cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR}"
+#########################################
+  # Experimental: -w for single, and -k for skipping OSD monitoring
+  #cmd="/root/bin/run_fio.sh -s ${OPTS} -w sr -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR}"
+  #cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -k"
+  cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -d ${RUN_DIR}"
+#########################################
   echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
-  eval "${cmd}"
+  ##eval "${cmd}"
+  #${cmd} | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log &
+  ${cmd} >> ${RUN_DIR}/${test_name}_cpu_distro.log &
+  fio_pid=$!
 }
 
 #########################################
@@ -207,39 +219,47 @@ fun_run_fixed_bal_tests() {
 
     echo -e "${GREEN}== ${OSD_TYPE} ==${NC}"
 
+    SUFFIX="rc"
+    # Set the suffix for the test name: lt for latency target, rc for response curves
+    if [ "$LATENCY_TARGET" = true ]; then
+      SUFFIX="lt"
+    fi
+
   # TODO: consider refactor to a single loop: list all the combinations of NUM_OSD and NUM_REACTORS, which does
   # not apply to classic OSD
-  for NUM_OSD in "${OSD_RANGE}"; do
-      for NUM_REACTORS in "${REACTOR_RANGE}"; do
+  for NUM_OSD in ${OSD_RANGE}; do
+      for NUM_REACTORS in ${REACTOR_RANGE}; do
 
           if [ "$OSD_TYPE" == "classic" ]; then
-              title="(${OSD_TYPE}) $NUM_OSD OSD classic, fixed ${FIO_SPEC}" #, response latency 
+              title="(${OSD_TYPE}) $NUM_OSD OSD classic, fixed ${FIO_SPEC}"
               cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1  taskset -ac '${VSTART_CPU_CORES}' /ceph/src/vstart.sh\
- --new -x --localhost --without-dashboard --redirect-output ${crimson_be_table[blue]}"
-                  #--no-restart  -- disabling this
-              test_name="${OSD_TYPE}_${NUM_OSD}osd_${FIO_SPEC}_rc"
+ --new -x --localhost --without-dashboard --redirect-output ${crimson_be_table[blue]} --no-restart"
+                  # -- disabling this
+              test_name="${OSD_TYPE}_${NUM_OSD}osd_${FIO_SPEC}_${SUFFIX}"
 
           else
               title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor,  fixed ${FIO_SPEC}" 
               # Default does not respect the balance VSTART_CPU_CORES, but balanced does
               cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac '${VSTART_CPU_CORES}' /ceph/src/vstart.sh\
  --new -x --localhost --without-dashboard --redirect-output ${crimson_be_table[${OSD_TYPE}]}\
- --crimson ${bal_ops_table[${BAL_KEY}]} --crimson-smp ${NUM_REACTORS}"
+ --crimson ${bal_ops_table[${BAL_KEY}]} --crimson-smp ${NUM_REACTORS} --no-restart"
 
-              test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${FIO_SPEC}_${BAL_KEY}_rc"
+              # " --valgrind_osd 'memcheck'"
+
+              test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${FIO_SPEC}_${BAL_KEY}_${SUFFIX}"
 
               if [ "$OSD_TYPE" == "blue" ]; then
                   NUM_ALIEN_THREADS=$(( 4 *NUM_OSD * NUM_REACTORS ))
                   title="${title} alien_num_threads=${NUM_ALIEN_THREADS}"
                   cmd="${cmd}  --crimson-alien-num-threads $NUM_ALIEN_THREADS"
-                  test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${NUM_ALIEN_THREADS}at_${FIO_SPEC}_${BAL_KEY}_rc"
+                  test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${NUM_ALIEN_THREADS}at_${FIO_SPEC}_${BAL_KEY}_${SUFFIX}"
               fi
           fi
           echo -e "${RED}== ${title}==${NC}"
+          echo "Test name: $test_name"
           # For later: try number of alien cores = 4 * number of backend CPU cores (= crimson-smp)
-          echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
-          echo $test_name
-          eval "$cmd" >> ${RUN_DIR}/${test_name}_cpu_distro.log
+          echo "${cmd}"  | tee -a "${RUN_DIR}/${test_name}_cpu_distro.log"
+          eval "$cmd" >> "${RUN_DIR}/${test_name}_cpu_distro.log"
 
           if [ "$OSD_TYPE" == "classic" ]; then
               # Manually set the OSD process affinity
@@ -247,11 +267,30 @@ fun_run_fixed_bal_tests() {
               echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
               eval "$cmd" >> ${RUN_DIR}/${test_name}_cpu_distro.log
           fi
-          # TODO: deal with exceptions
-          echo "Sleeping for 20 secs..."
+          echo "$(date) Sleeping for 20 secs..."
           sleep 20 # wait until all OSD online, pgrep?
           fun_show_grid $test_name
-          fun_run_fio $test_name
+
+          echo "$(date) Starting watchdog"
+          WATCHDOG=true
+          ( fun_watchdog $fio_pid ) &
+          #/root/bin/watchdog.sh -p $fio_pid &
+          pid_watchdog=$!
+
+          # Start FIO:
+          echo "$(date) Starting FIO..."
+          #( fun_run_fio $test_name ) & 
+          #fio_pid=$!
+          fun_run_fio $test_name 
+          echo "$(date) FIO ${fio_pid} started"
+          # Start watchdog: modified to run as a background job (subsell) since the pid returned was the 
+          # same as this running script , so it killed itself!
+          # Wait for FIO to finish
+          echo "$(date) Waiting for FIO to complete, (watchdog pid ${pid_watchdog})..."
+          wait $fio_pid
+          # Stop watchdog
+          echo "$(date) FIO completed, killing watchdog ${pid_watchdog}..."
+          kill -9 $pid_watchdog
           # Should be a neater way to stop the cluster
           if [ "$OSD_TYPE" == "classic" ]; then
             /ceph/src/stop.sh
@@ -260,6 +299,7 @@ fun_run_fixed_bal_tests() {
           fi
           sleep 60
       done
+      gzip -9 ${RUN_DIR}/${test_name}_cpu_distro.log
   done
 }
 
@@ -282,7 +322,7 @@ fun_run_bal_vs_default_tests() {
 }
 
 #############################################################################################
-# Remember to reegenerate the radwrite64k.fio for the config of drives
+# Remember to regenerate the radwrite64k.fio for the config of drives
 fun_run_precond(){
   local TEST_NAME=$1
 
@@ -292,11 +332,45 @@ fun_run_precond(){
       jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -d ${RUN_DIR} -a  ${TEST_NAME}.json 
 }
 
+#############################################################################################
+# Stop the cluster and kill the FIO process -- moved to its own script
+fun_stop() {
+    local pid_fio=$1
+    echo "$(date)== Stopping the cluster... =="
+    /ceph/src/stop.sh --crimson
+    if [[ -n "$pid_fio" ]]; then
+         echo "$(date)== Killing FIO with pid $pid_fio... =="
+         kill TERM $pid_fio
+    fi
+    # kill -9 $(pgrep -f fio)
+    # Kill all the background jobs
+    #jobs -p | xargs -r kill
+    # remaining process in the group
+    #kill 0
+}
+
+#############################################################################################
+fun_watchdog() {
+    local pid_fio=$1
+    while pgrep osd >/dev/null 2>&1 && [[ "$WATCHDOG" == "true" ]]; do
+        sleep 1
+    done
+    # If we reach here, it means the OSD process is not running
+    # We can stop the FIO process and exit
+    if [[ "$WATCHDOG" == "true" ]]; then
+        WATCHDOG=false
+        echo "$(date)== OSD process not running, quitting ... =="
+        fun_stop $pid_fio
+    fi 
+}
+
 #########################################
 # Main:
 #
-cd /ceph/build/
+trap 'echo "$(date)== INT received, exiting... =="; fun_stop; exit 1' SIGINT SIGTERM SIGHUP
 
+cd /ceph/build/
+# DEfine some FIO options, or a .json test plan instead
 while getopts 'ab:d:t:s:r:jlp' option; do
   case "$option" in
     a) fun_show_all_tests
@@ -326,13 +400,16 @@ while getopts 'ab:d:t:s:r:jlp' option; do
        ;;
   esac
  done
+ # Create the run directory if it does not exist
+ [ ! -d "${RUN_DIR}" ] && mkdir -p ${RUN_DIR}
+ 
   if [ "$PRECOND" = true ]; then
       fun_run_precond "precond"
   fi
 
   # Produce a .json with the test plan parameters:
-  json="{VSTART_CPU_CORES: \"${VSTART_CPU_CORES}\", FIO_CPU_CORES: \"${FIO_CPU_CORES}\", FIO_JOBS: \"${FIO_JOBS}\", FIO_SPEC: \"${FIO_SPEC}\", OSD_TYPE: \"${OSD_TYPE}\", STORE_DEVS: \"${STORE_DEVS}\", NUM_RBD_IMAGES: \"${NUM_RBD_IMAGES}\", RBD_SIZE: \"${RBD_SIZE}, OSD_RANGE:\"${OSD_RANGE}\", REACTOR_RANGE:\"${REACTOR_RANGE}\"}}"
-    echo $json | jq . > ${RUN_DIR}/test_plan.json
+  json="{\"VSTART_CPU_CORES\": \"${VSTART_CPU_CORES}\", \"FIO_CPU_CORES\": \"${FIO_CPU_CORES}\", \"FIO_JOBS\": \"${FIO_JOBS}\", \"FIO_SPEC\": \"${FIO_SPEC}\", \"OSD_TYPE\": \"${OSD_TYPE}\", \"STORE_DEVS\": \"${STORE_DEVS}\", \"NUM_RBD_IMAGES\": \"${NUM_RBD_IMAGES}\", \"RBD_SIZE\": \"${RBD_SIZE}\", \"OSD_RANGE\":\"${OSD_RANGE}\", \"REACTOR_RANGE\":\"${REACTOR_RANGE}\"}"
+    echo "$json" | jq . > ${RUN_DIR}/test_plan.json
     
  if [ "$OSD_TYPE" == "all" ]; then
    for OSD_TYPE in classic sea; do # cyan blue 

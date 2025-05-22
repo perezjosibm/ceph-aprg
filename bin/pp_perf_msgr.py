@@ -242,6 +242,7 @@ class MsgrStatEntry(object):
         # plt.scatter(x_data, y_data, c=df["smp"], cmap='viridis')
         plt.plot(x_data, y_data, "+-", label=title)
 
+        TODO: filter out data from the dataframe if the corresponding latency is higher than 10ms
         """
         # Format column latency to float .2f
         df["latency"] = df["latency"].astype(float).map("{:.2f}".format)
@@ -265,7 +266,7 @@ class MsgrStatEntry(object):
         # plt.show()
         out_name = self.oflname.replace(".json", "_rc.png")
         logger.debug(f"Saving chart: {out_name}")
-        plt.savefig(out_name, dpi=300, bbox_inches="tight")
+        plt.savefig(out_name, dpi=100, bbox_inches="tight")
 
     def save_table(self, name, df):
         """
@@ -288,7 +289,7 @@ class MsgrStatEntry(object):
         # df.rename(columns={"IOPS": "IOPS (K)"}, inplace=True) #.astype(float)
         print(f"DF sorted and converted to thousands:\n {df}")
         sns.set_theme(
-            style="darkgrid", rc={"figure.figsize": (8, 4)}
+            style="darkgrid", rc={"figure.figsize": (6.5, 4.2)}
         )  # width=8, height=4
         g = sns.relplot(
             data=df,
@@ -310,7 +311,7 @@ class MsgrStatEntry(object):
 
         out_name = self.oflname.replace(".json", "_iops.png")
         logger.debug(f"Saving chart: {out_name}")
-        plt.savefig(out_name, dpi=300, bbox_inches="tight")
+        plt.savefig(out_name, dpi=100, bbox_inches="tight")
         # plt.clf()
 
     def prep_response_charts(self):

@@ -74,8 +74,12 @@ LATENCY_TARGET=false
 RC_SKIP_HEURISTIC=false
 POST_PROC=false
 PACK_DIR="/packages/"
-MAX_LATENCY=10 #in millisecs
+MAX_LATENCY=20 #in millisecs
 STOP_CLEAN=false
+NUM_ATTEMPTS=3 # number of attempts to run the workload
+
+SUCCESS=0
+FAILURE=1
 
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
@@ -192,237 +196,282 @@ fun_set_fio_job_spec() {
 #############################################################################################
 fun_set_globals() {
     # Probably best to save this info in a .json, named eg 'keymap.json' so we can retrieve easily
-  local WORKLOAD=$1
-  local SINGLE=$2
-  local WITH_PERF=$3
-  local TEST_PREFIX=$4
-  local WORKLOAD_NAME=$5 # used for respose curves
+    WORKLOAD=$1
+    SINGLE=$2
+    WITH_PERF=$3
+    TEST_PREFIX=$4
+    WORKLOAD_NAME=$5 # used for respose curves
 
-  export BLOCK_SIZE_KB=${m_bs[${WORKLOAD}]}
+    export BLOCK_SIZE_KB=${m_bs[${WORKLOAD}]}
 
-  [ -z "${WORKLOAD_NAME}" ] && WORKLOAD_NAME=${WORKLOAD}
+    [ -z "${WORKLOAD_NAME}" ] && WORKLOAD_NAME=${WORKLOAD}
 
-  if [ "$SINGLE" = true ]; then
-    NUM_PROCS=1
-    RANGE_IODEPTH=${m_s_iodepth[${WORKLOAD_NAME}]}
-    RANGE_NUMJOBS=${m_s_numjobs[${WORKLOAD_NAME}]}
-  else
-    NUM_PROCS=8
-    RANGE_IODEPTH=${m_m_iodepth[${WORKLOAD_NAME}]}
-    RANGE_NUMJOBS=${m_m_numjobs[${WORKLOAD_NAME}]}
-  fi
+    if [ "$SINGLE" = true ]; then
+        NUM_PROCS=1
+        RANGE_IODEPTH=${m_s_iodepth[${WORKLOAD_NAME}]}
+        RANGE_NUMJOBS=${m_s_numjobs[${WORKLOAD_NAME}]}
+    else
+        NUM_PROCS=8
+        RANGE_IODEPTH=${m_m_iodepth[${WORKLOAD_NAME}]}
+        RANGE_NUMJOBS=${m_m_numjobs[${WORKLOAD_NAME}]}
+    fi
 
-  iodepth_size=$(echo $RANGE_IODEPTH | wc -w)
-  numjobs_size=$(echo $RANGE_NUMJOBS | wc -w)
-  # This condition might not be sufficent, since it also holds for MultiFIO instances
-  #[[ $(( iodepth_size * numjobs_size )) -gt 1 ]] && RESPONSE_CURVE=true
+    iodepth_size=$(echo $RANGE_IODEPTH | wc -w)
+    numjobs_size=$(echo $RANGE_NUMJOBS | wc -w)
+    # This condition might not be sufficent, since it also holds for MultiFIO instances
+    #[[ $(( iodepth_size * numjobs_size )) -gt 1 ]] && RESPONSE_CURVE=true
 
-  TEST_RESULT=${TEST_PREFIX}_${NUM_PROCS}procs_${map[${WORKLOAD}]}
-  OSD_TEST_LIST="${TEST_RESULT}_list"
-  TOP_OUT_LIST="${TEST_RESULT}_top_list"
-  TOP_PID_LIST="${TEST_RESULT}_pid_list"
-  TOP_PID_JSON="${TEST_RESULT}_pid.json"
-  OSD_CPU_AVG="${TEST_RESULT}_cpu_avg.json"
-  DISK_STAT="${TEST_RESULT}_diskstat.json"
-  DISK_OUT="${TEST_RESULT}_diskstat.out"
-  # Produce the keymap.json:
-  json="{\"workload\":\"${WORKLOAD}\",\"workload_name\":\"${WORKLOAD_NAME}\",\"test_prefix\":\"${TEST_PREFIX}\",\"osd_type\":\"${OSD_TYPE}\",\"num_procs\":${NUM_PROCS},\"iodepth\":\"${RANGE_IODEPTH}\",\"numjobs\":\"${RANGE_NUMJOBS}\",\"block_size_kb\":${BLOCK_SIZE_KB},\"latency_target\":${LATENCY_TARGET},\"response_curve\":${RESPONSE_CURVE},\"test_result\":\"${TEST_RESULT}\",\"osd_cpu_avg\":\"${OSD_CPU_AVG}\",\"osd_test_list\":\"${OSD_TEST_LIST}\",\"top_out_list\":\"${TOP_OUT_LIST}\",\"top_pid_list\":\"${TOP_PID_LIST}\",\"top_pid_json\":\"${TOP_PID_JSON}\",\"disk_stat\":\"${DISK_STAT}\",\"disk_out\":\"${DISK_OUT}\"}"
-  echo $json | jq . > keymap.json
-  
+    TEST_RESULT=${TEST_PREFIX}_${NUM_PROCS}procs_${map[${WORKLOAD}]}
+    OSD_TEST_LIST="${TEST_RESULT}_list"
+    TOP_OUT_LIST="${TEST_RESULT}_top_list"
+    TOP_PID_LIST="${TEST_RESULT}_pid_list"
+    TOP_PID_JSON="${TEST_RESULT}_pid.json"
+    OSD_CPU_AVG="${TEST_RESULT}_cpu_avg.json"
+    DISK_STAT="${TEST_RESULT}_diskstat.json"
+    DISK_OUT="${TEST_RESULT}_diskstat.out"
+    # Produce the keymap.json:
+    json="{\"workload\":\"${WORKLOAD}\",\"workload_name\":\"${WORKLOAD_NAME}\",\"test_prefix\":\"${TEST_PREFIX}\",\"osd_type\":\"${OSD_TYPE}\",\"num_procs\":${NUM_PROCS},\"iodepth\":\"${RANGE_IODEPTH}\",\"numjobs\":\"${RANGE_NUMJOBS}\",\"block_size_kb\": \"${BLOCK_SIZE_KB}\",\"latency_target\":${LATENCY_TARGET},\"response_curve\":${RESPONSE_CURVE},\"test_result\":\"${TEST_RESULT}\",\"osd_cpu_avg\":\"${OSD_CPU_AVG}\",\"osd_test_list\":\"${OSD_TEST_LIST}\",\"top_out_list\":\"${TOP_OUT_LIST}\",\"top_pid_list\":\"${TOP_PID_LIST}\",\"top_pid_json\":\"${TOP_PID_JSON}\",\"disk_stat\":\"${DISK_STAT}\",\"disk_out\":\"${DISK_OUT}\"}"
+    echo "$json" | jq . > keymap.json
+
+    #exit 0 # Success
 }
+##############################################################################################
+fun_run_workload_loop() {
+    local WORKLOAD=$1
+    local SINGLE=$2
+    local WITH_PERF=$3
+    local TEST_PREFIX=$4
+    local WORKLOAD_NAME=$5 # used for respose curves
 
+    fun_set_globals $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX $WORKLOAD_NAME
+
+    if [ "$SKIP_OSD_MON" = false ]; then
+        fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "before"
+    fi
+
+    for job in $RANGE_NUMJOBS; do
+        for io in $RANGE_IODEPTH; do
+            local num_attempts=0
+            local rc=$FAILURE
+            while [[ $num_attempts -lt $NUM_ATTEMPTS && $rc -eq $FAILURE ]]; do
+                # We might need to check for OSD failure, etc
+                echo "== Attempt $((num_attempts+1)) for job $job with io depth $io =="
+                fun_run_workload $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX $WORKLOAD_NAME $job $io
+                rc=$?
+                if [[ $rc == $FAILURE ]]; then
+                    echo "== Attempt $((num_attempts+1)) failed, retrying... =="
+                    num_attempts=$((num_attempts+1))
+                else
+                    echo "== Attempt $((num_attempts+1)) succeeded =="
+                fi
+            done
+            if [[ "$rc" == "false" ]]; then
+                echo "== All attempts failed for job $job with io depth $io, exiting... =="
+                exit 1
+            fi
+        done # loop IO_DEPTH
+    done # loop num_jobs
+    if [ "$SKIP_OSD_MON" = false ]; then
+        fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "after"
+    fi
+    # Post processing:
+    fun_post_process   
+}
+        
 #############################################################################################
-# Refactor this
+# Run a single workload
 fun_run_workload() {
-  local WORKLOAD=$1
-  local SINGLE=$2
-  local WITH_PERF=$3
-  local TEST_PREFIX=$4
-  local WORKLOAD_NAME=$5 # used for respose curves
+    local WORKLOAD=$1
+    local SINGLE=$2
+    local WITH_PERF=$3
+    local TEST_PREFIX=$4
+    local WORKLOAD_NAME=$5 # used for respose curves
+    local job=$6
+    local io=$7
 
-  fun_set_globals $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX $WORKLOAD_NAME
+    # Check if file in place to indicate stop cleanly:
 
-  if [ "$SKIP_OSD_MON" = false ]; then
-    fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "before"
-  fi
-
-  for job in $RANGE_NUMJOBS; do
-    for io in $RANGE_IODEPTH; do
-      # Check if file in place to indicate stop cleanly:
-
-      # Take diskstats measurements before FIO instances
-      jc --pretty /proc/diskstats > ${DISK_STAT}
-      for (( i=0; i<${NUM_PROCS}; i++ )); do
-        if [ "$SKIP_OSD_MON" = false ]; then
-          #Bail out if no OSD process is running -- improve health check
-          NUM_OSD=$(pgrep -c osd)
-          if [[ $NUM_OSD -le 0 ]]; then
-            echo " ERROR == no OSD process running .. bailing out"
-            # Refactor the post into a function to be called from here to tidy up
-            exit 1;
-          fi
-        fi
-
+    # Take diskstats measurements before FIO instances
+    jc --pretty /proc/diskstats > ${DISK_STAT}
+    for (( i=0; i<${NUM_PROCS}; i++ )); do
         export TEST_NAME=${TEST_PREFIX}_${job}job_${io}io_${BLOCK_SIZE_KB}_${map[${WORKLOAD}]}_p${i};
         echo "== $(date) == ($io,$job): ${TEST_NAME} ==";
         echo fio_${TEST_NAME}.json >> ${OSD_TEST_LIST}
         fio_name=${FIO_JOBS}${FIO_JOB_SPEC}${map[${WORKLOAD}]}.fio
 
         if [ "$RESPONSE_CURVE" = true ]; then
-          log_name=${TEST_RESULT}
+            log_name=${TEST_RESULT}
         else
-          log_name=${TEST_NAME}
+            log_name=${TEST_NAME}
         fi
         # Execute FIO: for multijob/vols, we do not need to indicate the RBD_NAME
-          LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} \
+        LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} \
             taskset -ac ${FIO_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json \
             --output-format=json 2> fio_${TEST_NAME}.err &
-          fio_id["fio_${i}"]=$!
-          global_fio_id+=($!)
-      done # loop NUM_PROCS
-      sleep 30; # ramp up time
+        fio_id["fio_${i}"]=$!
+        global_fio_id+=($!)
+    done # loop NUM_PROCS
+    sleep 30; # ramp up time
 
-      if [ "$SKIP_OSD_MON" = false ]; then
+    if [ "$SKIP_OSD_MON" = false ]; then
         # Prepare list of pid to monitor
         osd_pids=$( fun_join_by ',' ${osd_id[@]} )
         if [ "$WITH_PERF" = true ]; then
-          echo "== $(date) == Profiling $osd_pids =="
-          fun_perf "$osd_pids" ${TEST_NAME}
+            echo "== $(date) == Profiling $osd_pids =="
+            fun_perf "$osd_pids" ${TEST_NAME}
         fi
-      fi
+    fi
 
-      # We use this list of pid to extract the pid corresponding CPU util from the top profile
-      fio_pids=$( fun_join_by ',' ${fio_id[@]} )
-      top_out_name=${TEST_NAME}
-      echo "== Monitoring OSD: $osd_pids FIO: $fio_pids =="
-      # Need to make it more resilient if the process being monitored dies
-      #
-      if [ "$RESPONSE_CURVE" = true ]; then
+    # We use this list of pid to extract the pid corresponding CPU util from the top profile
+    fio_pids=$( fun_join_by ',' ${fio_id[@]} )
+    top_out_name=${TEST_NAME}
+    echo "== Monitoring OSD: $osd_pids FIO: $fio_pids =="
+    # Need to make it more resilient if the process being monitored dies
+    if [ "$RESPONSE_CURVE" = true ]; then
         #fio_pids_acc="$fio_pids_acc,$fio_pids"
         top_out_name=${TEST_RESULT}
-      else
+    else
         echo "OSD: $osd_pids" > ${TOP_PID_LIST}
         echo "FIO: $fio_pids" >> ${TOP_PID_LIST}
         printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
-      fi
-      all_pids=$( fun_join_by ',' ${osd_id[@]}  ${fio_id[@]} )
-      fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
-      timestamp=$(date +%Y%m%d_%H%M%S)
-      fun_osd_dump ${TEST_RESULT} 24 5 ${OSD_TYPE} ${timestamp} "reactor_utilization" &
+    fi
+    all_pids=$( fun_join_by ',' ${osd_id[@]}  ${fio_id[@]} )
+    fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
+    if [ "$SKIP_OSD_MON" = false ]; then
+        timestamp=$(date +%Y%m%d_%H%M%S)
+        fun_osd_dump ${TEST_RESULT} 24 5 ${OSD_TYPE} ${timestamp} "reactor_utilization" &
+    fi
 
-      wait;
-      # Measure the diskstats after the completion of FIO instances
-      jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
+    # We have a watchdog: if the OSD dies and
+    # running with --no-restart, then FIO is killed
+    wait;
+    # Measure the diskstats after the completion of FIO instances
+    jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
 
-      # Exit the loops if the latency disperses too much from the median
-      if [ "$RESPONSE_CURVE" = true ] && [ "$RC_SKIP_HEURISTIC" = false ]; then
+    # Exit the loops if the latency disperses too much from the median
+    if [ "$RESPONSE_CURVE" = true ] && [ "$RC_SKIP_HEURISTIC" = false ]; then
         mop=${mode[${WORKLOAD}]}
-        covar=$(jq ".jobs | .[] | .${mop}.clat_ns.stddev/.${mop}.clat_ns.mean < 0.5 and \
-          .${mop}.clat_ns.mean/1000000 < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
-                  if [ "$covar" != "true" ]; then
-                    echo "== Latency std dev too high, exiting loops =="
-                    break 2
-                  fi
-      fi
-    done # loop IODEPTH
-  done # loop NUM_JOBS 
+        # Original condition:
+        #covar=$(jq ".jobs | .[] | .${mop}.clat_ns.stddev/.${mop}.clat_ns.mean < 0.5 and \
+        #    .${mop}.clat_ns.mean/1000000 < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
+        # Simplified less stringent condition:
+        #covar=$(jq ".jobs | .[] | .${mop}.clat_ns.mean/1000000 < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
+        latency=$(jq ".jobs | .[] | .${mop}.clat_ns.mean/1000000 " fio_${TEST_NAME}.json)
+        if (( $(echo $latency $MAX_LATENCY | awk '{if ($1 > $2) print 1;}') )); then
+            echo "== Latency ${latency} too high, failing this attempt =="
+            return $FAILURE
+        fi
+    fi
+    return $SUCCESS
+} # end of fun_run_workload
 
-  if [ "$SKIP_OSD_MON" = false ]; then
-    fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "after"
-  fi
-
-  # Refactor into two subroutines
-  # Post processing:
-  if [ "$RESPONSE_CURVE" = true ]; then
-    echo "OSD: $osd_pids" > ${TOP_PID_LIST}
-    fio_pids=$( fun_join_by ',' ${global_fio_id[@]} )
-    echo "FIO: $fio_pids" >> ${TOP_PID_LIST}
-    printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
-    # CPU avg, so we might add a condttion (or option) to select which
-    # When collecting data for response curves, produce charts for the cummulative pid list
-    cat ${TEST_RESULT}_top.out | jc --top --pretty > ${TEST_RESULT}_top.json
-    python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
-      --pids=${TOP_PID_JSON} 2>&1 > /dev/null
+#############################################################################################
+fun_post_process() {
+    # local TEST_PREFIX=$1
+    # local TEST_RESULT=$2
+    # local OSD_CORES=$3
+    # local OSD_CPU_AVG=$4
+    #
+    # Refactor into two subroutines
+    # Post processing:
+    if [ "$RESPONSE_CURVE" = true ]; then
+        echo "OSD: $osd_pids" > ${TOP_PID_LIST}
+        fio_pids=$( fun_join_by ',' ${global_fio_id[@]} )
+        echo "FIO: $fio_pids" >> ${TOP_PID_LIST}
+        printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
+        # CPU avg, so we might add a condttion (or option) to select which
+        # When collecting data for response curves, produce charts for the cummulative pid list
+        cat ${TEST_RESULT}_top.out | jc --top --pretty > ${TEST_RESULT}_top.json
+        python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+            --pids=${TOP_PID_JSON} 2>&1 > /dev/null
     else
-          #  single top out file with OSD and FIO CPU util
-          for x in $(cat ${TOP_OUT_LIST}); do
+        #  single top out file with OSD and FIO CPU util
+        for x in $(cat ${TOP_OUT_LIST}); do
             # CPU avg, so we might add a condttion (or option) to select which
             # When collecting data for response curves, produce charts for the cummulative pid list
             if [ -f "$x" ]; then
                 cat $x | jc --top --pretty > ${TEST_RESULT}_top.json
-              python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
-                --pids=${TOP_PID_JSON} 2>&1 > /dev/null
-                              # We always calculate the arithmetic avg, the perl script has got a new flag
-                              # to indicate whether we skip producing individual charts
+                python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+                    --pids=${TOP_PID_JSON} 2>&1 > /dev/null
+                # We always calculate the arithmetic avg, the perl script has got a new flag
+                # to indicate whether we skip producing individual charts
             fi
-          done
-  fi
-  # Post processing: FIO .json
-  if [ -f  ${OSD_TEST_LIST} ] && [ -f  ${OSD_CPU_AVG} ]; then
-    # Filter out any FIO high latency error from the .json, otherwise the Python script bails out
-    for x in $(cat ${OSD_TEST_LIST}); do
-      sed -i '/^fio:/d' $x
+        done
+    fi
+    # Post processing: FIO .json
+    if [ -f  ${OSD_TEST_LIST} ] && [ -f  ${OSD_CPU_AVG} ]; then
+        # Filter out any FIO high latency error from the .json, otherwise the Python script bails out
+        for x in $(cat ${OSD_TEST_LIST}); do
+            sed -i '/^fio:/d' $x
+        done
+        python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
+    fi
+    # Post processing: OSD dump_metrics .json -- disabling this since we are no longer using it
+    # for x in $(ls osd*_dump_*.json); do
+    #   cat $x | jq '[paths(values) as $path | {"key": $path    | join("."), "value": getpath($path)}] | from_entries' > /tmp/temposd.json
+    #   mv /tmp/temposd.json $x
+    # done
+
+    # Produce charts from the scripts .plot and .dat files generated
+    for x in $(ls *.plot); do
+        gnuplot $x 2>&1 > /dev/null
     done
-    python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
-  fi
-  # Post processing: OSD dump_metrics .json -- disabling this since we are no longer using it
-  # for x in $(ls osd*_dump_*.json); do
-  #   cat $x | jq '[paths(values) as $path | {"key": $path    | join("."), "value": getpath($path)}] | from_entries' > /tmp/temposd.json
-  #   mv /tmp/temposd.json $x
-  # done
 
-  # Produce charts from the scripts .plot and .dat files generated
-  for x in $(ls *.plot); do
-    gnuplot $x 2>&1 > /dev/null
-  done
+    # Generate single animated file from a timespan of FIO charts
+    # Need to traverse the suffix of the charts produced to know which ones we want to coalesce
+    # on a single animated .gif
+    #  if [ "$RESPONSE_CURVE" = true ]; then
+    #    echo "== This is a response curve run =="
+    #    fun_coalesce_charts ${TEST_PREFIX} ${TEST_RESULT}
+    #  fi
+    #cd # location of FIO .log data
+    #fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280 # Made some tweaks, so will keep it in my priv repo
+    # Neeed coalescing by volume
+    # Deprecating this, will try using pandas instead
+    #/root/bin/fio_generate_plots ${TEST_NAME} 650 280 2>&1 > /dev/null
 
-  # Generate single animated file from a timespan of FIO charts
-  # Need to traverse the suffix of the charts produced to know which ones we want to coalesce
-  # on a single animated .gif
-  #  if [ "$RESPONSE_CURVE" = true ]; then
-  #    echo "== This is a response curve run =="
-  #    fun_coalesce_charts ${TEST_PREFIX} ${TEST_RESULT}
-  #  fi
-  #cd # location of FIO .log data
-  #fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280 # Made some tweaks, so will keep it in my priv repo
-  # Neeed coalescing by volume
-  # Deprecating this, will try using pandas instead
-  #/root/bin/fio_generate_plots ${TEST_NAME} 650 280 2>&1 > /dev/null
+    # Process perf if any
+    if [ "$WITH_PERF" = true ]; then
+        for x in $(ls *perf.out); do
+            #y=${x/perf.out/scripted.gz}
+            z=${x/perf.out/fg.svg}
+            y=${x/perf.out}
+            echo "==$(date) == Perf script $x: $y =="
+            perf script -i $x | c++filt | ${PACK_DIR}/FlameGraph/stackcollapse-perf.pl | sed -e 's/perf-crimson-ms/reactor/g' -e 's/reactor-[0-9]\+/reactor/g'  -e 's/msgr-worker-[0-9]\+/msgr-worker/g' > ${x}_merged
+            python3 /root/bin/pp_crimson_flamegraphs.py -i ${x}_merged |  ${PACK_DIR}/FlameGraph/flamegraph.pl --title "${y}" > ${z}
+            #perf script -i $x | c++filt | gzip -9 > $y
+            # Option whether want to keep the raw data
+            #perf script -i $x | c++filt | ./stackcollapse-perf.pl | ./flamegraph.pl > $z
+            gzip -9 ${x}_merged
+            rm -f ${x}
+        done
+    fi
+    # Curate perf_metrics (Crimson only):
+    /root/bin/pp_get_config_json.sh -d ${RUN_DIR} -w ${TEST_RESULT}
 
-  # Process perf if any
-  if [ "$WITH_PERF" = true ]; then
-    for x in $(ls *perf.out); do
-      #y=${x/perf.out/scripted.gz}
-      z=${x/perf.out/fg.svg}
-      y=${x/perf.out}
-      echo "==$(date) == Perf script $x: $y =="
-      perf script -i $x | c++filt | ${PACK_DIR}/FlameGraph/stackcollapse-perf.pl | sed -e 's/perf-crimson-ms/reactor/g' -e 's/reactor-[0-9]\+/reactor/g'  -e 's/msgr-worker-[0-9]\+/msgr-worker/g' > ${x}_merged
-      python3 /root/bin/pp_crimson_flamegraphs.py -i ${x}_merged |  ${PACK_DIR}/FlameGraph/flamegraph.pl --title "${y}" > ${z}
-      #perf script -i $x | c++filt | gzip -9 > $y
-      # Option whether want to keep the raw data
-      #perf script -i $x | c++filt | ./stackcollapse-perf.pl | ./flamegraph.pl > $z
-      gzip -9 ${x}_merged
-      rm -f ${x}
-    done
-  fi
-  # Remove empty .err files
-  find . -type f -name "fio*.err" -size 0c -exec rm {} \;
-  # Remove empty tmp  files
-  find . -type f -name "tmp*" -size 0c -exec rm {} \;
-  #Archive FIO err files:
-  zip -9mqj fio_${TEST_RESULT}_err.zip *.err
-  # Curate perf_metrics (Crimson only):
-  /root/bin/pp_get_config_json.sh -d ${RUN_DIR} -w ${TEST_RESULT}
-  # Generate report: use the template, integrate the tables/charts -- per workload
-  # /root/tinytex/tools/texlive/bin/x86_64-linux/pdflatex -interaction=nonstopmode ${TEST_RESULT}.tex
-  # Run it again to get the rences, TOC, etc
-  # Archiving:
-  zip -9mqj ${TEST_RESULT}.zip ${_TEST_LIST} ${TEST_RESULT}_json.out \
-    *_top.out *.json *.plot *.dat *.png *.gif ${TOP_OUT_LIST} \
-    osd*_threads.out *_list ${TOP_PID_LIST} *.svg *.tex *_cpu_distro.log numa_args*.out *_diskstat.out *.log
-      # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
-      #rm -f *.log
-    }
+    fun_tidyup ${TEST_RESULT}
+}
+#############################################################################################
+fun_tidyup() {
+    local TEST_RESULT=$1
+    local stat=$2
+
+    # Remove empty .err files
+    find . -type f -name "fio*.err" -size 0c -exec rm {} \;
+    # Remove empty tmp  files
+    find . -type f -name "tmp*" -size 0c -exec rm {} \;
+    #Archive FIO err files:
+    zip -9mqj fio_${TEST_RESULT}_err.zip *.err
+    # Generate report: use the template, integrate the tables/charts -- per workload
+    # /root/tinytex/tools/texlive/bin/x86_64-linux/pdflatex -interaction=nonstopmode ${TEST_RESULT}.tex
+    # Run it again to get the references, TOC, etc
+    # Archiving:
+    zip -9mqj ${TEST_RESULT}${stat}.zip ${_TEST_LIST} ${TEST_RESULT}_json.out \
+        *_top.out *.json *.plot *.dat *.png *.gif ${TOP_OUT_LIST} \
+        osd*_threads.out *_list ${TOP_PID_LIST} *.svg *.tex  numa_args*.out *_diskstat.out
+    # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
+    # rm -f *.log *_cpu_distro.log
+}
 
 #############################################################################################
 fun_set_osd_pids() {
@@ -556,6 +605,13 @@ fun_post_process_cold() {
     rm -rf $yn
   done
 }
+
+#############################################################################################
+trap "exit" INT TERM
+#trap "kill 0" EXIT
+
+trap 'echo "$(date):run_fio == Got signal from parent, quiting =="; kill -9 ${fio_id[@]}; jobs -p | xargs -r kill -9; fun_tidyup ${TEST_RESULT} _failed; exit 1' SIGINT SIGTERM SIGHUP
+
 #############################################################################################
 # main:
 
@@ -569,6 +625,9 @@ if [ "$POST_PROC" = false ]; then
   fun_set_fio_job_spec
 fi
 
+# Launch a continuous monitoring of the OSD process, exit with failure if no
+# OSD is running and kill all FIO etc processes, tidy up
+
   if [ "$RUN_ALL" = true ]; then
     if [ "$SINGLE" = true ]; then
       procs_order=( true )
@@ -579,15 +638,16 @@ fi
         if [ "$POST_PROC" = true ]; then
           fun_post_process_cold $wk $single_procs  $WITH_PERF $TEST_PREFIX $WORKLOAD 
         else
-          fun_run_workload $wk $single_procs  $WITH_PERF $TEST_PREFIX $WORKLOAD
+          fun_run_workload_loop $wk $single_procs  $WITH_PERF $TEST_PREFIX $WORKLOAD
         fi
       done
     done
   else
-    fun_run_workload $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX
+    fun_run_workload_loop $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX
   fi
 
   echo ${osd_id[@]}
 
 echo "$(date)== Done =="
 popd
+exit 0 # Success

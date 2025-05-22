@@ -22,7 +22,8 @@ import sys
 import re
 import json
 import tempfile
-#import numpy as np
+
+# import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -335,7 +336,7 @@ class PerfMetricEntry(object):
 
     def save_table(self, name, df):
         """
-        Save the dataframe df in latex format in the file name
+        Save the dataframe df in latex and markdown format using name
         We need to rename the columns to remove the "_" and other special characters
         for LaTex
         """
@@ -343,8 +344,11 @@ class PerfMetricEntry(object):
             df.rename_axis("shard")
             df.rename(columns=lambda x: x.replace("_", "\\_"), inplace=True)
             print(f"++ Dataframe ${name} is ++:\n{df}")
-            with open(name, "w", encoding="utf-8") as f:
+            with open(f"{name}.tex", "w", encoding="utf-8") as f:
                 print(df.to_latex(), file=f)
+                f.close()
+            with open(f"{name}.md", "w", encoding="utf-8") as f:
+                print(df.to_markdown(), file=f)
                 f.close()
 
     def make_metrics_chart(self, df, outname):
@@ -446,7 +450,7 @@ class PerfMetricEntry(object):
             if not df_slice.empty:
                 df_describe = df_slice.describe()
                 self.save_table(
-                    outname.replace(".json", f"_{slice_name}_table.tex"), df_describe
+                    outname.replace(".json", f"_{slice_name}_table"), df_describe
                 )
                 logger.info(
                     f"{slice_name} description: {df_describe.info(verbose=False)}"
@@ -490,13 +494,23 @@ class PerfMetricEntry(object):
                     return k
             return None
 
-        def _get_diff(a_data, b_data):
-            return a_data - b_data
+        def _get_diff(a_data: List[float], b_data: List[float]) -> List[float]:
+            return [ a - b for a, b in zip(a_data, b_data) ]
 
-        def _get_avg(a_data, b_data):
+        def _get_avg(a_data: List[float], b_data: List[float]) -> List[float]:
+            return [ (a + b) / 2 for a, b in zip(a_data, b_data) ]
+
+        def _get_max(a_data:List, b_data: List) -> List:
+            return [max(a, b) for a, b in zip(a_data, b_data)]
+
+        # Singleton version might not longer needed
+        def _get_sdiff(a_data, b_data):
+            return  a_data - b_data
+
+        def _get_savg(a_data, b_data):
             return (a_data + b_data) / 2
 
-        def _get_max(a_data, b_data):
+        def _get_smax(a_data, b_data):
             return max(a_data, b_data)
 
         # Refactor since we have REDUCTORS defined
@@ -524,10 +538,13 @@ class PerfMetricEntry(object):
         for k in b_data:  # keys are shards
             for m in b_data[k]:  # metrics
                 cb = _get_cb(m, cb_name)
-                a_data[k][m] = cb(a_data[k][m], b_data[k][m])
+                # each of the following is a list of measurements per shard,
+                # Might need to be simplified
+                a_data[k][m] = cb(a_data[k][m], b_data[k][m]).pop(0)
+                    
         return a_data
 
-    def filter_metrics(self, ds_list) -> Dict[str, Any]:
+    def filter_metrics(self, ds_list: Dict[str,Any]|List[Dict[str,Any]]) -> Dict[str, Any]:
         """
         Filter the (array of dicts) to the measurements we want.
         ds_list is normally the contents of a single .json file, which is a list of dicts (samples).
@@ -546,9 +563,15 @@ class PerfMetricEntry(object):
         we have K samples per shard, so we need to keep the samples as a list, or reduce per
         shard eg. take the avg of each K samples to produce a single value per shard.
         """
+        if isinstance(ds_list, dict):
+            ds_list = [ds_list]
         result = {}  # This needs to be a cummulative dict, since we might want the full sequence
         _shard = None
         for ds in ds_list:
+            # ds is a dict with the key "metrics" and the values are dicts with the shard names
+            if "metrics" not in ds:
+                logger.error(f"Key 'metrics' not found in {ds}")
+                continue
             for item in ds["metrics"]:
                 # _key = list(item.keys()).pop()
                 for _metric in item.keys():
@@ -636,6 +659,7 @@ class PerfMetricEntry(object):
         """
         print(f"loading {len(json_files)} .json files ...")
         self.ds_list = [self.filter_metrics(load_json(f)) for f in json_files]
+        logger.info(f"ds_list: {self.ds_list}")
 
     def _reduce_metrics_df(self):
         """
@@ -742,10 +766,43 @@ class PerfMetricEntry(object):
     def aggregate_results(self):
         """
         Aggregate the results from the benchmark into a single dataframe
+        We also save the benchmark as a .json file, and the table as a .tex file
         """
+        def _plot_reactor_utilization(self, bench_df: pd.DataFrame):
+            """
+            Plot the reactor utilization from the time sequence, this is a special case
+            since we need to plot the time sequence as a line chart.
+            """
+            if self.time_sequence is not None:
+                plt.figure()
+                plt.plot(
+                    bench_df["iops"],
+                    bench_df["clat_ms"],
+                    # bench_df["estimated_cost"],
+                    marker="o",
+                    linestyle="--",
+                )
+                plt.xlabel("IOPs")
+                plt.ylabel("Latency (ms)")
+                # plt.ylabel("Estimated cost (IOPs per GHz)")
+                # plt.legend(title=f"{self.config["output"]}", loc="upper left") #FIXME
+                plt.title("Reactor Utilization over Time")
+                plt.grid(True)
+                plt.show()
+
+        # We might need to define this in a common type class
         regex = re.compile(r"rand.*")  # random workloads always report IOPs
         if self.config["benchmark"]:
             self.benchmark = load_json(self.config["benchmark"])
+            if not "reactor_utilization" in self.benchmark:
+                logger.error(
+                    f"KeyError: 'reactor_utilization' not found in {self.config['benchmark']}"
+                )
+                return
+            self.benchmark["reactor_utilization"] = (
+                self.time_sequence.get_avg_per_timestamp().tolist()
+            ) # type: ignore[no-untyped-call]
+            # _plot_reactor_utilization(self, self.benchmark)
             bench_df = pd.DataFrame(self.benchmark)
             m = regex.search(self.config["benchmark"])
             if m:
@@ -753,43 +810,34 @@ class PerfMetricEntry(object):
             else:
                 col = "bw"
 
-            bench_df["reactor_utilization"] = self.time_sequence.get_avg_per_timestamp()
-            logger.info(
-                f"bench_df[reactor_utilization]:\n{bench_df['reactor_utilization']}"
-            )
-
+            #bench_df["reactor_utilization"] = self.time_sequence.get_avg_per_timestamp()
+            # Aggregate the results to the benchmark df and the original dict
             bench_df["estimated_cost"] = bench_df[col] / (
                 bench_df["reactor_utilization"] * self.CPU_CLOCK_SPEED_GHZ
             )
+            self.benchmark["estimated_cost"] = (
+                bench_df["estimated_cost"].to_numpy().tolist()
+            )
+
+            logger.info(f"Original benchmark:\n{self.benchmark}\nbench_df:\n{bench_df}")
+            save_json(self.config["benchmark"], self.benchmark)
+            # Prepare table and plot
             bench_df = bench_df.filter(
                 regex=r"^(iops|bw|iodepth|total_ios|clat_ms|reactor_utilization|estimated_cost)"
             )
-            plt.figure()
-            plt.plot(
-                bench_df["iops"],
-                bench_df["clat_ms"],
-                #bench_df["estimated_cost"],
-                marker="o",
-                linestyle="--",
-            )
-            plt.xlabel("IOPs")
-            plt.ylabel("Latency (ms)")
-            #plt.ylabel("Estimated cost (IOPs per GHz)")
-            #plt.legend(title=f"{self.config["output"]}", loc="upper left") #FIXME
-            plt.show()
-
+            
             logger.info(f"Aggregated df:\n{bench_df}")
             # Save bench_df as a .tex table file
             self.save_table(
-                self.config["output"].replace(".json", "_bench_table.tex"), bench_df
+                self.config["output"].replace(".json", "_bench_table"), bench_df
             )
             # Save the bench_df as a .json file
             _bname = self.config["output"].replace(".json", "_bench_df.json")
-            save_json( _bname, bench_df.to_dict('tight')) # split
+            save_json(_bname, bench_df.to_dict("tight"))  # split
             # Test we get the same data back
-            _bench_df = pd.DataFrame.from_dict(load_json(_bname), orient='tight')
+            _bench_df = pd.DataFrame.from_dict(load_json(_bname), orient="tight")
             logger.info(f"Bench_df loaded from { _bname }:\n{_bench_df}")
-            
+
     def define_operator(self):
         """
         Define the operator to be used for the reduction
@@ -864,7 +912,6 @@ class PerfMetricEntry(object):
         """
         Exception class for PerfMetricEntry
         """
-
         pass
 
     class PerfMetricTimeSequence:
@@ -962,7 +1009,6 @@ class PerfMetricEntry(object):
             else:
                 logger.error("No time sequence available to plot")
 
-
         def _plot_ln(self, df, name):
             """
             Plot the time sequence using lineplot
@@ -1009,7 +1055,7 @@ class PerfMetricEntry(object):
             logger.info(f"Avg per shard is:\n{self.avg_per_shard}")
             # aka reactor_utilization_df to embed into the table:
             logger.info(f"Avg per timestamp is:\n{self.avg_per_timestamp}")
-            self.plot_reactor_utilization()
+            ##self.plot_reactor_utilization()
             # self._plot_ln(self.full_sequence, "full_sequence") # FIXME
             # self._plot(self.avg_per_timestamp, "avg_per_timestamp")
 

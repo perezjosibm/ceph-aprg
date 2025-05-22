@@ -21,7 +21,7 @@ fun_apply_filter() {
     local workload=$1
 
     if [ "$FORCE" = false ]; then
-        for x in  ${workload}_dump*.json; do
+        for x in $(ls ${workload}_dump*.json); do
             jq -s '[.[]]' $x > /tmp/tmpo
             mv /tmp/tmpo $x
         done

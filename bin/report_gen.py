@@ -6,54 +6,88 @@ generate a report in .tex
 
 import argparse
 import logging
+import subprocess
 import os
 import sys
 import json
 import glob
+import re 
 import tempfile
-# import re
-# import numpy as np
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import List, Dict, Any
 from common import load_json, save_json
 
-__author__ = 'Jose J Palacios-Perez'
+__author__ = "Jose J Palacios-Perez"
 
 logger = logging.getLogger(__name__)
-#root_logger = logging.getLogger(__name__)
+# root_logger = logging.getLogger(__name__)
+
 
 class Reporter(object):
+    """
+    This class is used to generate a report from the results of the performance
+    tests. It will traverse the directories given in the configuration file,
+    and generate a report in .tex and .md format. The input (runs) is a
+    dictionary describing the directories to traverse (values), with keys the
+    aliases or test names. The report will contain tables and figures for the
+    performance tests, often comparing results from the input runs directories.
+    Each section correspond to a workload. The report will be generated in the
+    directory given in the configuration file.
+    """
+
+    # This is the list of workloads we are interested in
     WORKLOAD_LIST = ["randread", "randwrite", "seqread", "seqwrite"]
-    OSD_LIST = [1,3,8]
-    REACTOR_LIST = [1,2,4]
-    ALIEN_LIST = [7,14,21]
+    # These are the default set of values lists of OSDs, Reactors, Alien threads
+    OSD_LIST = [1, 3, 8]
+    REACTOR_LIST = [1, 2, 4]
+    ALIEN_LIST = [7, 14, 21]
+    # To be deprecated: since pandas df support a conversion method
     TBL_HEAD = r"""
 \begin{table}[h!]
 \centering
 \begin{tabular}[t]{|l*{6}{|c|}}
    \hline 
 """
-    
-    def __init__(self, json_name:str=""):
+    # Dictionary to indicate how to generate required .json files: a makefile would do better
+    GENERATOR = {
+        "perf_metrics": {
+            "command": "python3 perf_metrics.py",
+            "args": "--config {config} --output {output}",
+            "description": "Generate the performance metrics from the config file",
+        },
+        "latency_target": {
+            "command": "python3 latency_target.py",
+            "args": "--config {config} --output {output}",
+            "description": "Generate the latency target from the config file",
+        },
+    }
+
+    def __init__(self, json_name: str = ""):
         """
         This class expects a config .json file containing:
         - list of directories (at least a singleton) containing result files to
           process into a report: this is described as a dictionary, keys is an
           alias (short name to use for the comparison), value is the directory
-          path
+          path. We assume that the directory structure is the same for all the
+          items in the list, and it contains one subdir per workload (named in
+          the same convention, eg <TEST_RESULT>_<WORKLOAD>_d/).
         - path to the target directory to produce the report (some subfolder
           would be created if not already present)
-        - path to the .tex template file to used
+        - path to the .tex template file to used -- a whole bunch should be provided TBC
         - flag to indicate the comparison (we assume by default that the
           comparison is across the directories, with the same structure)
         """
-        self.json_name = json_name
-        self.config = {} 
-        self.entries = {}
-        self.ds_list= {}
-        self.body = {}
+        self.json_name: str = json_name
+        self.config = {}  # type: Dict[str, Any]
+        # Dict describing the test run tree: OSD, reactor, alien threads
+        self.entries = {}  # type: Dict[str, Any]
+        # DataSet: main struct
+        self.ds_list = {}  # type: Dict[str, Any]
+        # Body of the report, to be filled with references to the tables and figures
+        self.body = {} # type: Dict[str, Any]
 
     def traverse_dir(self):
         """
@@ -61,52 +95,57 @@ class Reporter(object):
         """
         pass
 
-    def start_fig_table(self, header:list[str]):
+    def start_fig_table(self, header: list[str]):
         """
         Instantiates the table template for the path and caption
         """
-        head_table="""
+        head_table = (
+            """
 \\begin{table}\\sffamily
 \\begin{tabular}{l*2{C}@{}}
 \\toprule
-""" +  " & ".join(header) + "\\\\" + """
+"""
+            + " & ".join(header)
+            + "\\\\"
+            + """
 \\midrule
 """
-        #print(head_table)
+        )
+        # print(head_table)
         return head_table
 
-    def end_fig_table(self, caption:str=""):
-        end_table=f"""
+    def end_fig_table(self, caption: str = ""):
+        end_table = f"""
 \\bottomrule 
 \\end{{tabular}}
 \\caption{{{caption}}}
 \\end{{table}}
 """
         return end_table
-        #print(end_table)
+        # print(end_table)
 
-    def instance_fig(self, path:str):
+    def instance_fig(self, path: str):
         """
         Instantiates the figure template for the path and caption
         """
-        add_pic=f"\\addpic{{{path}}}"
+        add_pic = f"\\addpic{{{path}}}"
         return add_pic
-        #print(add_pic) # replace to write to oputput file instead
+        # print(add_pic) # replace to write to oputput file instead
 
-    def gen_table_row(self, dir_nm:str, proc:str):
+    def gen_table_row(self, dir_nm: str, proc: str):
         """
         Capture CPU,MEM charts for the current directory
         """
         utils = []
         row = []
         # CPU util on left, MEM util on right
-        for metric in [ "cpu", "mem" ]:
+        for metric in ["cpu", "mem"]:
             fn = glob.glob(f"{dir_nm}/{proc}_*_top_{metric}.png")
             if fn:
-                #logger.info(f"found {fn[0]}")
+                logger.info(f"found {fn[0]}")
                 row.append(self.instance_fig(fn[0]))
                 utils.append(f"{fn[0]}")
-        self.entries.update( { f"{dir_nm}": utils} )
+        self.entries.update({f"{dir_nm}": utils})
         return row
 
     def get_iops_entry(self, osd_num, reactor_num):
@@ -114,24 +153,25 @@ class Reporter(object):
         Generate a IOPs table: columns are the .JSON dict keys,
         row_index is the test stage (num alien threads, num reactors, num OSD)
         """
-        entry = self.entries['OSD'][str(osd_num)]["reactors"][str(reactor_num)]
-        entry.update({ "aliens": {} })
+        entry = self.entries["OSD"][str(osd_num)]["reactors"][str(reactor_num)]
+        entry.update({"aliens": {}})
 
         for at_num in self.ALIEN_LIST:
-            entry["aliens"].update( {str(at_num): {} })
+            entry["aliens"].update({str(at_num): {}})
             dir_nm = f"crimson_{osd_num}osd_{reactor_num}reactor_{at_num}at_8fio_lt_1procs_randread"
             fn = glob.glob(f"{dir_nm}/fio_{dir_nm}.json")
             if fn:
-                with open(fn[0], 'r') as f:
+                with open(fn[0], "r") as f:
                     entry["aliens"][str(at_num)] = json.load(f)
                     f.close()
 
     def gen_iops_table(self, osd_num, reactor_num):
         """
-        Generate a results table: colums are measurements, row index is a test config 
+        Generate a results table: colums are measurements, row index is a test config
         index
+        This was an early version, we might deprecate in favour of pandas dataframe.to_latex()
         """
-        TBL_TAIL =f"""
+        TBL_TAIL = f"""
    \\hline
 \\end{{tabular}}
 \\caption{{Performance on {osd_num} OSD, {reactor_num} reactors.}}
@@ -139,148 +179,329 @@ class Reporter(object):
 \\end{{table}}
 """
         table = ""
-        # This dict has keys measurements
-        # To generalise: need reduce (min-max/avg) into a dict
-        entry_table = self.entries['OSD'][str(osd_num)]["reactors"][str(reactor_num)]
-        body_table = self.body['OSD'][str(osd_num)]["reactors"][str(reactor_num)]
-        body_table.update({"table":""}) 
+        # This dict has keys measurements
+        # To generalise: need reduce (min-max/avg) into a dict
+        entry_table = self.entries["OSD"][str(osd_num)]["reactors"][str(reactor_num)]
+        body_table = self.body["OSD"][str(osd_num)]["reactors"][str(reactor_num)]
+        body_table.update({"table": ""})
         for at_num in self.ALIEN_LIST:
             entry = entry_table["aliens"][str(at_num)]
             if not table:
-                table = self.TBL_HEAD 
+                table = self.TBL_HEAD
                 table += r"Alien\\Threads & "
-                table += " & ".join(map(lambda x: x.replace(r"_",r"\_"), list(entry.keys())))
+                table += " & ".join(
+                    map(lambda x: x.replace(r"_", r"\_"), list(entry.keys()))
+                )
                 table += r"\\" + "\n" + r"\hline" + "\n"
             table += f" {at_num} & "
-            table += " & ".join(map("{:.2f}".format,list(entry.values())))
+            table += " & ".join(map("{:.2f}".format, list(entry.values())))
             table += r"\\" + "\n"
         table += TBL_TAIL
-        body_table["table"] = table 
+        body_table["table"] = table
 
     def gen_charts_table(self, osd_num, reactor_num):
         """
-        Generate a charts util table: colums are measurements, row index is a test config 
+        Generate a charts util table: colums are measurements, row index is a test config
         index
         """
-        body_table = self.body['OSD'][str(osd_num)]["reactors"][str(reactor_num)]
-        body_table.update({"charts_table":""}) 
+        body_table = self.body["OSD"][str(osd_num)]["reactors"][str(reactor_num)]
+        body_table.update({"charts_table": ""})
         dt = ""
-        for proc in [ "OSD", "FIO" ]:
+        for proc in ["OSD", "FIO"]:
             # identify the {FIO,OSD}*_top{cpu,mem}.png files to pass to the template
             # One table per process
             dt += self.start_fig_table([r"Alien\\threads", "CPU", "Mem"])
             for at_num in self.ALIEN_LIST:
-                row=[]
-                # TEST_RESULT
+                row = []
+                # TEST_RESULT
                 # Pickup FIO_*.json out -- which can be a list
                 dir_nm = f"crimson_{osd_num}osd_{reactor_num}reactor_{at_num}at_8fio_lt_1procs_randread"
                 logger.info(f"examining {dir_nm}")
-                #os.chdir(dir_nm)
+                # os.chdir(dir_nm)
                 row.append(str(at_num))
                 row += self.gen_table_row(dir_nm, proc)
-                dt += r' & '.join(row) + r'\\' + "\n"
-                #print(r' & '.join(row) + r'\\')
+                dt += r" & ".join(row) + r"\\" + "\n"
+                # print(r' & '.join(row) + r'\\')
             dt += self.end_fig_table(
-                f"{osd_num} OSD, {reactor_num} Reactors, 4k Random read: {proc} utilisation")
+                f"{osd_num} OSD, {reactor_num} Reactors, 4k Random read: {proc} utilisation"
+            )
         body_table["charts_table"] = dt
 
-    def start(self):
+    def _start(self):
         """
         Entry point: this is a fixed structure, using the config .json we traverse in the order given
         """
-        self.entries.update({'OSD': {}})
-        self.body.update({'OSD': {}})
+        self.entries.update({"OSD": {}})
+        self.body.update({"OSD": {}})
         # Ideally, load a .json with the file names ordered
         for osd_num in self.OSD_LIST:
-            self.entries['OSD'].update({ str(osd_num): { "reactors": {} }})
-            self.body['OSD'].update({ str(osd_num): { "reactors": {} }})
+            self.entries["OSD"].update({str(osd_num): {"reactors": {}}})
+            self.body["OSD"].update({str(osd_num): {"reactors": {}}})
             # Chapter header
-            #self.body += f"\\chapter{{{osd_num} OSD, 4k Random read}}\n"
+            # self.body += f"\\chapter{{{osd_num} OSD, 4k Random read}}\n"
             for reactor_num in self.REACTOR_LIST:
-                self.entries['OSD'][str(osd_num)]["reactors"].update({ str(reactor_num): {}})
-                self.body['OSD'][str(osd_num)]["reactors"].update({ str(reactor_num): {}})
+                self.entries["OSD"][str(osd_num)]["reactors"].update(
+                    {str(reactor_num): {}}
+                )
+                self.body["OSD"][str(osd_num)]["reactors"].update(
+                    {str(reactor_num): {}}
+                )
                 # Section header: all alien threads in a single table
-                #self.body += f"\\section{{{reactor_num} Reactors}}\n"
+                # self.body += f"\\section{{{reactor_num} Reactors}}\n"
                 self.get_iops_entry(osd_num, reactor_num)
                 self.gen_iops_table(osd_num, reactor_num)
                 self.gen_charts_table(osd_num, reactor_num)
-        save_json(self.json_name.replace('.json', '_report.json'), self.entries)
+        save_json(self.json_name.replace(".json", "_report.json"), self.entries)
 
-    def compile(self):
+    def _compile(self):
         """
         Compile the .tex document, twice to ensure the references are correct
         """
         for osd_num in self.OSD_LIST:
             print(f"\\chapter{{{osd_num} OSD, 4k Random read}}")
             for reactor_num in self.REACTOR_LIST:
-                #print(f"\\section{{{reactor_num} Reactors}}")
-                dt = self.body['OSD'][str(osd_num)]["reactors"][str(reactor_num)]
+                # print(f"\\section{{{reactor_num} Reactors}}")
+                dt = self.body["OSD"][str(osd_num)]["reactors"][str(reactor_num)]
                 print(dt["table"])
-                #print(dt["charts_table"])
+                # print(dt["charts_table"])
             for reactor_num in self.REACTOR_LIST:
-                #print(f"\\section{{{reactor_num} Reactors}}")
-                dt = self.body['OSD'][str(osd_num)]["reactors"][str(reactor_num)]
-                #print(dt["table"])
+                # print(f"\\section{{{reactor_num} Reactors}}")
+                dt = self.body["OSD"][str(osd_num)]["reactors"][str(reactor_num)]
+                # print(dt["table"])
                 print(dt["charts_table"])
-        #print(self.body)
+        # print(self.body)
         if self.json_name:
-            with open(self.json_name, 'w', encoding='utf-8') as f:
-                json.dump(self.entries, f, indent=4 ) #, sort_keys=True, cls=TopEntryJSONEncoder)
+            with open(self.json_name, "w", encoding="utf-8") as f:
+                json.dump(
+                    self.entries, f, indent=4
+                )  # , sort_keys=True, cls=TopEntryJSONEncoder)
                 f.close()
 
-    def load_files(self, input_dirs:Dict[str,str]):
+    def generate_file(self, file_path: str):
         """
-        Load the .json files from the directories given in the input_dirs
-        dictionary. The keys are aliases for the directories, the values are
-        the paths to the directories.
+        Generate the file at the given path, based on the config .json file.
+        This is a stub, to be implemented later.
         """
-        for dir_alias, dir_path in input_dirs.items():
-            logger.info(f"Loading {dir_alias} from {dir_path}")
-            # Check if the directory exists
-            if not os.path.isdir(dir_path) or not os.listdir(dir_path):
-                logger.error(f"Directory {dir_path} does not exist or is empty")
-                continue
+        #Define a dictionary: keys are the files to generate, values are the commands to run
 
-            # Each dir contains the four typical workloads: randomread,
-            # randomwrite, sequentialread, sequentialwrite, need to traverse
-            # those
-            for workload in self.WORKLOAD_LIST:
-                # Check if the directory is empty
-                dp = os.path.join(dir_path, workload)
-                if not os.path.isdir(dp) or not os.listdir(dp):
-                    logger.error(f"Directory {dp} does not exist is empty")
-                    continue
-                # Load .json files in the directory as indicated by the benchmark field in the config
-                # glob.glob(dir_path + "/*_bench_df.json")
-                # We probably only need the first one
-                json_files = glob.glob(os.path.join(dir_path, f"{self.config['benchmark']}")) # *.json
-                for json_file in json_files:
-                    logger.info(f"Loading {json_file}")
-                    self.ds_list[dir_alias]['json'] = load_json(json_file)
+        logger.info(f"Generating file {file_path} based on {self.GENERATOR['perf_metrics']['command']} with args {self.GENERATOR['perf_metrics']['args']}")
+        # Here we would run the perf_metrics.py script with the expected config.json
+        # to generate the file
+        pass
 
-        # Transform each .json into a pandas DataFrame
-        for dir_alias, ds in self.ds_list.items():
-            # Assuming each entry is a dataframe
-            self.ds_list[dir_alias]['frame'] = pd.DataFrame.from_dict(ds, orient='tight')
+    def plot_dataset(self):
+        """
+        Plot the dataframes from the input list of .json files
+        Use the example, sns_multi_example.py, to generate the plots, and the alternative method
+        """
+        def _plot_ds_df(self, ds: pd.DataFrame, x_column: str, y_column: str):
+            """
+            Plot the given dataframe ds, using the x_column and y_column
+            """
+            sns.lineplot(data=ds, x=x_column, y=y_column)
+            plt.xlabel(x_column)
+            plt.ylabel(y_column)
+            plt.title(f"{x_column} vs {y_column}")
+            plt.grid(True)
+            plt.show()
 
-    def plot_dfs(self, ds_list:Dict[str, Any], output:str):
-        """
-        Plot the dataframes from the list of .json files
-        """
+        sns.set_theme()
+        # Set fig size to 650,420 px
+        fig, ax = plt.subplots(figsize=(650.0/100.0, 420.0/100.0), dpi=100)
+        regex = re.compile(r"rand.*")  # random workloads always report IOPs
         for workload in self.WORKLOAD_LIST:
-            for name, ds in ds_list.items():
-                #plt.figure()
-                # We only need to plot the columns we are interested in, iops, latency, etc
+            xcol = "clat_ms"  # default x column is latency in ms
+            #xcol = "iodepth"
+            m = regex.search(workload)
+            if m:
+                ycol = "iops"
+            else:
+                ycol = "bw"
 
-                sns.lineplot(data=ds['frame'], x='x_column', y='y_column')
-                plt.title(f"{workload} {name}")
+            df_list = []
+            for name, ds in self.ds_list.items():
+                # We only need to plot the columns we are interested in, iops, latency, etc
+                # plt.title(f"{workload} {name}")
+                df = pd.DataFrame({'x': ds[workload]["json"][xcol],
+                                   'y': ds[workload]["json"][ycol], 
+                                   'type': name})
+                df_list.append(df)
+                # df = pd.DataFrame({'x': ds[workload]["frame"][xcol],
+                #                    'y': ds[workload]["frame"][ycol], 
+                #                    'type': name})
+                #sns.lineplot(data=df, x='x', y='y', label=name, ax=ax)
+            df = pd.concat(df_list, ignore_index=True)
+            # Filter the dataframe to skip data points with latency values higher than 100 ms
+            df = df[df['x'] < 100]
+            logger.info(f"df for {workload}:\n{df}")
+            g = sns.relplot(
+                    data=df,
+                    x='x', #"latency",
+                    y='y', #"IOPS"/ "BW",
+                    hue="type",
+                    style="type",
+                    kind="line",
+                    markers=True,
+            ).set(title=f"{workload}: {xcol} vs {ycol}")
+            g.set_axis_labels(f"{xcol}", f"{ycol}")
+            #g.set_axis_labels("Latency(ms)", "IOPS (K)")
+            g.set(xticks=df['x'].unique())
+            #df.dataframe(df.style.format(subset=['Position', 'Marks'], formatter="{:.2f}"))
+            g.set_xticklabels(rotation=45)
+            g.legend.remove()
+            plt.legend(title="Build", loc="center right")
+            #plt.show()
             # We need to specify the output path, eg report_dir/figures
-            # And keep the output name so we can use it in the .tex files
-            plt.savefig(f"{workload}{output}.png")
+            # And keep the output name so we can use it in the .tex files
+            dp = os.path.join(self.config["output"]["path"], "figures/", self.config["output"]["name"])
+            plt.savefig(f"{dp}_{workload}.png", dpi=100, bbox_inches="tight")
             # Emit .tex code to include the figures and tables, use the report output name
             # Each workload name is a section
-            
             plt.close()
+
+    def load_files(self, input_dirs: Dict[str, Any]):
+        """
+        Load the (benchmark aggrgated).json files from the directories given in the input_dirs
+        dictionary. The keys are aliases (eg test run names) for the directories, the values are
+        the paths to the directories.
+
+        Example: (consider several for unit tests)
+        name: hwloc,
+        {
+        test_run: sea_1osd_56reactor_32fio_bal_osd_rc_1procs,
+        path: <PATH>/pr63350_hwloc/1osd_56reactor_28fio_sea_rc/,
+        }
+        each workload folder is {dir}/{test_name}_{workload}_d/{test_name}_{workload}_rutil_conf.json
+        """
+        def unzip_run_file(zip_file: str, out_dir: str):
+            """
+            Unzip the given zip file into the output directory.
+            """
+            command = f'unzip {zip_file} -d {out_dir} '
+            proc = subprocess.Popen(command, shell=True)
+            _ = proc.communicate()
+            return proc.returncode == 0
+        # print('Success' if proc.returncode == 0 else 'Error')
+
+        def load_bench_json(dp: str):
+            """
+            Load the benchmark .json file from the given path.
+            """        # Load .json files in the directory as indicated by the benchmark field in the config
+            # glob.glob(dir_path + "/*_bench_df.json")
+            # json_files = glob.glob(os.path.join(dir_path, f"{self.config['benchmark']}")) # *.json
+            # for json_file in json_files:
+            # logger.info(f"Loading {json_file}")
+            # If the .json file does not exist, need to consult with a
+            # dictionary describing what to run to produce the file,
+            # for example run perf_metrics.py with the expected
+            # config.json
+            if not os.path.isfile(dp):
+                logger.error(f"File {dp} does not exist")
+                return None
+            return load_json(dp)
+
+        def update_ds_list(name: str, workload: str, test_run: str, dir_path: str):
+            """
+            Update the dataset list with the given parameters.
+            """
+            if name not in self.ds_list:
+                self.ds_list[name] = {}
+            if workload not in self.ds_list[name]:
+                self.ds_list[name][workload] = {}
+            self.ds_list[name][workload].update(
+                {
+                    "test_run": test_run,
+                    "path": dir_path,
+                    "json": None,
+                    "frame": None,
+                }
+            )
+            # This is the name of the benchmark file, which is expected to be in the directory, 
+            # but also common name for the .dat, and other files
+            # We assume the benchmark file is named as <test_run>_<workload>.json
+            bench_name = f"{test_run}_{workload}.json"  # The original aggregated FIO and metrics
+            dp = os.path.join(dir_path, bench_name)
+            logger.info(f"{name}: Loading {bench_name} from {dp}")
+            self.ds_list[name][workload]["json"] = load_bench_json(dp)
+            self.ds_list[name][workload]["frame"] = pd.DataFrame(
+                self.ds_list[name][workload]["json"]
+            )
+        # self.ds_list[name][workload]["frame"] = pd.DataFrame.from_dict(
+        #     self.ds_list[name][workload]["json"], orient="tight"
+        # )
+
+
+        for name, test_d in input_dirs.items():
+            # Check if the directory exists,should be abetter Pythonic way to do this
+            # dir_path = os.path.join(test_d['dir'], test_d['test_run'])
+            if isinstance(test_d, dict) and "path" in test_d and "test_run" in test_d:
+                for workload in self.WORKLOAD_LIST:
+                    # Retrieve this from a keymap .json file
+                    test_dir = test_d["path"]  # type: str
+                    test_run = test_d["test_run"]  # type: str
+                    dir_path = os.path.join(test_dir, f"{test_run}_{workload}_d")
+                    zip_path = os.path.join(test_dir, f"{test_run}_{workload}.zip")
+                    # Check if the directory is empty
+                    if not os.path.isdir(dir_path):
+                        logger.error(f"Directory {dir_path} does not exist, attempting to create it from {zip_path}")
+                        os.makedirs(dir_path, exist_ok=True)
+                        logger.info(f"Created directory {dir_path}")
+                        # Fund .zio
+                        if not os.path.isfile(zip_path):
+                            logger.error(f"File {zip_path} does not exist, cannot unzip")
+                            continue
+                        # If the .zip file exists, unzip it into the Directory
+                        logger.info(f"Unzipping {zip_path} into {dir_path}")
+                        if  unzip_run_file(zip_path, dir_path):
+                            logger.info(f"Unzipped {zip_path} into {dir_path}")
+                        else:
+                            logger.error(f"Failed to unzip {zip_path} into {dir_path}")
+                            continue
+
+                    if not os.listdir(dir_path):
+                        logger.error(f"Directory {dir_path} is empty")
+                        continue
+                    update_ds_list(name, workload, test_run, dir_path)
+
+            else:
+                logger.error(f"Error Invalid dictionary {test_d} for name {name}")
+                continue
+
+        logger.info(f"Dataset:\n{self.ds_list}")
+
+    def gen_basic_cmp(self):
+        """
+        Generate a basic comparison of the datasets loaded from the input directories.
+        This involves traversing over the input names and use a template to generate a comparison
+        gnuplot script file, which can be used to generate the comparison (response curves) charts.
+        """
+
+        def gen_entry(data: Dict[str, Any]) -> str:
+            """
+            Generate a comparison entry for the given data.
+            Each line consist of the source .dat file (including path), the test run name, and the workload.
+            The output .png chart file will be named as {output_dir}/{name}_{workload}.png
+            where the {output_dir} is the directory specified in the config file: output["path"], with the subdir "figures"
+
+            data_name = f"{test_run}_{workload}.dat"  
+
+            """
+            # Here we would generate the gnuplot script file
+            # and save it in the output directory
+            entry = f"Data for {data['test_run']}:\n"
+            entry += f"Path: {data['path']}\n"
+            entry += f"JSON: {data['json']}\n"
+            return entry
+
+        entries = []
+        for workload in self.WORKLOAD_LIST:
+            for name, ds in self.ds_list.items():
+                logger.info(f"Generating comparison entry {workload} for {name}")
+                entries.append(gen_entry( ds[workload] ))
+                # seaborn/matplotlib to generate the charts directly
+                #logger.info(f"Workload: {workload}, Data: {data}")
+                # Here we would generate the gnuplot script file
+                # and save it in the output directory
 
     def load_config(self):
         """
@@ -290,8 +511,8 @@ class Reporter(object):
           each key is an alias, the values are paths (folders) containing the
           .json files (*_bench_df.json)
         - output: (dictionary)
-           'name': prefix for the of the output .json file, as well as the title of the charts, 
-            eg. 'cmp_sea_classic_build.json' 
+           'name': prefix for the of the output .json file, as well as the title of the charts,
+            eg. 'cmp_sea_classic_build.json'
            'path': the path to the report structure:
           tex/ -- tex contents, from template, and tables
           figures/ -- figures to be included in the report
@@ -306,36 +527,68 @@ class Reporter(object):
 
         if "input" in self.config:
             self.load_files(self.config["input"])
-            self.plot_dfs(self.ds_list, self.config["output"])
+            # Generate the simple .gnuplot file for the report
         else:
             logger.error("KeyError: self.config has no 'input' key")
+
+    def start(self):
+        """
+        This method is used to start the report generation process. It will
+        load the configuration file, and then traverse the directories to
+        generate the report.
+        """
+        self.load_config()
+        self.plot_dataset()
+
+    def compile(self):
+        pass
 
 
 def main(argv):
     examples = """
     Examples:
-    # Produce a performance test report from the current directory
-        %prog aprgOutput.log
+    # Produce a performance test report from the plan specified by the config .json file: 
+        %prog --config perf_report_config.json > perf_report.tex
 
     # Produce a latency target report from the current directory:
     #
         %prog --latarget latency_target.log
 
     """
-    parser = argparse.ArgumentParser(description="""This tool is used to parse output from the top command""",
-                                     epilog=examples, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description="""This tool is used to parse output from the top command""",
+        epilog=examples,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
-    parser.add_argument("jsonName", type=str, default=None,
-                        help="Output JSON config file specifying the performance test results to compile/compare")
-    parser.add_argument("-l", "--latarget", action='store_true',
-                        help="True to assume latency target run (default is response latency)", default=False)
-    parser.add_argument("-v", "--verbose", action='store_true',
-                        help="True to enable verbose logging mode", default=False)
-    parser.add_argument("-c", "--config", 
-                        type=str,
-                        required=True,
-                        help="Input config .json describing the config schema: [list] of input .json files,", default=None)
+    # parser.add_argument("json_name", type=str, default=None,
+    #                     help="Output JSON config file specifying the performance test results to compile/compare")
+    parser.add_argument(
+        "-l",
+        "--latarget",
+        action="store_true",
+        help="True to assume latency target run (default is response latency)",
+        default=False,
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="True to enable verbose logging mode",
+        default=False,
+    )
+    parser.add_argument(
+        "-c",
+        "--config",
+        type=str,
+        required=True,
+        help="Input config .json describing the config schema: [list] of input .json files,",
+        default=None,
+    )
 
+    parser.add_argument(
+        "-d", "--directory", type=str, help="Directory to examine", default="./"
+    )
     options = parser.parse_args(argv)
 
     if options.verbose:
@@ -343,14 +596,16 @@ def main(argv):
     else:
         logLevel = logging.INFO
 
-    with tempfile.NamedTemporaryFile(dir='/tmp', delete=False) as tmpfile:
-        logging.basicConfig(filename=tmpfile.name, encoding='utf-8',level=logLevel)
+    with tempfile.NamedTemporaryFile(dir="/tmp", delete=False) as tmpfile:
+        logging.basicConfig(filename=tmpfile.name, encoding="utf-8", level=logLevel)
 
     logger.debug(f"Got options: {options}")
 
+    os.chdir(options.directory)
     report = Reporter(options.config)
     report.start()
     report.compile()
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])
