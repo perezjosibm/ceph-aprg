@@ -1,5 +1,7 @@
 import logging
 import re
+import os 
+from typing import List, Dict, Any
 
 __author__ = "Jose J Palacios-Perez"
 logger = logging.getLogger(__name__)
@@ -116,19 +118,22 @@ class FioPlot(object):
     """
 
     METRICS = ['cpu', 'mem']
+    WORKLOAD_LIST = ["randread", "randwrite", "seqread", "seqwrite"]
 
-    def __init__(self, out_name: str, list_subtables, out_dat: str =""):
+    def __init__(self, out_name: str, list_subtables:List=[], out_dat: str ="", ds_list: Dict[str, Any]={}):
         """
         Constructor: expects the name of the output file names to produce (.dat, .plot),
         a string containing the .dat
         and a list of dictionaries, each contains the "table" (columns are the dict keys -- measurements, and values
         are arrays of measurmentes).
         """
-        self.output = out_name # output .png filename, normally taken from config_list
+        self.output = out_name # output .plot filename, normally taken from config_list
         self.list_subtables = list_subtables # typically a list of TestRunTables
         self.data = out_dat # optional to a FioCmpPlot since its a Level2
+        self.header = ""  # the header for the .plot script
+        self.ds_list = ds_list # the input dictionary of entries
 
-    def setHeader(self, title):
+    def _set_header(self, title):
         """
         Sets a default header for the .plot script
         """
@@ -144,22 +149,76 @@ set xtics border in scale 1,0.5 nomirror rotate by -45  autojustify
 set style function linespoints
 """
 
-    def getSetting(self, ylabel, y2label, out_chart, _title):
+    def _generate_setting(self, xlabel, ylabel):
         """
         Returns the string for the body of the settings of the .plot script
         """
         return f"""
+set xlabel  "{xlabel}"
 set ylabel "{ylabel}"
-set xlabel "IOPS (thousand)"
-set y2label "{y2label}"
+set y2label "{ylabel}"
 set ytics nomirror
 set y2tics
 set tics out
 set autoscale y
 set autoscale y2
-set output '{out_chart}'
-set title "{_title}"
 """
+
+    def generate_cmp_plot(self, xlabel:str ="IOPS (thousand)", ylabel:str="Latency (ms)", out_chart:str="", title:str=""):
+        """
+        Produce the .gnuplot form the ds_list dictionary, traversing over the workloads keys
+        This is intended for the typical Level2 response curves already constructed from FIO output .json files.
+        """
+        def generate_out_chart(out_chart: str, workload: str, title: str,
+                               out_chart_suffix: str = "iops_vs_lat"):
+            """
+            Generate the output chart name for each workload
+            """
+            return f"""
+# {workload}
+set output '{out_chart}_{workload}_{out_chart_suffix}.png'
+set title "{title}-{workload}"
+"""
+
+        def generate_entry(name: str, dat_path: str, lc: int):
+            """
+            Generate the entry for each workload in the ds_list
+            ds is a dictionary with keys 'path' (the .dat file) and 'workload' (the workload name)
+            f"{test_run}_{workload}.dat" is the .dat file name
+            # The '4' is the column number for the latency in the .dat file
+            return f '{dat_path}' every ::1::5 index 0 using ($2/1e3):4:5 t '{name}' w yerr axes x1y1 lc {lc}, \\
+            '' every ::1::5 index 0 using ($2/1e3):4 notitle w lp lc {lc} axes x1y1
+            """
+            return f""" '{dat_path}' every ::1::5 index 0 using ($2/1e3):4 t '{name}' axes x1y1 w lp lc {lc}""" 
+
+        # Gnuplot quirk: '_' is interpreted as a sub-index:
+        title = title.replace("_", "-")
+        self._set_header(title )
+        self.template = self._generate_setting(xlabel, ylabel)
+        for workload in self.WORKLOAD_LIST:
+            entries = []
+            self.template += generate_out_chart(out_chart, workload, title)
+            lc = 1  # line color
+            for name, ds in self.ds_list.items():
+                # Generate the entry for each workload in the ds_list
+                #logger.info(f"Generating comparison entry {workload} for {name}")
+                entry = ds[workload]
+                dir_path = entry["path"]
+                dat_name = f"{entry["test_run"]}_{workload}.dat"  # The original aggregated FIO and metrics
+                dp = os.path.join(dir_path, dat_name)
+                entries.append(generate_entry( name, dp, lc ))
+                lc += 1  # increment the line color for each entry
+
+            # Join the entries with a comma and '\':
+            entries_str = ",\\\n".join(entries)
+            self.template += f"""plot {entries_str}\n"""
+
+        logger.info(f"Generated template:\n {self.header}\n{self.template}")
+
+        self.out_plot = self.output # from os.join()
+        # Save the entries_str and the template
+        #self.save_files()"
+        print(f"{self.header}\n{self.template}")
 
     def set_out_file_names(self):
         """
@@ -175,9 +234,11 @@ set title "{_title}"
     def save_files(self):
         """
         Save the .dat and .plot files, if any
+        FIXME: error handling for file writing
         """
         # Save the .plot script
-        with open(self.out_plot, "w") as f:
+        with open(self.out_plot, "w+") as f:
+            # Write the header and the template
             f.write(self.header)
             f.write(self.template)
             f.close()
@@ -380,5 +441,37 @@ class FioCmpPlot(FioPlot):
                     self.template += ",\\\n".join([head, tail])
                 else:
                     self.template += head + "\n"
+            #self.save_files()
 
-        #self.save_files()
+class BasicCmpPlot(object):
+    """
+    Class to compare the results from a (Level2) set of combined test result tables.
+    The idea is to traverse over a list of combined results. Each represents a Response Curve for a specific
+    configuration, presenting them side by side for easy comparison.
+    """
+    HEADER = """
+set terminal pngcairo size 650,420 enhanced font 'Verdana,10'
+set key box left Left noreverse title 'OSD (build 6aab5c07ae)'
+set datafile missing '-'
+set key outside horiz bottom center box noreverse noenhanced autotitle
+set grid
+set autoscale
+set xtics border in scale 1,0.5 nomirror rotate by -45  autojustify
+
+# Unique build 
+# Crimson comparison  Classic vs Seastore BE using the bal_OSD CPU allocation
+# Target dir: 
+set style function linespoints
+set ylabel "Latency (ms)"
+set xlabel "IOPS (thousand)"
+set ytics nomirror
+set y2tics
+set tics out
+set autoscale y
+set autoscale y2
+"""
+
+    def __init__(self, title: str, list_tables, combinator):
+        super().__init__(title, list_tables, combinator)
+        self.setCmpPlotDict()  # set the plot_dict
+
