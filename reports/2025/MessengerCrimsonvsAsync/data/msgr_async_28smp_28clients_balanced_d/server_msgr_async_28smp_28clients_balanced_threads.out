@@ -1,9 +1,0 @@
-1270953 1270953 perf-async-msgr  61	pid 1270953's current affinity list: 0-6,28-34,56-62,84-90
-1270953 1270955 log               6	pid 1270955's current affinity list: 0-6,28-34,56-62,84-90
-1270953 1270956 service           0	pid 1270956's current affinity list: 0-6,28-34,56-62,84-90
-1270953 1270957 admin_socket     57	pid 1270957's current affinity list: 0-6,28-34,56-62,84-90
-1270953 1270958 msgr-worker-0    58	pid 1270958's current affinity list: 0-6,28-34,56-62,84-90
-1270953 1270959 msgr-worker-1    59	pid 1270959's current affinity list: 0-6,28-34,56-62,84-90
-1270953 1270960 msgr-worker-2    85	pid 1270960's current affinity list: 0-6,28-34,56-62,84-90
-1270953 1270961 ms_dispatch      60	pid 1270961's current affinity list: 0-6,28-34,56-62,84-90
-1270953 1270962 ms_local          6	pid 1270962's current affinity list: 0-6,28-34,56-62,84-90

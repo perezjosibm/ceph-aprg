@@ -1,8 +1,0 @@
-1267402 1267402 perf-crimson-ms   1	pid 1267402's current affinity list: 1
-1267402 1267404 reactor-1        29	pid 1267404's current affinity list: 29
-1267402 1267405 reactor-2        57	pid 1267405's current affinity list: 57
-1267402 1267406 reactor-3        85	pid 1267406's current affinity list: 85
-1267402 1267407 syscall-0         1	pid 1267407's current affinity list: 1
-1267402 1267408 syscall-2        57	pid 1267408's current affinity list: 57
-1267402 1267409 syscall-1        29	pid 1267409's current affinity list: 29
-1267402 1267410 syscall-3        85	pid 1267410's current affinity list: 85
