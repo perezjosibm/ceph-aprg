@@ -29,25 +29,34 @@
 #
 # Assoc array to use the single OSD table for (iodepth x num_jobs) ref values
 # WORKLOAD (first arg to fun_run_workload) is used as index for these:
-declare -A map=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread)
-declare -A mode=([rw]=write [rr]=read [sw]=write [sr]=read)
+declare -A map=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread 
+                [rr_norm]=randread_norm [rw_norm]=randwrite_norm 
+                [rr_zipf]=randread_zipf [rw_zipf]=randwrite_zipf 
+                [rr_zoned]=randread_zoned [rw_zoned]=randwrite_zoned 
+                [ex8osd]=ex8osd [hockey]=hockey)
+declare -A mode=([rw]=write [rr]=read [sw]=write [sr]=read 
+                    [rr_norm]=read [rw_norm]=write
+                    [rr_zipf]=read [rw_zipf]=write 
+                    [rr_zoned]=read [rw_zoned]=write)
 # Typical values as observed during discovery sprint:
 # Single FIO instances: for sequential workloads, bs=64k fixed
 # Need to be valid ranges
 # Option -w (WORKLOAD) is used as index for these:
-declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="1 2 4 8 16 24 32 40 52 64"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 )
-declare -A m_s_numjobs=( [ex8osd]="1 4 8" [hockey]="1"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
+declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="1 2 4 8 16 24 32 40 52 64"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 [rr_norm]=16 [rw_norm]=16 [rr_zipf]=16 [rw_zipf]=16 [rr_zoned]=16 [rw_zoned]=16)
+declare -A m_s_numjobs=( [ex8osd]="1 4 8" [hockey]="1"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 [rr_norm]=16 [rw_norm]=4 [rr_zipf]=16 [rw_zipf]=4 [rr_zoned]=16 [rw_zoned]=4)
 #declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
 
 # Multiple FIO instances: results for 8 RBD images/vols
-declare -A m_m_iodepth=( [rw]=2 [rr]=2 [sw]=2 [sr]=2 )
-declare -A m_m_numjobs=( [rw]=1 [rr]=2  [sw]=1 [sr]=1 )
+declare -A m_m_iodepth=( [rw]=2 [rr]=2 [sw]=2 [sr]=2 [rr_norm]=1 [rw_norm]=1 [rr_zipf]=1 [rw_zipf]=1 [rr_zoned]=1 [rw_zoned]=1)
+declare -A m_m_numjobs=( [rw]=1 [rr]=2  [sw]=1 [sr]=1 [rr_norm]=1 [rw_norm]=1 [rr_zipf]=1 [rw_zipf]=1 [rr_zoned]=1 [rw_zoned]=1)
 
-declare -A m_bs=( [rw]=4k [rr]=4k [sw]=64k [sr]=64k )
+declare -A m_bs=( [rw]=4k [rr]=4k [sw]=64k [sr]=64k [rr_norm]=4k [rw_norm]=4k [rr_zipf]=4k [rw_zipf]=4k [rr_zoned]=4k [rw_zoned]=4k )
 # Precondition before the actual test workload
 #declare -A m_pre=( [rw]=4k [rr]=4k [sw]=64k [sr]=64k )
-# The order of execution of the workloads:
-declare -a workloads_order=( rr rw sr sw )
+# The order of execution of the workloads for the random distributions
+declare -a workloads_order=( rr_norm rw_norm rr_zipf rw_zipf rr_zoned rw_zoned )
+# The order of execution of the workloads for response curves: original
+#declare -a workloads_order=( rr rw sr sw )
 declare -a procs_order=( true false )
 
 declare -A osd_id
@@ -195,7 +204,7 @@ fun_set_fio_job_spec() {
 
 #############################################################################################
 fun_set_globals() {
-    # Probably best to save this info in a .json, named eg 'keymap.json' so we can retrieve easily
+    # Probably best to save this info in a .json, named eg 'k6eymap.json' so we can retrieve easily
     WORKLOAD=$1
     SINGLE=$2
     WITH_PERF=$3

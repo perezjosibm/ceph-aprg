@@ -24,10 +24,10 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
-
+CACHE_ALG="LRU" # LRU or 2Q
 # Use a associative array to describe a test case, so we can recreate it faithfully
 OSD_RANGE="1" #"" 2 4 8 16"
-REACTOR_RANGE="4 8" #"1 2 4 8 16"
+REACTOR_RANGE="1 4 8" #"1 2 4 8 16"
 VSTART_CPU_CORES="0-27,56-83" # inc HT -- highest performance
 # Might try disable HT as well: so we can have the same test running on the two cases, which means that the FIO has two cases
 #VSTART_CPU_CORES="0-27" #,56-83" # osd_1_range16reactor_28fio_sea
@@ -48,8 +48,8 @@ OSD_TYPE=cyan
 STORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2' # dual OSD
 #STORE_DEVS='/dev/nvme9n1p2' # single OSD
 #STORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2,/dev/nvme2n1p2,/dev/nvme6n1p2,/dev/nvme3n1p2,/dev/nvme5n1p2,/dev/nvme0n1p2,/dev/nvme4n1p2'
-export NUM_RBD_IMAGES=32
-export RBD_SIZE=2GB
+export NUM_RBD_IMAGES=1 #32
+export RBD_SIZE=2GB #500GB
 #############################################################################################
 
 ALIEN_THREADS=8 # fixed- num alien threads per CPU core
@@ -82,7 +82,8 @@ declare -a order_keys=( default bal_osd bal_socket )
 declare -A crimson_be_table
 crimson_be_table["cyan"]="--cyanstore"
 crimson_be_table["blue"]="--bluestore --bluestore-devs ${STORE_DEVS}"
-crimson_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS} --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cache_lru_size=2G\""
+crimson_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS} --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=${CACHE_ALG}\""
+#crimson_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS} --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cache_lru_size=2G\""
 
 # Number of CPU cores for each case
 num_cpus['enable_ht']=${MAX_NUM_HT_CPUS_PER_SOCKET}
@@ -371,7 +372,7 @@ trap 'echo "$(date)== INT received, exiting... =="; fun_stop; exit 1' SIGINT SIG
 
 cd /ceph/build/
 # DEfine some FIO options, or a .json test plan instead
-while getopts 'ab:d:t:s:r:jlp' option; do
+while getopts 'ab:d:t:s:r:jlpz:' option; do
   case "$option" in
     a) fun_show_all_tests
        exit
@@ -394,6 +395,12 @@ while getopts 'ab:d:t:s:r:jlp' option; do
         ;;
     p) PRECOND=true
         ;;
+    z) CACHE_ALG=$OPTARG
+       if [ "$CACHE_ALG" != "LRU" ] && [ "$CACHE_ALG" != "2Q" ]; then
+         echo -e "${RED}== Invalid cache algorithm: ${CACHE_ALG} ==${NC}"
+         exit 1
+       fi
+       ;;
     :) printf "missing argument for -%s\n" "$OPTARG" >&2
        usage >&2
        exit 1
@@ -408,7 +415,7 @@ while getopts 'ab:d:t:s:r:jlp' option; do
   fi
 
   # Produce a .json with the test plan parameters:
-  json="{\"VSTART_CPU_CORES\": \"${VSTART_CPU_CORES}\", \"FIO_CPU_CORES\": \"${FIO_CPU_CORES}\", \"FIO_JOBS\": \"${FIO_JOBS}\", \"FIO_SPEC\": \"${FIO_SPEC}\", \"OSD_TYPE\": \"${OSD_TYPE}\", \"STORE_DEVS\": \"${STORE_DEVS}\", \"NUM_RBD_IMAGES\": \"${NUM_RBD_IMAGES}\", \"RBD_SIZE\": \"${RBD_SIZE}\", \"OSD_RANGE\":\"${OSD_RANGE}\", \"REACTOR_RANGE\":\"${REACTOR_RANGE}\"}"
+  json="{\"VSTART_CPU_CORES\": \"${VSTART_CPU_CORES}\", \"FIO_CPU_CORES\": \"${FIO_CPU_CORES}\", \"FIO_JOBS\": \"${FIO_JOBS}\", \"FIO_SPEC\": \"${FIO_SPEC}\", \"OSD_TYPE\": \"${OSD_TYPE}\", \"STORE_DEVS\": \"${STORE_DEVS}\", \"NUM_RBD_IMAGES\": \"${NUM_RBD_IMAGES}\", \"RBD_SIZE\": \"${RBD_SIZE}\", \"OSD_RANGE\":\"${OSD_RANGE}\", \"REACTOR_RANGE\":\"${REACTOR_RANGE}\", \"CACHE_ALG\":\"${CACHE_ALG}\"}"
     echo "$json" | jq . > ${RUN_DIR}/test_plan.json
     
  if [ "$OSD_TYPE" == "all" ]; then

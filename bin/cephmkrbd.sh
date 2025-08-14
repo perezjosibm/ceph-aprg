@@ -30,6 +30,8 @@ bin/ceph osd dump | grep 'replicated size'
 # Probably as part of monitoring after each test:
 #show a pool’s utilization statistics:
 rados df
+# Raw utilisation
+ceph df detail --format=json > /tmp/ceph_df_detail.json
 # Turn off auto scaler for existing and new pools - stops PGs being split/merged
 bin/ceph osd pool set noautoscale
 # Turn off balancer to avoid moving PGs
