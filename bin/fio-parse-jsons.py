@@ -32,11 +32,14 @@ import json
 import argparse
 import re
 import math
+import logging
+import tempfile
 import functools
 from operator import add
 
 __author__ = 'Jose J Palacios-Perez'
 
+logger = logging.getLogger(__name__)
 # Predefined dictionary of metrics (query paths on the ouput FIO .json) for typical workloads
 # Keys are metric names, vallues are the string path in the .json to seek
 # For MultiFIO JSON files, the jobname no neccessarily matches any of the predef_dict keys,
@@ -257,7 +260,7 @@ def process_fio_json_file(json_file, json_tree_path):
         # check for empty file
         f_info = os.fstat(json_data.fileno())
         if f_info.st_size == 0:
-            print(f"JSON input file {json_file} is empty")
+            logger.error(f"JSON input file {json_file} is empty")
             return result_dict
         node = json.load(json_data)
         # Extract the json timestamp: useful for matching same workloads from
@@ -269,9 +272,14 @@ def process_fio_json_file(json_file, json_tree_path):
         jobs_list = node["jobs"]
         print(f"Num jobs: {len(jobs_list)}")
         job_result = {}
-        for _i, job in enumerate(jobs_list):
-            jobname = result_dict["jobname"]
-            query_dict = predef_dict[jobname]
+        jobname = result_dict["jobname"]
+        logger.info(f"Processing {json_file} as {jobname}")
+        if jobname not in predef_dict:
+            logger.error(f"Job name {jobname} not found in predef_dict")
+            return result_dict
+        query_dict = predef_dict[jobname]
+        for _, job in enumerate(jobs_list):
+            # Get the job type, which is the global "rw" attribute
             for k in query_dict.keys():
                 json_tree_path = query_dict[k].split("/")
                 next_node_list = [job]
@@ -293,6 +301,7 @@ def traverse_files(sdir, config, json_tree_path):
     Traverses the JSON files given in the config
     Returns a dictionary whose keys are the input .json file names, values
     are the (sub)dictionary of the metrics collected from the input .json file
+    TODO: use the config.json instead of the text _list
     """
     os.chdir(sdir)
     try:
@@ -585,6 +594,12 @@ def gen_table(dict_files, config:str, title:str, avg_cpu:dict, multi=False):
     wiki += " !! ".join(table.keys())
     wiki += "\n|-\n"
 
+    mdtxt = "| "
+    mdtxt += "| ".join(map(lambda x: x.replace(r"_",r"\_"), list(table.keys())))
+    mdtxt += " |\n| "
+    mdtxt += "| ".join( [ "---" for _ in table.keys()] )
+    mdtxt += "|\n"
+
     latex = (
          r"""
 \begin{table}[h!]
@@ -626,13 +641,16 @@ def gen_table(dict_files, config:str, title:str, avg_cpu:dict, multi=False):
                 if k == "iodepth":  # This metric is the first column
                     gplot += f" {item} "
                     wiki += f" | {item} "
+                    mdtxt += f" | {item} "
                     latex += f"{item} "
                 else:
                     gplot += f" {item:.2f} "
                     wiki += f" || {item:.2f} "
+                    mdtxt += f" | {item:.2f} "
                     latex += f" & {item:.2f} "
             gplot += "\n"
             wiki += "\n|-\n"
+            mdtxt += "|\n"
             latex += r"\\" + "\n" + r"\hline" + "\n"
     if multi:
         wiki += "! Avg:"
@@ -658,8 +676,14 @@ def gen_table(dict_files, config:str, title:str, avg_cpu:dict, multi=False):
 \\end{{table}}
 """
     print(latex)
+    print(mdtxt)
     with open(out_tex, "w") as f:
         f.write(latex)
+        f.close()
+
+    out_tex = out_tex.replace(".tex", ".md")
+    with open(out_tex, "w") as f:
+        f.write(mdtxt)
         f.close()
 
     gen_plot(config, gplot, list_subtables, title, header_keys )
@@ -675,8 +699,8 @@ def main(directory, config, json_query):
         json_query = "jobs/jobname=*"
     json_tree_path = json_query.split("/")
     dicto_files = traverse_files(directory, config, json_tree_path)
-    print("Note: clat_ns has been converted to milliseconds")
-    print("Note: bw has been converted to MiBs")
+    logger.info("Note: clat_ns has been converted to milliseconds")
+    logger.info("Note: bw has been converted to MiBs")
     return dicto_files
 
 
@@ -758,7 +782,26 @@ def parse_args():
         help="Indicate multiple FIO instance as opposed to response curves",
         default=False,
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="True to enable verbose logging mode",
+        default=False,
+    )
+
     args = parser.parse_args()
+    if args.verbose:
+        logLevel = logging.DEBUG
+    else:
+        logLevel = logging.INFO
+        #logging.basicConfig(level=logging.INFO)
+
+    with tempfile.NamedTemporaryFile(dir="/tmp", delete=False) as tmpfile:
+        logging.basicConfig(filename=tmpfile.name, encoding="utf-8", level=logLevel)
+
+    logger.debug(f"Got options: {args}")
+
     return args
 
 
