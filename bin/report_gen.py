@@ -247,7 +247,7 @@ class Reporter(object):
 
     def _start(self):
         """
-        Entry point: this is a fixed structure, using the config .json we traverse in the order given
+        Old Entry point: this is a fixed structure, we now use the config .json we traverse in the order given
         """
         self.entries.update({"OSD": {}})
         self.body.update({"OSD": {}})
@@ -390,6 +390,9 @@ class Reporter(object):
         path: <PATH>/pr63350_hwloc/1osd_56reactor_28fio_sea_rc/,
         }
         each workload folder is {dir}/{test_name}_{workload}_d/{test_name}_{workload}_rutil_conf.json
+
+        TODO: need to describe the expected structure of the directories, ifd we need to recreate some
+        of the files, with thier dependencies (as a tree).
         """
         def unzip_run_file(zip_file: str, out_dir: str):
             """
@@ -404,6 +407,7 @@ class Reporter(object):
         def load_bench_json(dp: str):
             """
             Load the benchmark .json file from the given path.
+            TODO: might need renaming since we can use this function to load any .json file
             """   
             # Load .json files in the directory as indicated by the benchmark field in the config
             # glob.glob(dir_path + "/*_bench_df.json")
@@ -419,6 +423,105 @@ class Reporter(object):
                 return None
             return load_json(dp)
 
+        def check_contents(dir_path: str):
+            """
+            Check if the directory contains the expected files.
+            # Check if the directory contains the expected files
+            # If not, we might need to run the required  script to generate them
+            """
+            expected_files = [
+                f"{dir_path}/*_bench_df.json",
+                f"{dir_path}/keymap.json",
+            ]
+            for ef in expected_files:
+                if not glob.glob(ef):
+                    logger.error(f"Expected file {ef} not found in {dir_path}")
+                    return False
+            return True
+
+        # TODO: we might facotrrise these functions with a single lambda from a dictionary
+        def run_perf_metrics(config: str, dir_path: str):
+            """
+            Run the perf_metrics.py script with the given config and output.
+            This is a helper function to run the perf_metrics.py script to generate the metrics.
+            """
+            command = f"python3 perf_metrics.py -d {dir_path} -i {config} -v"
+            logger.info(f"Running command: {command}")
+            proc = subprocess.Popen(command, shell=True)
+            _ = proc.communicate()
+            return proc.returncode == 0
+
+        def recreate_cpu_avg(name: str, workload: str, test_run: str, dir_path: str):
+            """
+            Recreate the CPU average .json file from the given parameters.
+            This is a helper function to recreate the CPU average .json file if it does not exist.
+            We assume that the CPU average file is named as <test_run>_<workload>_cpu_avg.json
+            This involves to run parse-top.py
+            """
+            # We assume that the CPU average file is named as <test_run>_<workload>_cpu_avg.json
+            cpu_avg_name = f"{test_run}_{workload}_cpu_avg.json"
+            top_json_name = f"{test_run}_{workload}_top.json"
+            pid_name = f"{test_run}_{workload}_pid.json"
+            dp = os.path.join(dir_path, cpu_avg_name)
+            if not os.path.isfile(dp):
+                logger.error(f"CPU average file {dp} does not exist, attempting to recreate it")
+                command = f"python3 parse-top.py -d {dir_path} -c {top_json_name} -p {pid_name} -a {cpu_avg_name} -v"
+                proc = subprocess.Popen(command, shell=True)
+                _ = proc.communicate()
+                return proc.returncode == 0
+            return True
+
+        def recreate_bench(name: str, workload: str, test_run: str, dir_path: str, bench_name: str, dp: str):
+            """
+            Recreate the benchmark run .json file from the given parameters.
+            This is a helper function to recreate the benchmark run .json file if it does not exist.
+            This involves to run parse-top.py, fio-parse-jsons.py and perf_metrics.py
+            We assume that the benchmark file is named as <test_run>_<workload>.json
+            """
+            recreate_cpu_avg(name, workload, test_run, dir_path)
+            # We assume that the benchmark file is named as <test_run>_<workload>.json
+            list_name = f"{test_run}_{workload}_list"
+            cpu_avg_name = f"{test_run}_{workload}_cpu_avg.json"
+            logger.info(f"Attempting to recreate {dp}")
+            command = f"python3 fio-parse-jsons.py -d {dir_path} -c {list_name} -t {test_run} -a {cpu_avg_name}"
+            proc = subprocess.Popen(command, shell=True)
+            _ = proc.communicate()
+            return proc.returncode == 0
+
+        def check_bench_run(name: str, workload: str, test_run: str, dir_path: str):
+            """
+            Check if the benchmark run exists for the given name.
+            This is a helper function to check if the benchmark run exists, so the benchmark result .json file can be loaded.
+            """
+            # As a minimum, the keymap.json file must exist
+            _keymap = load_bench_json(os.path.join(dir_path, "keymap.json"))
+            if _keymap is None or not os.path.isfile(_keymap):
+                logger.error(f"Keymap file {dir_path}/keymap.json does not exist")
+                return False
+            self.ds_list[name][workload]["keymap"] = _keymap
+            # This is the name of the benchmark file, which is expected to be in the directory, 
+            # but also common name for the .dat, and other files
+            # We assume the benchmark file is named as <test_run>_<workload>.json
+            # Try recreate it if it does not exist
+            bench_name = f"{test_run}_{workload}.json"  # The original aggregated FIO and metrics
+            dp = os.path.join(dir_path, bench_name)
+            logger.info(f"{name}: Loading {bench_name} from {dp}")
+            _json = load_bench_json(dp)
+            if _json is None:
+                logger.error(f"Benchmark run {bench_name} does not exist in {dir_path}, attempting to recrete it")
+                if not recreate_bench(name, workload, test_run, dir_path, bench_name, dp):
+                    logger.error(f"Failed to recreate benchmark run {bench_name} in {dir_path}")
+                    return False
+                # Then run perf_metrics.py to generate the metrics
+                #perf_metrics_name = f"{test_run}_{workload}_perf_metrics.json"
+                #run_perf_metrics(self.config["input"]["perf_metrics"], dir_path)
+                perf_metrics_name = f"{test_run}_{workload}_rutil_conf.json"
+                run_perf_metrics(perf_metrics_name, dir_path)
+                _json = load_bench_json(dp)
+            self.ds_list[name][workload]["json"] = _json 
+            self.ds_list[name][workload]["frame"] = pd.DataFrame(_json)
+            return True
+
         def update_ds_list(name: str, workload: str, test_run: str, dir_path: str):
             """
             Update the dataset list with the given parameters.
@@ -433,22 +536,13 @@ class Reporter(object):
                     "path": dir_path,
                     "json": None,
                     "frame": None,
+                    "keymap": None,
                 }
             )
-            # This is the name of the benchmark file, which is expected to be in the directory, 
-            # but also common name for the .dat, and other files
-            # We assume the benchmark file is named as <test_run>_<workload>.json
-            bench_name = f"{test_run}_{workload}.json"  # The original aggregated FIO and metrics
-            dp = os.path.join(dir_path, bench_name)
-            logger.info(f"{name}: Loading {bench_name} from {dp}")
-            self.ds_list[name][workload]["json"] = load_bench_json(dp)
-            self.ds_list[name][workload]["frame"] = pd.DataFrame(
-                self.ds_list[name][workload]["json"]
-            )
-        # self.ds_list[name][workload]["frame"] = pd.DataFrame.from_dict(
-        #     self.ds_list[name][workload]["json"], orient="tight"
-        # )
-
+            check_bench_run(name, workload, test_run, dir_path)
+            # self.ds_list[name][workload]["framep"] = pd.DataFrame.from_dict(
+            #     self.ds_list[name][workload]["json"], orient="tight"
+        
 
         for name, test_d in input_dirs.items():
             # Check if the directory exists,should be abetter Pythonic way to do this
