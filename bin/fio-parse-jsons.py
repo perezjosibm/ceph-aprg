@@ -262,7 +262,11 @@ def process_fio_json_file(json_file, json_tree_path):
         if f_info.st_size == 0:
             logger.error(f"JSON input file {json_file} is empty")
             return result_dict
-        node = json.load(json_data)
+        try:
+            node = json.load(json_data)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON input file {json_file} invalid: {e}")
+            return result_dict
         # Extract the json timestamp: useful for matching same workloads from
         # different FIO processes
         result_dict["timestamp"] = str(node["timestamp"])
@@ -309,16 +313,18 @@ def traverse_files(sdir, config, json_tree_path):
     except IOError as e:
         raise argparse.ArgumentTypeError(str(e))
     json_files = config_file.read().splitlines()
-    print(json_files)
+    logger.info(json_files)
     config_file.close()
     print(f"loading {len(json_files)} .json files ...")
     pp = pprint.PrettyPrinter(width=41, compact=True)
     dict_new = {}
     for fname in json_files:
-        node_list = process_fio_json_file(fname, json_tree_path)
-        dict_new[fname] = node_list
-        print(f"== {fname} ==")
-        pp.pprint(node_list)
+        # Avoid duplicates!
+        if fname not in dict_new:
+            node_list = process_fio_json_file(fname, json_tree_path)
+            dict_new[fname] = node_list
+            print(f"== {fname} ==")
+            pp.pprint(node_list)
     return dict_new
 
 

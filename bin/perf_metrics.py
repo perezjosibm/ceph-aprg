@@ -13,6 +13,11 @@ each row corresponds to a shard, which contains an array of values for the
 metric (e.g. read_time_ms, write_time_ms). We use pandas dataframes for the
 calculations, and seaborn for the plots. consider to extend this to a list of
 dataframes, one per test run, so we can compare the results.
+
+TODO:
+1) Indicate clearly the types of allowed input and ouput produced,
+2) Option -j to iondicate save output in .json, so the report_gen.py can dynamically load the paths of the generated files to be included in the report.
+3) Option -p to indicate produce plots (png, pdf) from the .json output, whose paths need also be included in the corresponding report .tex, .md as appropriate. 
 """
 
 import argparse
@@ -68,7 +73,7 @@ def _minmax_normalisation(df):  # df: pd.dataframe
         ) / (df_minmax_scaled[column].max() - df_minmax_scaled[column].min())
 
     # view normalized data
-    # print(df_minmax_scaled)
+    # logger.info(df_minmax_scaled)
     # df_minmax_scaled.plot(kind="bar", stacked=True)
     return df_minmax_scaled
 
@@ -86,7 +91,7 @@ def _max_abs_normalisation(df):  # df: pd.dataframe
             df_maxabs_scaled[column] / df_maxabs_scaled[column].abs().max()
         )
     # view normalized data
-    # print(df_maxabs_scaled)
+    # logger.info(df_maxabs_scaled)
     # df_maxabs_scaled.plot(kind="bar", stacked=True)
     return df_maxabs_scaled
 
@@ -287,6 +292,7 @@ class PerfMetricEntry(object):
         self.reactor_utilization_df = (
             None  # Reactor utilization, we need to calculate this
         )
+        self.generated_files = []  # list of files generated
 
     def make_chart(self, df):
         """
@@ -295,7 +301,7 @@ class PerfMetricEntry(object):
         - rows are metrics
         df.plot(kind="bar", stacked=True)
         """
-        print(f"++ Dataframe is ++:\n{df}")
+        logger.info(f"++ Dataframe is ++:\n{df}")
         sns.set_theme()
         # f, ax = plt.subplots(figsize=(9, 6))
         f, axs = plt.subplots(
@@ -333,6 +339,7 @@ class PerfMetricEntry(object):
         sns.heatmap(df, annot=False, fmt=".1f", linewidths=0.5, ax=ax)
         plt.show()
         plt.savefig(outname.replace(".json", "f{slice_name}.png"))
+        self.generated_files.append( "f{slice_name}.png") # implictly know\ = [f"{name}.tex", f"{name}.md", f"{name}.json"]
 
     def save_table(self, name, df):
         """
@@ -343,13 +350,16 @@ class PerfMetricEntry(object):
         if name:
             df.rename_axis("shard")
             df.rename(columns=lambda x: x.replace("_", "\\_"), inplace=True)
-            print(f"++ Dataframe ${name} is ++:\n{df}")
+            logger.info(f"++ Dataframe ${name} is ++:\n{df}")
             with open(f"{name}.tex", "w", encoding="utf-8") as f:
                 print(df.to_latex(), file=f)
                 f.close()
             with open(f"{name}.md", "w", encoding="utf-8") as f:
                 print(df.to_markdown(), file=f)
                 f.close()
+            # save_json(f"{name}.json", df.to_dict())
+            # Need to store the names of the files generated into a list, so it can be logger.infoed as a json output
+            self.generated_files.append( f"{name}") # implictly know\ = [f"{name}.tex", f"{name}.md", f"{name}.json"]
 
     def make_metrics_chart(self, df, outname):
         """
@@ -363,11 +373,11 @@ class PerfMetricEntry(object):
             df_slice = df.loc[df.apply(lambda x: True if slice_columns.search(x) else False)]
             df_slice = df.loc[slice_columns]
 
-        print(df.columns)
+        logger.info(df.columns)
         new_index = map(lambda x: int(x),df.index.to_list())
         new_index = [int(x) for x in df.index.to_list()]
         df = df.set_index(new_index)
-        print(df) # new data frame
+        logger.info(df) # new data frame
         # might need to define a table file per each slice
         # Prob best use a table instead of plot
         df_des.plot(kind="bar",title=f"{slice_name} desc", xlabel="Describe",
@@ -418,12 +428,17 @@ class PerfMetricEntry(object):
                 ylabel=f"{units[slice_name]}",
                 fontsize=7,
             )
+            chart_name = outname.replace(".json", f"_{slice_name}_{cb_name}.png")
             plt.savefig(
-                outname.replace(".json", f"_{slice_name}_{cb_name}.png"),
+                chart_name,
                 dpi=300,
                 bbox_inches="tight",
             )
             # self.plot_heatmap(df_slice, outname, f"{slice_name}_{cb_name}")
+            # We migh tneed to differntiate between gneerated charts and everything else (tables, etc)
+            self.generated_files.append(
+                chart_name
+            )
 
         def _get_reactor_util(self, df, outname):
             """
@@ -434,7 +449,7 @@ class PerfMetricEntry(object):
             # self.reactor_utilization = df_describe['mean'] #(axis=1)
             """
             self.reactor_utilization = df.mean()
-            print(f"Normalising with minmax: {self.reactor_utilization}")
+            logger.info(f"Normalising with minmax: {self.reactor_utilization}")
             cb = callbacks["minmax"]
             df = cb(df)
             _plot_df(
@@ -460,11 +475,11 @@ class PerfMetricEntry(object):
                 # then use it to calculate the IOP cost, making a new column in the dataframe
                 if slice_name == "reactor_utilization":
                     self.reactor_utilization = df.loc[:, slice_name].mean()
-                    print(f"Reactor utilization mean is: {self.reactor_utilization}")
+                    logger.info(f"Reactor utilization mean is: {self.reactor_utilization}")
                     logger.info(f"Reactor utilization: {self.reactor_utilization}")
                 # for cb_name, cb in callbacks.items():
                 cb_name = self.METRICS[slice_name]["normalisation"]
-                print(f"Normalising {slice_name} with {cb_name}")
+                logger.info(f"Normalising {slice_name} with {cb_name}")
                 if cb_name not in callbacks:
                     logger.error(f"Callback {cb_name} not in callbacks")
                     cb_name = "minmax"
@@ -495,17 +510,17 @@ class PerfMetricEntry(object):
             return None
 
         def _get_diff(a_data: List[float], b_data: List[float]) -> List[float]:
-            return [ a - b for a, b in zip(a_data, b_data) ]
+            return [a - b for a, b in zip(a_data, b_data)]
 
         def _get_avg(a_data: List[float], b_data: List[float]) -> List[float]:
-            return [ (a + b) / 2 for a, b in zip(a_data, b_data) ]
+            return [(a + b) / 2 for a, b in zip(a_data, b_data)]
 
-        def _get_max(a_data:List, b_data: List) -> List:
+        def _get_max(a_data: List, b_data: List) -> List:
             return [max(a, b) for a, b in zip(a_data, b_data)]
 
-        # Singleton version might not longer needed
+        # Singleton version might not longer needed
         def _get_sdiff(a_data, b_data):
-            return  a_data - b_data
+            return a_data - b_data
 
         def _get_savg(a_data, b_data):
             return (a_data + b_data) / 2
@@ -541,10 +556,12 @@ class PerfMetricEntry(object):
                 # each of the following is a list of measurements per shard,
                 # Might need to be simplified
                 a_data[k][m] = cb(a_data[k][m], b_data[k][m]).pop(0)
-                    
+
         return a_data
 
-    def filter_metrics(self, ds_list: Dict[str,Any]|List[Dict[str,Any]]) -> Dict[str, Any]:
+    def filter_metrics(
+        self, ds_list: Dict[str, Any] | List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """
         Filter the (array of dicts) to the measurements we want.
         ds_list is normally the contents of a single .json file, which is a list of dicts (samples).
@@ -657,7 +674,7 @@ class PerfMetricEntry(object):
         df_describe = df.describe(include="all")
         logger.info(f"ds_d.describe(): {df_describe.info(verbose=False)}")
         """
-        print(f"loading {len(json_files)} .json files ...")
+        logger.info(f"loading {len(json_files)} .json files ...")
         self.ds_list = [self.filter_metrics(load_json(f)) for f in json_files]
         logger.info(f"ds_list: {self.ds_list}")
 
@@ -706,7 +723,7 @@ class PerfMetricEntry(object):
         reduce each such sample .json as indicated (normally avergae).
         """
         regex = re.compile(self.config["time_sequence"])
-        print(f"loading {len(json_files)} .json files as a time sequence...")
+        logger.info(f"loading {len(json_files)} .json files as a time sequence...")
         ds_full_seq = {}
         ds_d = {}
         for f in json_files:
@@ -768,6 +785,7 @@ class PerfMetricEntry(object):
         Aggregate the results from the benchmark into a single dataframe
         We also save the benchmark as a .json file, and the table as a .tex file
         """
+
         def _plot_reactor_utilization(self, bench_df: pd.DataFrame):
             """
             Plot the reactor utilization from the time sequence, this is a special case
@@ -790,19 +808,19 @@ class PerfMetricEntry(object):
                 plt.grid(True)
                 plt.show()
 
-        # We might need to define this in a common type class
+        # We might need to define this in a common type class
         regex = re.compile(r"rand.*")  # random workloads always report IOPs
         if self.config["benchmark"]:
             self.benchmark = load_json(self.config["benchmark"])
-            if not "reactor_utilization" in self.benchmark:
+            if "reactor_utilization" not in self.benchmark:
                 logger.error(
                     f"KeyError: 'reactor_utilization' not found in {self.config['benchmark']}"
                 )
                 return
             self.benchmark["reactor_utilization"] = (
                 self.time_sequence.get_avg_per_timestamp().tolist()
-            ) # type: ignore[no-untyped-call]
-            # _plot_reactor_utilization(self, self.benchmark)
+            )  # type: ignore[no-untyped-call]
+            # _plot_reactor_utilization(self, self.benchmark)
             bench_df = pd.DataFrame(self.benchmark)
             m = regex.search(self.config["benchmark"])
             if m:
@@ -810,7 +828,7 @@ class PerfMetricEntry(object):
             else:
                 col = "bw"
 
-            #bench_df["reactor_utilization"] = self.time_sequence.get_avg_per_timestamp()
+            # bench_df["reactor_utilization"] = self.time_sequence.get_avg_per_timestamp()
             # Aggregate the results to the benchmark df and the original dict
             bench_df["estimated_cost"] = bench_df[col] / (
                 bench_df["reactor_utilization"] * self.CPU_CLOCK_SPEED_GHZ
@@ -825,7 +843,7 @@ class PerfMetricEntry(object):
             bench_df = bench_df.filter(
                 regex=r"^(iops|bw|iodepth|total_ios|clat_ms|reactor_utilization|estimated_cost)"
             )
-            
+
             logger.info(f"Aggregated df:\n{bench_df}")
             # Save bench_df as a .tex table file
             self.save_table(
@@ -882,6 +900,17 @@ class PerfMetricEntry(object):
         else:
             logger.error("KeyError: self.config has no 'input' key")
 
+    def generate_json_output(self):
+        """
+        Generate a .json file with the list of files generated
+        """
+        outname = self.config["output"].replace(".json", "_generated_files.json")
+        save_json(outname, {"generated_files": self.generated_files})
+        logger.info(f"Generated files list saved to {outname}")
+        if self.options.json:
+            print(json.dumps(self.generated_files, indent=4))
+            #print(json.dumps({"generated_files": self.generated_files}, indent=4))
+
     def run(self):
         """
         Entry point: processes the input files, reduces them
@@ -898,6 +927,7 @@ class PerfMetricEntry(object):
             # This expects a single, coalesced dataframe, so we need to either reduce the time_sequence,
             # in addition to produce the time sequence plot
             self.make_metrics_chart(self.df, self.config["output"])
+            # Add the names of the generated charts to the same output .json
             # This only applies to the time_sequence, so we need to filter it
             # self.df = self.df.filter(regex=r"^(reactor_utilization)")
             if self.time_sequence is not None:
@@ -912,6 +942,7 @@ class PerfMetricEntry(object):
         """
         Exception class for PerfMetricEntry
         """
+
         pass
 
     class PerfMetricTimeSequence:
@@ -1119,7 +1150,13 @@ type of metrics (classic, crimson) and output .json file, etc.
         help="True to enable verbose logging mode",
         default=False,
     )
-
+    parser.add_argument(
+        "-j",
+        "--json",
+        action="store_true",
+        help="True to enable output in json format",
+        default=False,
+    )
     options = parser.parse_args(argv)
 
     if options.verbose:
@@ -1133,6 +1170,7 @@ type of metrics (classic, crimson) and output .json file, etc.
     logger.debug(f"Got options: {options}")
     dsPerf = PerfMetricEntry(options)
     dsPerf.run()
+    # Use a cumulateive arg to keep track of the generated files
 
 
 if __name__ == "__main__":

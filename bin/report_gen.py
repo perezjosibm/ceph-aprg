@@ -1,6 +1,6 @@
-#!env python3
+#!/usr/bin/env python3
 """
-This script traverses the dir tree to select .JSON entries to
+This script traverses the dir tree indicated in the input confiig file .JSON to select benchmark results .JSON entries to
 generate a report in .tex
 
 The expected layout of the dir structure is:
@@ -11,12 +11,12 @@ The expected layout of the dir structure is:
     1osd_4reactor_32fio_sea_rc/
     1osd_8reactor_32fio_sea_rc/
     <TEST_RESULT>_<WORKLOAD>_d/
-     <TEST_RESULT>_<WORKLOAD>_rutil_conf.json
-    <TEST_RESULT>_<WORKLOAD>_rutil_conf.dat
-    <TEST_RESULT>_<WORKLOAD>_rutil_conf.json
-    <TEST_RESULT>_<WORKLOAD>_top_cpu.png
-    <TEST_RESULT>_<WORKLOAD>_top_mem.perf_report_config
+    <TEST_RESULT>_<WORKLOAD>.dat - output from the fio-parse-jsons.py script (response curves)
+    <TEST_RESULT>_<WORKLOAD>.json - output from the perf_metrics.py script, aggregated from the .dat files
+    <TEST_RESULT>_<WORKLOAD>_top_cpu.json - output from the parse-top.py script, aggregated from the top command output
+    <TEST_RESULT>_<WORKLOAD>_rutil_conf.json - reactor utiil input config schema
     ... etc
+    By default, the script will construct a simple comparison (response curves) from each of the directories (bench.dat) side by side.
 """
 
 import argparse
@@ -26,7 +26,7 @@ import os
 import sys
 import json
 import glob
-import re 
+import re
 import tempfile
 import numpy as np
 import pandas as pd
@@ -56,7 +56,7 @@ class Reporter(object):
     """
 
     # This is the default list of workloads we are interested in, but can be given in the input .json file.
-    
+
     WORKLOAD_LIST = ["randread", "randwrite", "seqread", "seqwrite"]
     # These are the default set of values lists of OSDs, Reactors, Alien threads
     OSD_LIST = [1, 3, 8]
@@ -72,12 +72,12 @@ class Reporter(object):
     # Dictionary to indicate how to generate required .json files: a makefile would do better
     GENERATOR = {
         "perf_metrics": {
-            "command": "python3 perf_metrics.py",
+            "command": "perf_metrics.py",
             "args": "--config {config} --output {output}",
             "description": "Generate the performance metrics from the config file",
         },
         "latency_target": {
-            "command": "python3 latency_target.py",
+            "command": "latency_target.py",
             "args": "--config {config} --output {output}",
             "description": "Generate the latency target from the config file",
         },
@@ -97,6 +97,8 @@ class Reporter(object):
         - path to the .tex template file to used -- a whole bunch should be provided TBC
         - flag to indicate the comparison (we assume by default that the
           comparison is across the directories, with the same structure)
+        - flag to indicate if the report is a latency target report (default is assumed to be results for response curves)
+        - workload_list (optional) to indicate a list of workload short name descriptions (by default the traditional randwrite, randread, seqread, seqwrite).
         """
         self.json_name: str = json_name
         self.config = {}  # type: Dict[str, Any]
@@ -105,7 +107,9 @@ class Reporter(object):
         # DataSet: main struct
         self.ds_list = {}  # type: Dict[str, Any]
         # Body of the report, to be filled with references to the tables and figures
-        self.body = {} # type: Dict[str, Any]
+        self.body = {}  # type: Dict[str, Any]
+        self.tex = " "  # type: str
+        self.md = ""  # type: str
 
     def traverse_dir(self):
         """
@@ -185,7 +189,7 @@ class Reporter(object):
 
     def gen_iops_table(self, osd_num, reactor_num):
         """
-        Generate a results table: colums are measurements, row index is a test config
+        Generate a results table: columns are measurements, row index is a test config
         index
         This was an early version, we might deprecate in favour of pandas dataframe.to_latex()
         """
@@ -273,7 +277,7 @@ class Reporter(object):
 
     def _compile(self):
         """
-        Compile the .tex document, twice to ensure the references are correct
+        Compile twice the .tex document to ensure the references are correct
         """
         for osd_num in self.OSD_LIST:
             print(f"\\chapter{{{osd_num} OSD, 4k Random read}}")
@@ -300,9 +304,11 @@ class Reporter(object):
         Generate the file at the given path, based on the config .json file.
         This is a stub, to be implemented later.
         """
-        #Define a dictionary: keys are the files to generate, values are the commands to run
+        # Define a dictionary: keys are the files to generate, values are the commands to run
 
-        logger.info(f"Generating file {file_path} based on {self.GENERATOR['perf_metrics']['command']} with args {self.GENERATOR['perf_metrics']['args']}")
+        logger.info(
+            f"Generating file {file_path} based on {self.GENERATOR['perf_metrics']['command']} with args {self.GENERATOR['perf_metrics']['args']}"
+        )
         # Here we would run the perf_metrics.py script with the expected config.json
         # to generate the file
         pass
@@ -312,6 +318,7 @@ class Reporter(object):
         Plot the dataframes from the input list of .json files
         Use the example, sns_multi_example.py, to generate the plots, and the alternative method
         """
+
         def _plot_ds_df(self, ds: pd.DataFrame, x_column: str, y_column: str):
             """
             Plot the given dataframe ds, using the x_column and y_column
@@ -324,12 +331,12 @@ class Reporter(object):
             plt.show()
 
         sns.set_theme()
-        # Set fig size to 650,420 px
-        fig, ax = plt.subplots(figsize=(650.0/100.0, 420.0/100.0), dpi=100)
+        # Set fig size to 650,420 px
+        fig, ax = plt.subplots(figsize=(650.0 / 100.0, 420.0 / 100.0), dpi=100)
         regex = re.compile(r"rand.*")  # random workloads always report IOPs
         for workload in self.WORKLOAD_LIST:
             xcol = "clat_ms"  # default x column is latency in ms
-            #xcol = "iodepth"
+            # xcol = "iodepth"
             m = regex.search(workload)
             if m:
                 ycol = "iops"
@@ -340,42 +347,101 @@ class Reporter(object):
             for name, ds in self.ds_list.items():
                 # We only need to plot the columns we are interested in, iops, latency, etc
                 # plt.title(f"{workload} {name}")
-                df = pd.DataFrame({'x': ds[workload]["json"][xcol],
-                                   'y': ds[workload]["json"][ycol], 
-                                   'type': name})
+                df = pd.DataFrame(
+                    {
+                        "x": ds[workload]["json"][xcol],
+                        "y": ds[workload]["json"][ycol],
+                        "type": name,
+                    }
+                )
                 df_list.append(df)
                 # df = pd.DataFrame({'x': ds[workload]["frame"][xcol],
-                #                    'y': ds[workload]["frame"][ycol], 
+                #                    'y': ds[workload]["frame"][ycol],
                 #                    'type': name})
-                #sns.lineplot(data=df, x='x', y='y', label=name, ax=ax)
+                # sns.lineplot(data=df, x='x', y='y', label=name, ax=ax)
             df = pd.concat(df_list, ignore_index=True)
-            # Filter the dataframe to skip data points with latency values higher than 100 ms
-            df = df[df['x'] < 100]
+            # Filter the dataframe to skip data points with latency values higher than 100 ms
+            df = df[df["x"] < 100]
             logger.info(f"df for {workload}:\n{df}")
             g = sns.relplot(
-                    data=df,
-                    x='x', #"latency",
-                    y='y', #"IOPS"/ "BW",
-                    hue="type",
-                    style="type",
-                    kind="line",
-                    markers=True,
+                data=df,
+                x="x",  # "latency",
+                y="y",  # "IOPS"/ "BW",
+                hue="type",
+                style="type",
+                kind="line",
+                markers=True,
             ).set(title=f"{workload}: {xcol} vs {ycol}")
             g.set_axis_labels(f"{xcol}", f"{ycol}")
-            #g.set_axis_labels("Latency(ms)", "IOPS (K)")
-            g.set(xticks=df['x'].unique())
-            #df.dataframe(df.style.format(subset=['Position', 'Marks'], formatter="{:.2f}"))
+            # g.set_axis_labels("Latency(ms)", "IOPS (K)")
+            g.set(xticks=df["x"].unique())
+            # df.dataframe(df.style.format(subset=['Position', 'Marks'], formatter="{:.2f}"))
             g.set_xticklabels(rotation=45)
             g.legend.remove()
             plt.legend(title="Build", loc="center right")
-            #plt.show()
+            # plt.show()
             # We need to specify the output path, eg report_dir/figures
             # And keep the output name so we can use it in the .tex files
-            dp = os.path.join(self.config["output"]["path"], "figures/", self.config["output"]["name"])
+            dp = os.path.join(
+                self.config["output"]["path"], "figures/", self.config["output"]["name"]
+            )
             plt.savefig(f"{dp}_{workload}.png", dpi=100, bbox_inches="tight")
             # Emit .tex code to include the figures and tables, use the report output name
             # Each workload name is a section
             plt.close()
+
+    def gen_basic_cmp(self):
+        """
+        Generate a basic comparison of the datasets loaded from the input
+        directories. This involves traversing over the input names and use a
+        template to generate a comparison gnuplot script file, which can be
+        used to generate the comparison (response curves) charts. Create a new
+        object FioPlot, with the list of entries, each a dict with the
+        workload, test run name, and path to the .dat file. Traverse it and
+        generate the .gnuplot script.
+        """
+        plot = FioPlot(
+            ds_list=self.ds_list,
+            workload_list=self.WORKLOAD_LIST,
+            output_path=self.config["output"]["path"],
+            output_name=self.config["output"]["name"],
+            tex=self.tex,
+            md=self.md,
+        )
+        # plot.set_workload_list(self.WORKLOAD_LIST)
+        # out_chart is the suffix for the output files, eg .png,
+        # Generate the .gnuplot script files
+        plot.generate_cmp_plot(title=self.config["output"]["name"])
+        # Execute gnuplot on the generated .plot files -- FIXME: seems truncated
+        plot.run_gnuplot()
+        logger.info(f"Generated .tex content:\n{self.tex}")
+
+    def save_file(self, file_path: str, content: str):
+        """
+        Save the content to the given file path.
+        This is a stub, to be implemented later.
+        """
+        logger.info(f"Saving file {file_path} with content:\n{content}")
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+            f.close()
+        logger.info(f"File {file_path} saved successfully.")
+
+    def gen_report(self):
+        """
+        Generate the report in .tex format.
+        Simply traverse the ds_list structure, defining a Section per workload,
+        including the comparison charts generated by the gen_basic_cmp(). In
+        the future, we will conmsider to follow a structure given as a template
+        in the input config .JSON file.
+        Need to generate a Section with tables, and for the reactor utilisation charts, as well as point out the flamegraphs for the .md only.
+        """
+        dp = os.path.join(
+            self.config["output"]["path"], "tex/", self.config["output"]["name"]
+        )
+        self.save_file(f"{dp}.tex", self.tex)
+        dp = os.path.join(self.config["output"]["path"], self.config["output"]["name"])
+        self.save_file(f"{dp}.md", self.md)
 
     def load_files(self, input_dirs: Dict[str, Any]):
         """
@@ -394,21 +460,23 @@ class Reporter(object):
         TODO: need to describe the expected structure of the directories, ifd we need to recreate some
         of the files, with thier dependencies (as a tree).
         """
+
         def unzip_run_file(zip_file: str, out_dir: str):
             """
             Unzip the given zip file into the output directory.
             """
-            command = f'unzip {zip_file} -d {out_dir} '
+            command = f"unzip {zip_file} -d {out_dir} "
             proc = subprocess.Popen(command, shell=True)
             _ = proc.communicate()
             return proc.returncode == 0
+
         # print('Success' if proc.returncode == 0 else 'Error')
 
         def load_bench_json(dp: str):
             """
             Load the benchmark .json file from the given path.
             TODO: might need renaming since we can use this function to load any .json file
-            """   
+            """
             # Load .json files in the directory as indicated by the benchmark field in the config
             # glob.glob(dir_path + "/*_bench_df.json")
             # json_files = glob.glob(os.path.join(dir_path, f"{self.config['benchmark']}")) # *.json
@@ -439,17 +507,78 @@ class Reporter(object):
                     return False
             return True
 
-        # TODO: we might facotrrise these functions with a single lambda from a dictionary
-        def run_perf_metrics(config: str, dir_path: str):
+        def gen_entries_for_files( file_names: List[str], dir_path: str, title: str, tex: str, md: str):
+            """
+            Generate the entries for the given list of json files.
+            """
+            for file_name in file_names:
+                logger.info(f"Including Generated file: {file_name} into the document")
+                # Need to ensure the path of the file is correct
+                #base_name = os.path.basename(file_name)
+                # chart_name = f"{base_name}.png"
+                if file_name.endswith(".png"):
+                    # Create a symlink to the original file in the figures/ directory
+                    src = os.path.join(dir_path, file_name)
+                    dst = os.path.join(self.config["output"]["path"], "figures", file_name)
+                    logger.info(f"{file_name}: linking {src} to {dst}")
+                    #try:
+                    #except FileExistsError:
+                    if not os.path.isfile(dst):
+                        os.symlink(src, dst)
+
+                    # Include the figure in the .tex file
+                    tex += "\\begin{{figure}}[H]\n"
+                    tex += "\\centering\n"
+                    # Either set a symlink to the original file, or use the original directory
+                    tex += (
+                        #f"\\includegraphics[width=0.8\\textwidth]{{{dir_path}/{file_name}}}\n"
+                        f"\\includegraphics[width=0.8\\textwidth]{{figures/{file_name}}}\n"
+                    )
+                    tex += f"\\caption{{{title}}}\n"
+                    tex += f"\\label{{fig:{file_name}}}\n"
+                    tex += "\\end{{figure}}\n"
+                    #md += f"![{title}](figures/{chart_name})\n\n"
+                    md += f"![{title}](figures/{file_name})\n\n"
+
+                else:
+                    tex += f"\\input{{{dir_path}/{file_name}.tex}}\n"
+                    md += f"![{title}]({dir_path}/{file_name}.md)\n\n"
+
+        def run_script(command: str, dir_path: str, title:str) -> bool:
+            """
+            Run the given Script which should print to stdout a .json list of generated files.
+            This is a helper function to run the given command.
+            WE might want to add a cummulative parameter to incorporate the output,
+            which most of the cases will be in .json format, so we can load it and return it.
+            """
+            logger.info(f"Running command: {command}")
+            proc = subprocess.Popen(command, 
+                                    stdout=subprocess.PIPE, shell=True)
+            stdout, _ = proc.communicate()
+            success = proc.returncode == 0
+            if not success:
+                logger.error(f"Command '{command}' failed with return code {proc.returncode}")
+                return False
+            logger.info(f"Command '{command}' finished with stdout: {stdout}")
+            try:
+                json_list = json.loads(stdout)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to decode JSON output from command '{command}': {e}")
+                return False
+            # json_list is the generated files, traverse and produce the corresponding contents in the report
+
+            gen_entries_for_files( json_list, dir_path, title, self.tex, self.md)
+            return success
+
+        def run_perf_metrics(config: str, dir_path: str, title:str) -> bool:
             """
             Run the perf_metrics.py script with the given config and output.
             This is a helper function to run the perf_metrics.py script to generate the metrics.
             """
-            command = f"python3 perf_metrics.py -d {dir_path} -i {config} -v"
-            logger.info(f"Running command: {command}")
-            proc = subprocess.Popen(command, shell=True)
-            _ = proc.communicate()
-            return proc.returncode == 0
+            command = f"perf_metrics.py -d {dir_path} -i {config} -j -v"
+            return run_script(
+                command, dir_path, f"{title}_metrics"
+            )
 
         def recreate_cpu_avg(name: str, workload: str, test_run: str, dir_path: str):
             """
@@ -464,26 +593,43 @@ class Reporter(object):
             pid_name = f"{test_run}_{workload}_pid.json"
             dp = os.path.join(dir_path, cpu_avg_name)
             if not os.path.isfile(dp):
-                logger.error(f"CPU average file {dp} does not exist, attempting to recreate it")
-                command = f"python3 parse-top.py -d {dir_path} -c {top_json_name} -p {pid_name} -a {cpu_avg_name} -v"
+                logger.error(
+                    f"CPU average file {dp} does not exist, attempting to recreate it"
+                )
+                command = f"parse-top.py -d {dir_path} -c {top_json_name} -p {pid_name} -a {cpu_avg_name} -v"
                 proc = subprocess.Popen(command, shell=True)
                 _ = proc.communicate()
                 return proc.returncode == 0
             return True
 
-        def recreate_bench(name: str, workload: str, test_run: str, dir_path: str, bench_name: str, dp: str):
+        def recreate_bench(
+            name: str,
+            workload: str,
+            test_run: str,
+            dir_path: str,
+            bench_name: str,
+            dp: str,
+        ):
             """
             Recreate the benchmark run .json file from the given parameters.
             This is a helper function to recreate the benchmark run .json file if it does not exist.
             This involves to run parse-top.py, fio-parse-jsons.py and perf_metrics.py
             We assume that the benchmark file is named as <test_run>_<workload>.json
             """
-            recreate_cpu_avg(name, workload, test_run, dir_path)
             # We assume that the benchmark file is named as <test_run>_<workload>.json
             list_name = f"{test_run}_{workload}_list"
             cpu_avg_name = f"{test_run}_{workload}_cpu_avg.json"
             logger.info(f"Attempting to recreate {dp}")
-            command = f"python3 fio-parse-jsons.py -d {dir_path} -c {list_name} -t {test_run} -a {cpu_avg_name}"
+            if not recreate_cpu_avg(name, workload, test_run, dir_path):
+                logger.error(
+                    f"Failed to recreate CPU average file {cpu_avg_name} in {dir_path}"
+                )
+                command = f"fio-parse-jsons.py -d {dir_path} -c {list_name} -t {test_run} -v"
+            else:
+                logger.info(f"Recreated CPU average file") # {cpu_avg_name} in {dir_path}")
+                command = f"fio-parse-jsons.py -d {dir_path} -c {list_name} -t {test_run} -a {cpu_avg_name} -v"
+                
+            logger.info(f"Executing {command}") # {cpu_avg_name} in {dir_path}")
             proc = subprocess.Popen(command, shell=True)
             _ = proc.communicate()
             return proc.returncode == 0
@@ -495,31 +641,45 @@ class Reporter(object):
             """
             # As a minimum, the keymap.json file must exist
             _keymap = load_bench_json(os.path.join(dir_path, "keymap.json"))
-            if _keymap is None or not os.path.isfile(_keymap):
-                logger.error(f"Keymap file {dir_path}/keymap.json does not exist")
-                return False
+            logger.info(f"Keymap is {_keymap}")
+            # if _keymap is None or not os.path.isfile(_keymap):
+            #     logger.error(f"Keymap file {dir_path}/keymap.json does not exist")
+            #     return False
             self.ds_list[name][workload]["keymap"] = _keymap
-            # This is the name of the benchmark file, which is expected to be in the directory, 
+            # This is the name of the benchmark file, which is expected to be in the directory,
             # but also common name for the .dat, and other files
             # We assume the benchmark file is named as <test_run>_<workload>.json
             # Try recreate it if it does not exist
-            bench_name = f"{test_run}_{workload}.json"  # The original aggregated FIO and metrics
+            bench_name = (
+                f"{test_run}_{workload}.json"  # The original aggregated FIO and metrics
+            )
             dp = os.path.join(dir_path, bench_name)
-            logger.info(f"{name}: Loading {bench_name} from {dp}")
+            logger.info(f"{name}: checking for {dp}")
             _json = load_bench_json(dp)
             if _json is None:
-                logger.error(f"Benchmark run {bench_name} does not exist in {dir_path}, attempting to recrete it")
-                if not recreate_bench(name, workload, test_run, dir_path, bench_name, dp):
-                    logger.error(f"Failed to recreate benchmark run {bench_name} in {dir_path}")
+                logger.error(
+                    f"Attempting to recreate {bench_name}" # does not exist in {dir_path}, attempting to recrete it"
+                )
+                if not recreate_bench(
+                    name, workload, test_run, dir_path, bench_name, dp
+                ):
+                    logger.error(
+                        f"Failed to recreate benchmark run {bench_name}" # in {dir_path}"
+                    )
                     return False
                 # Then run perf_metrics.py to generate the metrics
-                #perf_metrics_name = f"{test_run}_{workload}_perf_metrics.json"
-                #run_perf_metrics(self.config["input"]["perf_metrics"], dir_path)
+                # perf_metrics_name = f"{test_run}_{workload}_perf_metrics.json"
+                # run_perf_metrics(self.config["input"]["perf_metrics"], dir_path)
                 perf_metrics_name = f"{test_run}_{workload}_rutil_conf.json"
-                run_perf_metrics(perf_metrics_name, dir_path)
+                run_perf_metrics(config=perf_metrics_name, dir_path=dir_path, title=f"{name}_{test_run}_{workload}")
                 _json = load_bench_json(dp)
-            self.ds_list[name][workload]["json"] = _json 
-            self.ds_list[name][workload]["frame"] = pd.DataFrame(_json)
+            self.ds_list[name][workload]["json"] = _json
+            try:
+                self.ds_list[name][workload]["frame"] = pd.DataFrame(_json)
+            except ValueError as e:
+                logger.error(f"Failed to create DataFrame from {dp}: {e}")
+                logger.debug(f"JSON content: {_json}")
+                return False
             return True
 
         def update_ds_list(name: str, workload: str, test_run: str, dir_path: str):
@@ -542,7 +702,6 @@ class Reporter(object):
             check_bench_run(name, workload, test_run, dir_path)
             # self.ds_list[name][workload]["framep"] = pd.DataFrame.from_dict(
             #     self.ds_list[name][workload]["json"], orient="tight"
-        
 
         for name, test_d in input_dirs.items():
             # Check if the directory exists,should be abetter Pythonic way to do this
@@ -556,16 +715,20 @@ class Reporter(object):
                     zip_path = os.path.join(test_dir, f"{test_run}_{workload}.zip")
                     # Check if the directory is empty
                     if not os.path.isdir(dir_path):
-                        logger.error(f"Directory {dir_path} does not exist, attempting to create it from {zip_path}")
+                        logger.error(
+                            f"Directory {dir_path} does not exist, attempting to create it from {zip_path}"
+                        )
                         os.makedirs(dir_path, exist_ok=True)
                         logger.info(f"Created directory {dir_path}")
                         # Fund .zio
                         if not os.path.isfile(zip_path):
-                            logger.error(f"File {zip_path} does not exist, cannot unzip")
+                            logger.error(
+                                f"File {zip_path} does not exist, cannot unzip"
+                            )
                             continue
                         # If the .zip file exists, unzip it into the Directory
                         logger.info(f"Unzipping {zip_path} into {dir_path}")
-                        if  unzip_run_file(zip_path, dir_path):
+                        if unzip_run_file(zip_path, dir_path):
                             logger.info(f"Unzipped {zip_path} into {dir_path}")
                         else:
                             logger.error(f"Failed to unzip {zip_path} into {dir_path}")
@@ -581,21 +744,6 @@ class Reporter(object):
                 continue
 
         logger.info(f"Dataset:\n{self.ds_list}")
-
-    def gen_basic_cmp(self):
-        """
-        Generate a basic comparison of the datasets loaded from the input
-        directories. This involves traversing over the input names and use a
-        template to generate a comparison gnuplot script file, which can be
-        used to generate the comparison (response curves) charts. Create a new
-        object FioPlot, with the list of entries, each a dict with the
-        workload, test run name, and path to the .dat file. Traverse it and
-        generate the .gnuplot script.
-        """
-        # Try pass as argument the dict we have
-        plot = FioPlot(out_name= self.config['output']['name'], ds_list= self.ds_list)
-        #plot.set_workload_list(self.WORKLOAD_LIST)
-        # Generate the .gnuplot script files
 
     def load_config(self):
         """
@@ -638,8 +786,13 @@ class Reporter(object):
         self.load_config()
         # self.plot_dataset() # FIXME: this should be called after the dataset is loaded
         self.gen_basic_cmp()
+        self.gen_report()
 
     def compile(self):
+        """
+        This method is used to compile the report. It will compile the .tex file into .pdf, but needs to include
+        some other sections, which coul dbe from an assuming template.
+        """
         pass
 
 
