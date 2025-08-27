@@ -14,10 +14,6 @@ metric (e.g. read_time_ms, write_time_ms). We use pandas dataframes for the
 calculations, and seaborn for the plots. consider to extend this to a list of
 dataframes, one per test run, so we can compare the results.
 
-TODO:
-1) Indicate clearly the types of allowed input and ouput produced,
-2) Option -j to iondicate save output in .json, so the report_gen.py can dynamically load the paths of the generated files to be included in the report.
-3) Option -p to indicate produce plots (png, pdf) from the .json output, whose paths need also be included in the corresponding report .tex, .md as appropriate. 
 """
 
 import argparse
@@ -339,7 +335,9 @@ class PerfMetricEntry(object):
         sns.heatmap(df, annot=False, fmt=".1f", linewidths=0.5, ax=ax)
         plt.show()
         plt.savefig(outname.replace(".json", "f{slice_name}.png"))
-        self.generated_files.append( "f{slice_name}.png") # implictly know\ = [f"{name}.tex", f"{name}.md", f"{name}.json"]
+        self.generated_files.append(
+            "f{slice_name}.png"
+        )  # implictly know\ = [f"{name}.tex", f"{name}.md", f"{name}.json"]
 
     def save_table(self, name, df):
         """
@@ -359,7 +357,9 @@ class PerfMetricEntry(object):
                 f.close()
             # save_json(f"{name}.json", df.to_dict())
             # Need to store the names of the files generated into a list, so it can be logger.infoed as a json output
-            self.generated_files.append( f"{name}") # implictly know\ = [f"{name}.tex", f"{name}.md", f"{name}.json"]
+            self.generated_files.append(
+                f"{name}"
+            )  # implictly know\ = [f"{name}.tex", f"{name}.md", f"{name}.json"]
 
     def make_metrics_chart(self, df, outname):
         """
@@ -431,14 +431,12 @@ class PerfMetricEntry(object):
             chart_name = outname.replace(".json", f"_{slice_name}_{cb_name}.png")
             plt.savefig(
                 chart_name,
-                dpi=300,
+                # dpi=300,
                 bbox_inches="tight",
             )
             # self.plot_heatmap(df_slice, outname, f"{slice_name}_{cb_name}")
-            # We migh tneed to differntiate between gneerated charts and everything else (tables, etc)
-            self.generated_files.append(
-                chart_name
-            )
+            # We might need to differentiate between generated charts and everything else (tables, etc)
+            self.generated_files.append(chart_name)
 
         def _get_reactor_util(self, df, outname):
             """
@@ -475,7 +473,9 @@ class PerfMetricEntry(object):
                 # then use it to calculate the IOP cost, making a new column in the dataframe
                 if slice_name == "reactor_utilization":
                     self.reactor_utilization = df.loc[:, slice_name].mean()
-                    logger.info(f"Reactor utilization mean is: {self.reactor_utilization}")
+                    logger.info(
+                        f"Reactor utilization mean is: {self.reactor_utilization}"
+                    )
                     logger.info(f"Reactor utilization: {self.reactor_utilization}")
                 # for cb_name, cb in callbacks.items():
                 cb_name = self.METRICS[slice_name]["normalisation"]
@@ -903,13 +903,14 @@ class PerfMetricEntry(object):
     def generate_json_output(self):
         """
         Generate a .json file with the list of files generated
-        """
         outname = self.config["output"].replace(".json", "_generated_files.json")
         save_json(outname, {"generated_files": self.generated_files})
         logger.info(f"Generated files list saved to {outname}")
+        """
+        logger.info(f"Generated files list: {self.generated_files}")
         if self.options.json:
             print(json.dumps(self.generated_files, indent=4))
-            #print(json.dumps({"generated_files": self.generated_files}, indent=4))
+            # print(json.dumps({"generated_files": self.generated_files}, indent=4))
 
     def run(self):
         """

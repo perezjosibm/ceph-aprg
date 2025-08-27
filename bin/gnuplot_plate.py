@@ -1,7 +1,8 @@
 import logging
+import pprint
 import re
 import os
-import subprocess 
+import subprocess
 from typing import List, Dict, Any
 
 __author__ = "Jose J Palacios-Perez"
@@ -128,8 +129,8 @@ class FioPlot(object):
         workload_list: List[str] = [],
         output_path: str = "",
         output_name: str = "",  # output .plot filename, normally taken from config_list
-        tex: str = "",
-        md: str = "",
+        contents: Dict[str, Any] = {},
+        is_cmp: bool = True,
         list_subtables: List = [],
     ):
         """
@@ -144,11 +145,10 @@ class FioPlot(object):
         self.output_name = (
             output_name  # output .plot filename, normally taken from config_list
         )
-        self.tex = tex  # the str buffer for the .tex contents
-        self.md = md  # the str buffer for the .md contents
+        self.contents = contents  # the str buffers for the .tex and .md contents
         self.list_subtables = list_subtables  # typically a list of TestRunTables
         self.header = ""  # the header for the .plot script
-        self.is_cmp = False  # whether this is a comparison plot
+        self.is_cmp = is_cmp  # whether this is a comparison plot
         self.data = ""  # the .dat file contents, normally empty for comparison plots
 
     def set_workload_list(self, workload_list: List[str] = []):
@@ -197,7 +197,7 @@ set autoscale y2
         Side effect: clears the template string
         """
         dp = os.path.join(self.output_path, f"{self.output_name}")
-        #dp = os.path.join(self.output_path, "figures/", f"{self.output_name}")
+        # dp = os.path.join(self.output_path, "figures/", f"{self.output_name}")
         # header_keys = self.header_keys
         # A Level 1 plot will produce a .dat file with the response curves and expects the output_name to have a _list suffix
         #         if not config.endswith("_list"):
@@ -221,10 +221,9 @@ set autoscale y2
             # os.makedirs(os.path.dirname(self.out_plot), exist_ok=True)
             with open(self.out_plot, "w+") as f:
                 # Write the header and the template
-                #f.write(self.header)
-                #f.write(self.template)
-                print(self.header, file=f)
-                print(self.template, file=f)
+                # f.write(self.header)
+                # f.write(self.template)
+                print(f"{self.header}\n{self.template}\n", file=f)
                 f.close()
         except IOError as e:
             logger.error(f"Error writing to {self.out_plot}: {e}")
@@ -236,14 +235,13 @@ set autoscale y2
                 f.write(self.data)
                 f.close()
 
-
     def run_gnuplot(self):
         """
         Execute gnuplot to produce the .png chart from the .plot script
         """
         command = f"gnuplot {self.out_plot}"
-        #proc = os.popen(command)
-        #stdout = proc.read()
+        # proc = os.popen(command)
+        # stdout = proc.read()
         proc = subprocess.run(command, shell=True, capture_output=True, text=True)
         logger.info(f"Command '{command}' finished with stdout: {proc.stdout}")
         return proc.returncode == 0
@@ -258,7 +256,7 @@ set autoscale y2
         """
         Produce the .gnuplot form the ds_list dictionary, traversing over the workloads keys, normally used
         for comparison of the respective response curves.
-        Converntion:
+        Convention:
         * out_chart: the output chart name, e.g. "iops_vs_lat"
         * xlabel: the x-axis label, e.g. "IOPS (thousand)"
         * ylabel: the y-axis label, e.g. "Latency (ms)"
@@ -269,6 +267,8 @@ set autoscale y2
         The .dat file is generated from the ds_list (except for Level 2 comparison charts)
         Each .png chart will be named as output_name_<workload>_<out_chart_suffix>.png in the subfolder figures/
         This is intended for the typical Level2 response curves already constructed from FIO output .json files.
+        FIXME: there is a missnaming taking place elsewhere, as the output_name is not the same as out_chart
+        Probably more appropriate somewhere in common since we used the same method for gen_tex_figure_md_entry() in report_gen.py
         """
 
         def generate_out_chart(
@@ -282,16 +282,16 @@ set autoscale y2
             We include and refer this in the .tex body, as well as the .md file
             """
             chart_name = f"{out_chart}_{workload}_{out_chart_suffix}.png"
-            self.tex += "\\begin{{figure}}[H]\n"
-            self.tex += "\\centering\n"
-            self.tex += (
+            self.contents["tex"] += "\\begin{{figure}}[H]\n"
+            self.contents["tex"] += "\\centering\n"
+            self.contents["tex"] += (
                 f"\\includegraphics[width=0.8\\textwidth]{{figures/{chart_name}}}\n"
             )
-            self.tex += f"\\caption{{{title} - {workload}}}\n"
-            self.tex += f"\\label{{fig:{out_chart}_{workload}}}\n"
-            self.tex += "\\end{{figure}}\n"
+            self.contents["tex"] += f"\\caption{{{title} - {workload}}}\n"
+            self.contents["tex"] += f"\\label{{fig:{out_chart}_{workload}}}\n"
+            self.contents["tex"] += "\\end{{figure}}\n"
 
-            self.md += f"![{title} - {workload}](figures/{chart_name})\n\n"
+            self.contents["md"] += f"![{title} - {workload}](figures/{chart_name})\n\n"
 
             return f"""
 # {workload}
@@ -319,8 +319,8 @@ set title "{title}-{workload}"
         # We use this loop to generate Sections in the report, that is for .tex and .md files
         for workload in self.WORKLOAD_LIST:
             # Define a Section for this workload
-            self.tex += f"\\section{{{workload}}}\n"
-            self.md += f"## {workload}\n\n"
+            self.contents["tex"] += f"\\section{{{workload}}}\n"
+            self.contents["md"] += f"## {workload}\n\n"
             # Generate the output chart name for this workload
             out_chart = f"{dp}"
             # entries for the plot script (each entry is a response curve)
@@ -333,8 +333,8 @@ set title "{title}-{workload}"
                 entry = ds[workload]
                 dir_path = entry["path"]
                 dat_name = f"{entry["test_run"]}_{workload}.dat"  # The original aggregated FIO and metrics
-                dp = os.path.join(dir_path, dat_name)
-                entries.append(generate_entry(name, dp, lc))
+                dp_dat = os.path.join(dir_path, dat_name)
+                entries.append(generate_entry(name, dp_dat, lc))
                 lc += 1  # increment the line color for each entry
 
             # Join the entries with a comma and '\':
@@ -342,11 +342,13 @@ set title "{title}-{workload}"
             self.template += f"""plot {entries_str}\n"""
 
         logger.info(f"Generated template:\n {self.header}\n{self.template}")
+        pp = pprint.PrettyPrinter(width=41, compact=True)
+        logger.info(f"Generated contents:\n {pp.pprint(self.contents)}\n")
 
         self.set_out_file_names()
         # Save the entries_str and the template
         self.save_files()
-        #print(f"{self.header}\n{self.template}")
+        # print(f"{self.header}\n{self.template}")
 
 
 class FioRcPlot(FioPlot):

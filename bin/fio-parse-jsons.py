@@ -37,7 +37,7 @@ import tempfile
 import functools
 from operator import add
 
-__author__ = 'Jose J Palacios-Perez'
+__author__ = "Jose J Palacios-Perez"
 
 logger = logging.getLogger(__name__)
 # Predefined dictionary of metrics (query paths on the ouput FIO .json) for typical workloads
@@ -45,9 +45,9 @@ logger = logging.getLogger(__name__)
 # For MultiFIO JSON files, the jobname no neccessarily matches any of the predef_dict keys,
 # so we need instead to use a separate query:
 # jobname would be associated with the volume name
-#job_type = "jobs/jobname=*/job options/rw"
+# job_type = "jobs/jobname=*/job options/rw"
 # Better still, use the global options
-job_type='global options/rw'
+job_type = "global options/rw"
 # All the following should be within the path
 #  'jobs/jobname=*/read/iops'
 predef_dict = {
@@ -67,7 +67,7 @@ predef_dict = {
         "usr_cpu": "usr_cpu",
         "sys_cpu": "sys_cpu",
     },
-    "write": { # aka seqwrite
+    "write": {  # aka seqwrite
         "bw": "write/bw",
         "total_ios": "write/total_ios",
         "clat_ms": "write/clat_ns",
@@ -75,7 +75,7 @@ predef_dict = {
         "usr_cpu": "usr_cpu",
         "sys_cpu": "sys_cpu",
     },
-    "read": { # seqread
+    "read": {  # seqread
         "bw": "read/bw",
         "total_ios": "read/total_ios",
         "clat_ms": "read/clat_ns",
@@ -103,7 +103,7 @@ def filter_json_node(next_branch, jnode_list_in):
     for n in jnode_list_in:
         dotlist = next_branch.split("=")
         if len(dotlist) > 2:
-            print(f"unrecognized syntax at {next_branch}")
+            logger.info(f"unrecognized syntax at {next_branch}")
             return []
         if len(dotlist) == 1:
             assert isinstance(n, dict)
@@ -124,7 +124,7 @@ def filter_json_node(next_branch, jnode_list_in):
                         next_node_list.append(e)
                         # print('selecting: %s'%str(e))
             if len(next_node_list) == 0:
-                print(f"{select_key}={select_value} not found")
+                logger.info(f"{select_key}={select_value} not found")
                 return []
     return next_node_list
 
@@ -247,7 +247,7 @@ def get_jobs_type(job, jobname: str):
     else:
         jobname = job["job options"]["rw"]
         query_dict = predef_dict[jobname]
-    return query_dict 
+    return query_dict
 
 
 def process_fio_json_file(json_file, json_tree_path):
@@ -274,7 +274,7 @@ def process_fio_json_file(json_file, json_tree_path):
         result_dict["jobname"] = node["global options"]["rw"]
         # Use the jobname to index the predef_dict for the json query
         jobs_list = node["jobs"]
-        print(f"Num jobs: {len(jobs_list)}")
+        logger.info(f"Num jobs: {len(jobs_list)}")
         job_result = {}
         jobname = result_dict["jobname"]
         logger.info(f"Processing {json_file} as {jobname}")
@@ -315,7 +315,7 @@ def traverse_files(sdir, config, json_tree_path):
     json_files = config_file.read().splitlines()
     logger.info(json_files)
     config_file.close()
-    print(f"loading {len(json_files)} .json files ...")
+    logger.info(f"loading {len(json_files)} .json files ...")
     pp = pprint.PrettyPrinter(width=41, compact=True)
     dict_new = {}
     for fname in json_files:
@@ -323,12 +323,12 @@ def traverse_files(sdir, config, json_tree_path):
         if fname not in dict_new:
             node_list = process_fio_json_file(fname, json_tree_path)
             dict_new[fname] = node_list
-            print(f"== {fname} ==")
-            pp.pprint(node_list)
+            logger.info(f"== {fname} ==")
+            logger.info(pp.pprint(node_list))
     return dict_new
 
 
-def gen_plot(config:str, data:str, list_subtables, title:str, header_keys:dict):
+def gen_plot(config: str, data: str, list_subtables, title: str, header_keys: dict):
     """
     Generate a gnuplot script and .dat files -- for response
     latency curves, it charts Throughput/latency against CPU util
@@ -344,16 +344,16 @@ def gen_plot(config:str, data:str, list_subtables, title:str, header_keys:dict):
             "y2column": "OSD_cpu",
         }
     }
-    # Define a new one for the CPU core utilisation
+    # Define a new one for the CPU core utilisation
     pg_y2column = {
-        'OSD_cpu': 8,
+        "OSD_cpu": 8,
         #'OSD_mem': 9,
-        'FIO_cpu': 10,	
-        #'FIO_mem': 11, 
+        "FIO_cpu": 10,
+        #'FIO_mem': 11,
     }
     # Use the header_keys to ensure we refer to the correct column number
     for k in pg_y2column.keys():
-        pg_y2column[k]=str(header_keys[k])
+        pg_y2column[k] = str(header_keys[k])
 
     header = r"""
 set terminal pngcairo size 650,420 enhanced font 'Verdana,10'
@@ -395,9 +395,13 @@ set title "{_title}"
         # The stdev is the error column:5
         if len(list_subtables) > 0:
             head = f"plot '{out_data}' index 0 using ($2/1e3):{ycol}:5 t '{list_subtables[0]} q-depth' w yerr axes x1y1 lc 1"
-            head += f",\\\n '' index 0 using ($2/1e3):{ycol} notitle w lp lc 1 axes x1y1"
-            for pg,y2col  in pg_y2column.items():
-                head += f",\\\n '' index 0 using ($2/1e3):{y2col} w lp axes x1y2 t '{pg}'"
+            head += (
+                f",\\\n '' index 0 using ($2/1e3):{ycol} notitle w lp lc 1 axes x1y1"
+            )
+            for pg, y2col in pg_y2column.items():
+                head += (
+                    f",\\\n '' index 0 using ($2/1e3):{y2col} w lp axes x1y2 t '{pg}'"
+                )
             if len(list_subtables) > 1:
                 tail = ",\\\n".join(
                     [
@@ -452,7 +456,7 @@ def aggregate_cpu_avg(avg, table, avg_cpu):
     """
     # Note: if num_files  > len(avg_cpu): this is a MultiFIO
     if len(avg_cpu):
-        print(f" avg_cpu list has: {len(avg_cpu)} items")
+        logger.info(f" avg_cpu list has: {len(avg_cpu)} items")
         # The number of CPU items should be the same as the number of dict_files.keys()
         for cpu_item in avg_cpu:
             for k in cpu_item.keys():  # 'sys', 'us' normally from the OSD
@@ -471,8 +475,9 @@ def aggregate_cpu_avg(avg, table, avg_cpu):
                 table[k].append(cpu_avg_k)
 
         pp = pprint.PrettyPrinter(width=41, compact=True)
-        print("Table (after aggregating OSD CPU avg data):")
-        pp.pprint(table)
+        logger.info("Table (after aggregating OSD CPU avg data):")
+        logger.info(pp.pprint(table))
+
 
 def aggregate_proc_cpu_avg(avg, table, avg_cpu, proc):
     """
@@ -487,35 +492,43 @@ def aggregate_proc_cpu_avg(avg, table, avg_cpu, proc):
                     'mem' > { similar dict }
                     }
         'OSD' => { similar dict }
+        TOD: need to use the timestamp to match the FIO runs
     """
+    # Check that the length of avg_cpu is the same as the number of dict_files.keys(), that is, eeach column in table has the same length
+    k_lens = [len(table[k]) for k in table.keys()]
+    if len(set(k_lens)) != 1:
+        logger.error(f"Table columns have different lengths: {k_lens}")
+        return
     if len(avg_cpu):
-        print(f" avg_cpu list has: {len(avg_cpu)} items")
+        logger.info(f" avg_cpu list has: {len(avg_cpu)} items")
         for cpu_item in avg_cpu:
             if proc in cpu_item:
-                for metric in cpu_item[proc]: # 'cpu', 'mem' from the OSD
+                for metric in cpu_item[proc]:  # 'cpu', 'mem' from the OSD
                     # Aggregate the CPU values in the avg table
                     mt = f"{proc}_{metric}"
-                    table[mt]= cpu_item[proc][metric]["data"]
+                    # Slice only to the length of the table columns
+                    table[mt] = cpu_item[proc][metric]["data"][: k_lens[0]]
 
         pp = pprint.PrettyPrinter(width=41, compact=True)
-        print(f"Table (after aggregating {proc} CPU avg data):")
-        pp.pprint(table)
+        logger.info(f"Table (after aggregating {proc} CPU avg data):")
+        logger.info(pp.pprint(table))
+
 
 def _aggregate_proc_cpu_avg_(avg, table, avg_cpu, proc):
     """
     This function is going to be deprecated soon
     """
-    cpu_proc = {} # proc: {"mem": 0.0, "cpu": 0.0}}
-    num_entries=0
-    #metrics = []
+    cpu_proc = {}  # proc: {"mem": 0.0, "cpu": 0.0}}
+    num_entries = 0
+    # metrics = []
     if len(avg_cpu):
-        print(f" avg_cpu list has: {len(avg_cpu)} items")
+        logger.info(f" avg_cpu list has: {len(avg_cpu)} items")
         for cpu_item in avg_cpu:
             if proc in cpu_item:
                 if not cpu_proc:
                     cpu_proc = cpu_item[proc]
                 else:
-                    for metric in cpu_item[proc]: # 'cpu', 'mem' from the OSD
+                    for metric in cpu_item[proc]:  # 'cpu', 'mem' from the OSD
                         # We could detect the layout of this .json, whether is from
                         # a Response latency or individual run
                         cpu_proc[metric] = cpu_item[proc][metric]["data"]
@@ -523,7 +536,7 @@ def _aggregate_proc_cpu_avg_(avg, table, avg_cpu, proc):
 
         for metric in cpu_proc:
             if num_entries > 1:
-                cpu_proc[metric] /= num_entries 
+                cpu_proc[metric] /= num_entries
             # Aggregate the CPU values in the avg table
             mt = f"{proc}_{metric}"
             if mt not in avg:
@@ -534,18 +547,20 @@ def _aggregate_proc_cpu_avg_(avg, table, avg_cpu, proc):
             table[mt].append(avg[mt])
 
         pp = pprint.PrettyPrinter(width=41, compact=True)
-        print(f"Table (after aggregating {proc} CPU avg data):")
-        pp.pprint(table)
+        logger.info(f"Table (after aggregating {proc} CPU avg data):")
+        logger.info(pp.pprint(table))
 
-def save_table_json(table,name):
+
+def save_table_json(table, name):
     """
     Save the table into a .JSON
     """
-    with open(name, 'w', encoding='utf-8') as f:
-        json.dump(table, f, indent=4 ) #, sort_keys=True, cls=TopEntryJSONEncoder)
+    with open(name, "w", encoding="utf-8") as f:
+        json.dump(table, f, indent=4)  # , sort_keys=True, cls=TopEntryJSONEncoder)
         f.close()
 
-def gen_table(dict_files, config:str, title:str, avg_cpu:dict, multi=False):
+
+def gen_table(dict_files, config: str, title: str, avg_cpu: dict, multi=False):
     """
     Construct a table from the predefined keys, sorted according to the
     file naming convention:
@@ -573,8 +588,8 @@ def gen_table(dict_files, config:str, title:str, avg_cpu:dict, multi=False):
     # Aggregate osd_cpu_us and osd_cpu_sys into the main table
     for pname in ("OSD", "FIO"):
         aggregate_proc_cpu_avg(avg, table, avg_cpu, pname)
-    
-    save_table_json(table,config.replace("_list", ".json"))
+
+    save_table_json(table, config.replace("_list", ".json"))
     # Note: in general the CPU measurements are global across the test time
     # for all FIO processes, so in the MultiFIO case we need to reduce the FIO measurements first
 
@@ -588,8 +603,8 @@ def gen_table(dict_files, config:str, title:str, avg_cpu:dict, multi=False):
 
     wiki = (
         r"""{| class="wikitable"
-|- """ +
-        f"""
+|- """
+        + f"""
  ! colspan=\"{len(table)}\"  | 
         """
         + config.replace("_list", "")
@@ -601,25 +616,27 @@ def gen_table(dict_files, config:str, title:str, avg_cpu:dict, multi=False):
     wiki += "\n|-\n"
 
     mdtxt = "| "
-    mdtxt += "| ".join(map(lambda x: x.replace(r"_",r"\_"), list(table.keys())))
+    mdtxt += "| ".join(map(lambda x: x.replace(r"_", r"\_"), list(table.keys())))
     mdtxt += " |\n| "
-    mdtxt += "| ".join( [ "---" for _ in table.keys()] )
+    mdtxt += "| ".join(["---" for _ in table.keys()])
     mdtxt += "|\n"
 
     latex = (
-         r"""
+        r"""
 \begin{table}[h!]
 \centering
-\begin{tabular}[t]{*{""" + f"{len(table)}" + r""" }{|c|}}
+\begin{tabular}[t]{*{"""
+        + f"{len(table)}"
+        + r""" }{|c|}}
 \hline 
 """
     )
-    latex += " & ".join(map(lambda x: x.replace(r"_",r"\_"), list(table.keys())))
+    latex += " & ".join(map(lambda x: x.replace(r"_", r"\_"), list(table.keys())))
     latex += r"\\" + "\n" + r"\hline" + "\n"
 
-    # Construct a header_keys list that describes the order of the columns in the gnuplot .dat
+    # Construct a header_keys list that describes the order of the columns in the gnuplot .dat
     # table -- We might select a subset of the table keys to plot
-    header_keys = { v:i for i,v in enumerate(table.keys(),1) }
+    header_keys = {v: i for i, v in enumerate(table.keys(), 1)}
     for k in table.keys():
         table_iters[k] = iter(table[k])
     # Construct the wiki table: the order given by the file names is important here,
@@ -672,8 +689,8 @@ def gen_table(dict_files, config:str, title:str, avg_cpu:dict, multi=False):
 
     # format_numeric = lambda num: f"{num:e}" if isinstance(num, int) else f"{num:,.2f}"
     wiki += "|}\n"
-    print(f" Wiki table: {title}")
-    print(wiki)
+    logger.info(f" Wiki table: {title}")
+    logger.info(wiki)
     latex += f"""
 \\hline
 \\end{{tabular}}
@@ -681,8 +698,8 @@ def gen_table(dict_files, config:str, title:str, avg_cpu:dict, multi=False):
 \\label{{table:iops-lat-cpu-{title}}}
 \\end{{table}}
 """
-    print(latex)
-    print(mdtxt)
+    logger.info(latex)
+    logger.info(mdtxt)
     with open(out_tex, "w") as f:
         f.write(latex)
         f.close()
@@ -692,8 +709,8 @@ def gen_table(dict_files, config:str, title:str, avg_cpu:dict, multi=False):
         f.write(mdtxt)
         f.close()
 
-    gen_plot(config, gplot, list_subtables, title, header_keys )
-    print("Done")
+    gen_plot(config, gplot, list_subtables, title, header_keys)
+    logger.info("Done")
 
 
 def main(directory, config, json_query):
@@ -722,7 +739,7 @@ def load_avg_cpu_json(json_fname):
             # check for empty file
             f_info = os.fstat(json_data.fileno())
             if f_info.st_size == 0:
-                print(f"JSON input file {json_fname} is empty")
+                logger.error(f"JSON input file {json_fname} is empty")
                 return cpu_avg_list
             # parse the JSON:  we might provide which keys to look for
             cpu_avg_list = json.load(json_data)
@@ -801,7 +818,7 @@ def parse_args():
         logLevel = logging.DEBUG
     else:
         logLevel = logging.INFO
-        #logging.basicConfig(level=logging.INFO)
+        # logging.basicConfig(level=logging.INFO)
 
     with tempfile.NamedTemporaryFile(dir="/tmp", delete=False) as tmpfile:
         logging.basicConfig(filename=tmpfile.name, encoding="utf-8", level=logLevel)

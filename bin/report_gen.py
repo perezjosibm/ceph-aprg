@@ -108,14 +108,43 @@ class Reporter(object):
         self.ds_list = {}  # type: Dict[str, Any]
         # Body of the report, to be filled with references to the tables and figures
         self.body = {}  # type: Dict[str, Any]
-        self.tex = " "  # type: str
-        self.md = ""  # type: str
+        self.document = {"tex": "", "md": ""}  # type: Dict[str, Any]
 
-    def traverse_dir(self):
+    def traverse_dir(self, dir_path: str):
         """
-        Traverse the given list (.JSON) use .tex template to generate document
+        Traverse the given dir_path to find the expected files.
+        Returns a list of such files to be processed into a document report.
         """
-        pass
+        # We expect to find the following files in the dir_path:
+        expected_files = {
+            "tex": {
+                "tables": re.compile(r".*fg\.tex"),
+                "charts": re.compile(r".*\.png"),
+            },
+            "md": {
+                "charts": re.compile(r".*\.png"),
+                "tables": re.compile(r".*fg\.md"),
+                "flamegraph": re.compile(
+                    r".*fg\.svg"
+                ),  # f"{test_run}_{workload}fg.svg",
+            },
+            # "top_json": f"{test_run}_{workload}_top.json",
+            # "cpu_avg": f"{test_run}_{workload}_cpu_avg.json",
+            # "rutil_conf": f"{test_run}_{workload}_rutil_conf.json",
+            # "bench_json": f"{test_run}_{workload}.json",
+        }
+        # found_files = {"tex": {"tables": [], "charts": []}, "md": {"tables": [], "charts": [], "flamegraph": []}}
+        found_files = {"tex": [], "md": []}
+        for fmt, patterns in expected_files.items():
+            for ftype, pattern in patterns.items():
+                matched_files = glob.glob(os.path.join(dir_path, "*"))
+                # for mf in os.listdir(dir_path):
+                #    if pattern.match(mf):
+                for mf in matched_files:
+                    if pattern.match(os.path.basename(mf)):
+                        logger.info(f"Found {fmt} {ftype} file: {mf}")
+                        found_files[fmt].append(os.path.basename(mf))
+        return found_files
 
     def start_fig_table(self, header: list[str]):
         """
@@ -405,16 +434,15 @@ class Reporter(object):
             workload_list=self.WORKLOAD_LIST,
             output_path=self.config["output"]["path"],
             output_name=self.config["output"]["name"],
-            tex=self.tex,
-            md=self.md,
+            contents=self.document,
         )
         # plot.set_workload_list(self.WORKLOAD_LIST)
         # out_chart is the suffix for the output files, eg .png,
         # Generate the .gnuplot script files
         plot.generate_cmp_plot(title=self.config["output"]["name"])
         # Execute gnuplot on the generated .plot files -- FIXME: seems truncated
-        plot.run_gnuplot()
-        logger.info(f"Generated .tex content:\n{self.tex}")
+        logger.info(f"Generated .tex content from plot:\n{self.document['tex']}")
+        # plot.run_gnuplot()
 
     def save_file(self, file_path: str, content: str):
         """
@@ -439,9 +467,9 @@ class Reporter(object):
         dp = os.path.join(
             self.config["output"]["path"], "tex/", self.config["output"]["name"]
         )
-        self.save_file(f"{dp}.tex", self.tex)
+        self.save_file(f"{dp}.tex", self.document["tex"])
         dp = os.path.join(self.config["output"]["path"], self.config["output"]["name"])
-        self.save_file(f"{dp}.md", self.md)
+        self.save_file(f"{dp}.md", self.document["md"])
 
     def load_files(self, input_dirs: Dict[str, Any]):
         """
@@ -491,7 +519,7 @@ class Reporter(object):
                 return None
             return load_json(dp)
 
-        def check_contents(dir_path: str):
+        def check_document(dir_path: str):
             """
             Check if the directory contains the expected files.
             # Check if the directory contains the expected files
@@ -507,44 +535,62 @@ class Reporter(object):
                     return False
             return True
 
-        def gen_entries_for_files( file_names: List[str], dir_path: str, title: str, tex: str, md: str):
+        def gen_tex_figure_md_entry(
+            key: str, title: str, file_name: str, dir_path: str
+        ):
+            """
+            Generate .tex and .md for the figure entry
+            """
+
+            if key == "tex":
+                title = title.replace("_", "-")
+                self.document["tex"] += "\\begin{{figure}}[H]\n"
+                self.document["tex"] += "\\centering\n"
+                self.document["tex"] += (
+                    f"\\includegraphics[width=0.8\\textwidth]{{{dir_path}/{file_name}}}\n"
+                )
+                self.document["tex"] += f"\\caption{{{title}}}\n"
+                self.document["tex"] += f"\\label{{fig:{file_name}}}\n"
+                self.document["tex"] += "\\end{{figure}}\n"
+            elif key == "md":
+                self.document["md"] += f"![{title}](figures/{file_name})\n\n"
+
+        def gen_entries_for_files(
+            key: str, file_names: List[str], dir_path: str, title: str
+        ):
             """
             Generate the entries for the given list of json files.
             """
             for file_name in file_names:
-                logger.info(f"Including Generated file: {file_name} into the document")
+                logger.info(
+                    f"Including Generated file: {file_name} into the {k} document"
+                )
                 # Need to ensure the path of the file is correct
-                #base_name = os.path.basename(file_name)
+                # base_name = os.path.basename(file_name)
                 # chart_name = f"{base_name}.png"
                 if file_name.endswith(".png"):
                     # Create a symlink to the original file in the figures/ directory
                     src = os.path.join(dir_path, file_name)
-                    dst = os.path.join(self.config["output"]["path"], "figures", file_name)
+                    dst = os.path.join(
+                        self.config["output"]["path"], "figures/", file_name
+                    )
                     logger.info(f"{file_name}: linking {src} to {dst}")
-                    #try:
-                    #except FileExistsError:
+                    # try:
+                    # except FileExistsError:
                     if not os.path.isfile(dst):
                         os.symlink(src, dst)
 
-                    # Include the figure in the .tex file
-                    tex += "\\begin{{figure}}[H]\n"
-                    tex += "\\centering\n"
-                    # Either set a symlink to the original file, or use the original directory
-                    tex += (
-                        #f"\\includegraphics[width=0.8\\textwidth]{{{dir_path}/{file_name}}}\n"
-                        f"\\includegraphics[width=0.8\\textwidth]{{figures/{file_name}}}\n"
+                    gen_tex_figure_md_entry(
+                        key=key, title=title, file_name=file_name, dir_path="figures"
                     )
-                    tex += f"\\caption{{{title}}}\n"
-                    tex += f"\\label{{fig:{file_name}}}\n"
-                    tex += "\\end{{figure}}\n"
-                    #md += f"![{title}](figures/{chart_name})\n\n"
-                    md += f"![{title}](figures/{file_name})\n\n"
+                    # md += f"![{title}](figures/{chart_name})\n\n"
 
                 else:
-                    tex += f"\\input{{{dir_path}/{file_name}.tex}}\n"
-                    md += f"![{title}]({dir_path}/{file_name}.md)\n\n"
+                    # Assume its a table, include it in the document
+                    self.document["tex"] += f"\\input{{{dir_path}/{file_name}.tex}}\n"
+                    self.document["md"] += f"![{title}]({dir_path}/{file_name}.md)\n\n"
 
-        def run_script(command: str, dir_path: str, title:str) -> bool:
+        def run_script(command: str, dir_path: str, title: str) -> bool:
             """
             Run the given Script which should print to stdout a .json list of generated files.
             This is a helper function to run the given command.
@@ -552,33 +598,34 @@ class Reporter(object):
             which most of the cases will be in .json format, so we can load it and return it.
             """
             logger.info(f"Running command: {command}")
-            proc = subprocess.Popen(command, 
-                                    stdout=subprocess.PIPE, shell=True)
+            proc = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
             stdout, _ = proc.communicate()
             success = proc.returncode == 0
             if not success:
-                logger.error(f"Command '{command}' failed with return code {proc.returncode}")
+                logger.error(
+                    f"Command '{command}' failed with return code {proc.returncode}"
+                )
                 return False
             logger.info(f"Command '{command}' finished with stdout: {stdout}")
-            try:
-                json_list = json.loads(stdout)
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to decode JSON output from command '{command}': {e}")
-                return False
-            # json_list is the generated files, traverse and produce the corresponding contents in the report
+            # We will try this next, once find out the annoying df.info() output
+            # try:
+            #     json_list = json.loads(stdout)
+            # except json.JSONDecodeError as e:
+            #     logger.error(
+            #         f"Failed to decode JSON output from command '{command}': {e}"
+            #     )
+            #     return False
+            # json_list is the generated files, traverse and produce the corresponding document in the report
 
-            gen_entries_for_files( json_list, dir_path, title, self.tex, self.md)
             return success
 
-        def run_perf_metrics(config: str, dir_path: str, title:str) -> bool:
+        def run_perf_metrics(config: str, dir_path: str, title: str) -> bool:
             """
             Run the perf_metrics.py script with the given config and output.
             This is a helper function to run the perf_metrics.py script to generate the metrics.
             """
             command = f"perf_metrics.py -d {dir_path} -i {config} -j -v"
-            return run_script(
-                command, dir_path, f"{title}_metrics"
-            )
+            return run_script(command, dir_path, f"{title}_metrics")
 
         def recreate_cpu_avg(name: str, workload: str, test_run: str, dir_path: str):
             """
@@ -624,12 +671,16 @@ class Reporter(object):
                 logger.error(
                     f"Failed to recreate CPU average file {cpu_avg_name} in {dir_path}"
                 )
-                command = f"fio-parse-jsons.py -d {dir_path} -c {list_name} -t {test_run} -v"
+                command = (
+                    f"fio-parse-jsons.py -d {dir_path} -c {list_name} -t {test_run} -v"
+                )
             else:
-                logger.info(f"Recreated CPU average file") # {cpu_avg_name} in {dir_path}")
+                logger.info(
+                    f"Recreated CPU average file {cpu_avg_name}"
+                )  # {cpu_avg_name} in {dir_path}")
                 command = f"fio-parse-jsons.py -d {dir_path} -c {list_name} -t {test_run} -a {cpu_avg_name} -v"
-                
-            logger.info(f"Executing {command}") # {cpu_avg_name} in {dir_path}")
+
+            logger.info(f"Executing {command}")  # {cpu_avg_name} in {dir_path}")
             proc = subprocess.Popen(command, shell=True)
             _ = proc.communicate()
             return proc.returncode == 0
@@ -658,20 +709,24 @@ class Reporter(object):
             _json = load_bench_json(dp)
             if _json is None:
                 logger.error(
-                    f"Attempting to recreate {bench_name}" # does not exist in {dir_path}, attempting to recrete it"
+                    f"Attempting to recreate {bench_name}"  # does not exist in {dir_path}, attempting to recrete it"
                 )
                 if not recreate_bench(
                     name, workload, test_run, dir_path, bench_name, dp
                 ):
                     logger.error(
-                        f"Failed to recreate benchmark run {bench_name}" # in {dir_path}"
+                        f"Failed to recreate benchmark run {bench_name}"  # in {dir_path}"
                     )
                     return False
                 # Then run perf_metrics.py to generate the metrics
                 # perf_metrics_name = f"{test_run}_{workload}_perf_metrics.json"
                 # run_perf_metrics(self.config["input"]["perf_metrics"], dir_path)
                 perf_metrics_name = f"{test_run}_{workload}_rutil_conf.json"
-                run_perf_metrics(config=perf_metrics_name, dir_path=dir_path, title=f"{name}_{test_run}_{workload}")
+                run_perf_metrics(
+                    config=perf_metrics_name,
+                    dir_path=dir_path,
+                    title=f"{name}_{test_run}_{workload}",
+                )
                 _json = load_bench_json(dp)
             self.ds_list[name][workload]["json"] = _json
             try:
@@ -738,6 +793,17 @@ class Reporter(object):
                         logger.error(f"Directory {dir_path} is empty")
                         continue
                     update_ds_list(name, workload, test_run, dir_path)
+                    list_files = self.traverse_dir(dir_path)
+                    if list_files is None:
+                        logger.error(f"Error traversing directory {dir_path}")
+                        continue
+                    for k in list_files:
+                        gen_entries_for_files(
+                            key=k,
+                            file_names=list_files[k],
+                            dir_path=dir_path,
+                            title=f"{name}_{workload}",
+                        )
 
             else:
                 logger.error(f"Error Invalid dictionary {test_d} for name {name}")
@@ -757,7 +823,7 @@ class Reporter(object):
            'name': prefix for the of the output .json file, as well as the title of the charts,
             eg. 'cmp_sea_classic_build.json'
            'path': the path to the report structure:
-          tex/ -- tex contents, from template, and tables
+          tex/ -- tex document, from template, and tables
           figures/ -- figures to be included in the report
           data/ -- raw data from the results
         - benchmark: name of the benchmark file to load, as a regex (default _bench_df.json)
