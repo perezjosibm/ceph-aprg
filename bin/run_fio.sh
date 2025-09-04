@@ -54,9 +54,9 @@ declare -A m_bs=( [rw]=4k [rr]=4k [sw]=64k [sr]=64k [rr_norm]=4k [rw_norm]=4k [r
 # Precondition before the actual test workload
 #declare -A m_pre=( [rw]=4k [rr]=4k [sw]=64k [sr]=64k )
 # The order of execution of the workloads for the random distributions
-declare -a workloads_order=( rr_norm rw_norm rr_zipf rw_zipf rr_zoned rw_zoned )
+##declare -a workloads_order=( rr_norm rw_norm rr_zipf rw_zipf rr_zoned rw_zoned )
 # The order of execution of the workloads for response curves: original
-#declare -a workloads_order=( rr rw sr sw )
+declare -a workloads_order=( rr rw sr sw )
 declare -a procs_order=( true false )
 
 declare -A osd_id
@@ -182,9 +182,13 @@ fun_osd_dump() {
      #echo "{ \"timestamp\": \"$timestamp\" }," >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
       if [ "${OSD_TYPE}" == "crimson" ]; then
         /ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS} >> ${TEST_NAME}_dump_${LABEL}.json
-      #else
+      else
+        /ceph/build/bin/ceph tell osd.0 perf dump >> ${TEST_NAME}_dump_${LABEL}.json
         # Classic does not seem to support a similar command
         #/ceph/build/bin/ceph daemonperf osd.0 >> ${TEST_NAME}_dump_${LABEL}.json
+        # ceph tell osd.0 heap stats
+        # ceph daemon osd.0 perf histogram dump
+        # ceph daemon osd.0 perf dump
       fi
     #done
     sleep ${SLEEP_SECS};
@@ -346,7 +350,7 @@ fun_run_workload() {
     fi
     all_pids=$( fun_join_by ',' ${osd_id[@]}  ${fio_id[@]} )
     fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
-    if [ "$SKIP_OSD_MON" = false ]; then
+    if [ "$SKIP_OSD_MON" = false ] && [ "${OSD_TYPE}" == "crimson" ]; then
         timestamp=$(date +%Y%m%d_%H%M%S)
         fun_osd_dump ${TEST_RESULT} 24 5 ${OSD_TYPE} ${timestamp} "reactor_utilization" &
     fi

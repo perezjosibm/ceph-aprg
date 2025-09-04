@@ -24,11 +24,18 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
 export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+#############################################################################################
+# Default values for the test plan, can be overridden by a .json file or command line args
 CACHE_ALG="LRU" # LRU or 2Q
 # Use a associative array to describe a test case, so we can recreate it faithfully
 OSD_RANGE="1" #"" 2 4 8 16"
-REACTOR_RANGE="1 4 8" #"1 2 4 8 16"
+REACTOR_RANGE="8" #"1 2 4 8 16"
 VSTART_CPU_CORES="0-27,56-83" # inc HT -- highest performance
+OSD_CPU=${VSTART_CPU_CORES} # Currently used for Classic only
+
 # Might try disable HT as well: so we can have the same test running on the two cases, which means that the FIO has two cases
 #VSTART_CPU_CORES="0-27" #,56-83" # osd_1_range16reactor_28fio_sea
 ##"0-13,56-69,28-41,84-97" # 56 reactors Latency target comparison vs Classic
@@ -42,16 +49,6 @@ FIO_CPU_CORES="28-55,84-111" # inc HT
 FIO_JOBS=/root/bin/rbd_fio_examples/
 FIO_SPEC="32fio" # 32 client/jobs
 OSD_TYPE=cyan
-#############################################################################################
-# Single OSD for IOPs cost estimation
-#ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
-STORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2' # dual OSD
-#STORE_DEVS='/dev/nvme9n1p2' # single OSD
-#STORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2,/dev/nvme2n1p2,/dev/nvme6n1p2,/dev/nvme3n1p2,/dev/nvme5n1p2,/dev/nvme0n1p2,/dev/nvme4n1p2'
-export NUM_RBD_IMAGES=1 #32
-export RBD_SIZE=2GB #500GB
-#############################################################################################
-
 ALIEN_THREADS=8 # fixed- num alien threads per CPU core
 RUN_DIR="/tmp"
 NUM_CPU_SOCKETS=2 # Hardcoded since NUMA has two sockets
@@ -65,7 +62,10 @@ LATENCY_TARGET=false
 MULTI_JOB_VOL=false
 PRECOND=false
 WATCHDOG=false
+TEST_PLAN=${SCRIPT_DIR}/tp_cmp_classic_seastore.sh # default test plan if none provided
+SKIP_EXEC=false 
 
+# Associative arrays to hold the test cases
 declare -A test_table
 declare -A test_row
 declare -A num_cpus
@@ -79,11 +79,12 @@ bal_ops_table["bal_socket"]="--crimson-balance-cpu socket"
 declare -a order_keys=( default bal_osd bal_socket )
 
 # CLI for the OSD backend, for Classic bluestore only
-declare -A crimson_be_table
-crimson_be_table["cyan"]="--cyanstore"
-crimson_be_table["blue"]="--bluestore --bluestore-devs ${STORE_DEVS}"
-crimson_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS} --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=${CACHE_ALG}\""
-#crimson_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS} --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cache_lru_size=2G\""
+declare -A osd_be_table
+osd_be_table["cyan"]="--cyanstore"
+osd_be_table["blue"]="--bluestore --bluestore-devs " #${STORE_DEVS}
+osd_be_table["sea"]="--seastore --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=${CACHE_ALG}\" --seastore-devs " 
+#${STORE_DEVS}
+#osd_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS} --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cache_lru_size=2G\""
 
 # Number of CPU cores for each case
 num_cpus['enable_ht']=${MAX_NUM_HT_CPUS_PER_SOCKET}
@@ -94,6 +95,20 @@ BALANCE="all"
 
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
+}
+#########################################
+fun_save_test_plan() {
+    # Produce a .json with the test plan parameters:
+    json="{\"VSTART_CPU_CORES\": \"${VSTART_CPU_CORES}\", \"OSD_CPU\": \"${OSD_CPU}\", \"FIO_CPU_CORES\": \"${FIO_CPU_CORES}\", \"FIO_JOBS\": \"${FIO_JOBS}\", \"FIO_SPEC\": \"${FIO_SPEC}\", \"OSD_TYPE\": \"${OSD_TYPE}\", \"STORE_DEVS\": \"${STORE_DEVS}\", \"NUM_RBD_IMAGES\": \"${NUM_RBD_IMAGES}\", \"RBD_SIZE\": \"${RBD_SIZE}\", \"OSD_RANGE\":\"${OSD_RANGE}\", \"REACTOR_RANGE\":\"${REACTOR_RANGE}\", \"CACHE_ALG\":\"${CACHE_ALG}\", \"TEST_PLAN\":\"${TEST_PLAN}\"}"
+    echo -e "${GREEN}== Saving test plan to ${RUN_DIR}/test_plan.json ==${NC}"
+    echo "$json" | jq . > ${RUN_DIR}/test_plan.json
+    rc=$? 
+     if [ $rc -eq 0 ]; then
+       echo -e "${GREEN}== Test plan saved to ${RUN_DIR}/test_plan.json ==${NC}"
+     else
+       echo -e "${RED}== Error saving test plan to ${RUN_DIR}/test_plan.json ==${NC}"
+     fi
+
 }
 
 #############################################################################################
@@ -196,12 +211,12 @@ fun_run_fio(){
 #########################################
   # Oficial FIO command:
   # x: skip response curves stop heuristic, n:no perf
-  #cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR}"
+  cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR}"
 #########################################
   # Experimental: -w for single, and -k for skipping OSD monitoring
   #cmd="/root/bin/run_fio.sh -s ${OPTS} -w sr -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR}"
   #cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -k"
-  cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -d ${RUN_DIR}"
+  #cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -d ${RUN_DIR}"
 #########################################
   echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
   ##eval "${cmd}"
@@ -218,7 +233,7 @@ fun_run_fixed_bal_tests() {
     local NUM_ALIEN_THREADS=7 # default 
     local title=""
 
-    echo -e "${GREEN}== ${OSD_TYPE} ==${NC}"
+    echo -e "${GREEN}== OSD type: ${OSD_TYPE} ==${NC}"
 
     SUFFIX="rc"
     # Set the suffix for the test name: lt for latency target, rc for response curves
@@ -228,13 +243,18 @@ fun_run_fixed_bal_tests() {
 
   # TODO: consider refactor to a single loop: list all the combinations of NUM_OSD and NUM_REACTORS, which does
   # not apply to classic OSD
-  for NUM_OSD in ${OSD_RANGE}; do
-      for NUM_REACTORS in ${REACTOR_RANGE}; do
+  sorted_keys=$(for x in  "${!test_table[@]}"; do echo $x; done | sort -n -k1)
+  for NUM_OSD in ${sorted_keys}; do
+    eval "${test_table["${NUM_OSD}"]}"
+    for x in "${!test_row[@]}"; do printf "[%s]=%s\n" "$x" "${test_row[$x]}" ; done
+  #for NUM_OSD in ${OSD_RANGE}; do
+    #  for NUM_REACTORS in ${REACTOR_RANGE}; do
+    for NUM_REACTORS in ${test_row[reactor_range]}; do
 
           if [ "$OSD_TYPE" == "classic" ]; then
               title="(${OSD_TYPE}) $NUM_OSD OSD classic, fixed ${FIO_SPEC}"
               cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1  taskset -ac '${VSTART_CPU_CORES}' /ceph/src/vstart.sh\
- --new -x --localhost --without-dashboard --redirect-output ${crimson_be_table[blue]} --no-restart"
+ --new -x --localhost --without-dashboard --redirect-output ${osd_be_table[blue]} ${test_row[store_devs]} --no-restart"
                   # -- disabling this
               test_name="${OSD_TYPE}_${NUM_OSD}osd_${FIO_SPEC}_${SUFFIX}"
 
@@ -242,7 +262,7 @@ fun_run_fixed_bal_tests() {
               title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor,  fixed ${FIO_SPEC}" 
               # Default does not respect the balance VSTART_CPU_CORES, but balanced does
               cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac '${VSTART_CPU_CORES}' /ceph/src/vstart.sh\
- --new -x --localhost --without-dashboard --redirect-output ${crimson_be_table[${OSD_TYPE}]}\
+ --new -x --localhost --without-dashboard --redirect-output ${osd_be_table[${OSD_TYPE}]} ${test_row[store_devs]}\
  --crimson ${bal_ops_table[${BAL_KEY}]} --crimson-smp ${NUM_REACTORS} --no-restart"
 
               # " --valgrind_osd 'memcheck'"
@@ -256,18 +276,31 @@ fun_run_fixed_bal_tests() {
                   test_name="${OSD_TYPE}_${NUM_OSD}osd_${NUM_REACTORS}reactor_${NUM_ALIEN_THREADS}at_${FIO_SPEC}_${BAL_KEY}_${SUFFIX}"
               fi
           fi
-          echo -e "${RED}== ${title}==${NC}"
+          echo -e "${GREEN}== Title: ${title}==${NC}"
           echo "Test name: $test_name"
           # For later: try number of alien cores = 4 * number of backend CPU cores (= crimson-smp)
           echo "${cmd}"  | tee -a "${RUN_DIR}/${test_name}_cpu_distro.log"
-          eval "$cmd" >> "${RUN_DIR}/${test_name}_cpu_distro.log"
+          if [ "${SKIP_EXEC}" = true ]; then
+              echo "Test: $test_name" >> "${RUN_DIR}/${test_name}_cpu_distro.log"
+              echo "Command: ${cmd}" >> "${RUN_DIR}/${test_name}_cpu_distro.log"
+          else 
+              eval "$cmd" >> "${RUN_DIR}/${test_name}_cpu_distro.log"
+          fi
 
           if [ "$OSD_TYPE" == "classic" ]; then
               # Manually set the OSD process affinity
-              cmd="taskset -a -c -p ${VSTART_CPU_CORES}  $(pgrep osd)"
-              echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
-              eval "$cmd" >> ${RUN_DIR}/${test_name}_cpu_distro.log
+              cmd="taskset -a -c -p ${OSD_CPU}  $(pgrep osd)"
+              if [ "${SKIP_EXEC}" = true ]; then
+                  echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
+              else 
+                  eval "$cmd" >> ${RUN_DIR}/${test_name}_cpu_distro.log
+              fi
           fi
+
+          if [ "${SKIP_EXEC}" = true ]; then
+              continue
+          fi
+
           echo "$(date) Sleeping for 20 secs..."
           sleep 20 # wait until all OSD online, pgrep?
           fun_show_grid $test_name
@@ -300,7 +333,9 @@ fun_run_fixed_bal_tests() {
           fi
           sleep 60
       done
-      gzip -9 ${RUN_DIR}/${test_name}_cpu_distro.log
+      # rotate log files if they exist
+      #[ -f ${RUN_DIR}/${test_name}_cpu_distro.log ] && mv ${RUN_DIR}/${test_name}_cpu_distro.log ${RUN_DIR}/${test_name}_cpu_distro.log.1
+      gzip -9fq ${RUN_DIR}/${test_name}_cpu_distro.log
   done
 }
 
@@ -311,7 +346,7 @@ fun_run_bal_vs_default_tests() {
   local OSD_TYPE=$1
   local BAL=$2
 
-  echo -e "${GREEN}== ${BAL} ==${NC}"
+  echo -e "${GREEN}== Balanced: ${BAL} ==${NC}"
   if [ "$BAL" == "all" ]; then
     #for KEY in "${!bal_ops_table[@]}"; do
     for KEY in "${!bal_ops_table[@]}"; do
@@ -370,16 +405,21 @@ fun_watchdog() {
 #
 trap 'echo "$(date)== INT received, exiting... =="; fun_stop; exit 1' SIGINT SIGTERM SIGHUP
 
-cd /ceph/build/
 # DEfine some FIO options, or a .json test plan instead
-while getopts 'ab:d:t:s:r:jlpz:' option; do
+while getopts 'ab:c:d:e:t:s:r:jlpxz:' option; do
   case "$option" in
     a) fun_show_all_tests
        exit
         ;;
+    c) OSD_CPU=$OPTARG
+        ;;
     b) BALANCE=$OPTARG
         ;;
     d) RUN_DIR=$OPTARG
+        ;;
+    e) if [ ! -z "${OPTARG}" ] && [ -f "${SCRIPT_DIR}/${OPTARG}" ]; then
+        TEST_PLAN="${SCRIPT_DIR}/${OPTARG}"
+       fi
         ;;
     r) fun_run_fio $OPTARG
        exit
@@ -401,30 +441,35 @@ while getopts 'ab:d:t:s:r:jlpz:' option; do
          exit 1
        fi
        ;;
+   x) SKIP_EXEC=true
+       ;;
     :) printf "missing argument for -%s\n" "$OPTARG" >&2
        usage >&2
        exit 1
        ;;
   esac
  done
+
+ echo -e "${GREEN}== OSD_TYPE ${OSD_TYPE} BALANCE ${BALANCE} ==${NC}"
+ echo -e "${GREEN}== Loading test plan from ${TEST_PLAN} ==${NC}"
+ source $TEST_PLAN
+
  # Create the run directory if it does not exist
  [ ! -d "${RUN_DIR}" ] && mkdir -p ${RUN_DIR}
- 
-  if [ "$PRECOND" = true ]; then
-      fun_run_precond "precond"
-  fi
+ fun_save_test_plan
+ cd /ceph/build/
 
-  # Produce a .json with the test plan parameters:
-  json="{\"VSTART_CPU_CORES\": \"${VSTART_CPU_CORES}\", \"FIO_CPU_CORES\": \"${FIO_CPU_CORES}\", \"FIO_JOBS\": \"${FIO_JOBS}\", \"FIO_SPEC\": \"${FIO_SPEC}\", \"OSD_TYPE\": \"${OSD_TYPE}\", \"STORE_DEVS\": \"${STORE_DEVS}\", \"NUM_RBD_IMAGES\": \"${NUM_RBD_IMAGES}\", \"RBD_SIZE\": \"${RBD_SIZE}\", \"OSD_RANGE\":\"${OSD_RANGE}\", \"REACTOR_RANGE\":\"${REACTOR_RANGE}\", \"CACHE_ALG\":\"${CACHE_ALG}\"}"
-    echo "$json" | jq . > ${RUN_DIR}/test_plan.json
-    
- if [ "$OSD_TYPE" == "all" ]; then
-   for OSD_TYPE in classic sea; do # cyan blue 
-     fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}
-   done
- else
-   fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}
+ if [ "$PRECOND" = true ]; then
+     fun_run_precond "precond"
  fi
-exit
+ if [ "$OSD_TYPE" == "all" ]; then
+     for OSD_TYPE in classic sea; do # cyan blue 
+         fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}
+     done
+ else
+    echo -e "${GREEN}==fun_run_bal_vs_default_tests: OSD_TYPE ${OSD_TYPE} BALANCE ${BALANCE} ==${NC}"
+     fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}
+ fi
+ exit
 
-#########################################
+

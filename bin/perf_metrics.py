@@ -23,6 +23,8 @@ import sys
 import re
 import json
 import tempfile
+import pprint
+import datetime
 
 # import numpy as np
 import pandas as pd
@@ -34,6 +36,13 @@ from common import load_json, save_json
 __author__ = "Jose J Palacios-Perez"
 
 logger = logging.getLogger(__name__)
+
+FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
+# Disable the logging from seaborn and matplotlib
+logging.getLogger("seaborn").setLevel(logging.WARNING)
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
+# logging.getLogger("pandas").setLevel(logging.WARNING)
+pp = pprint.PrettyPrinter(width=41, compact=True)
 
 
 def _znormalisation(df):  # df: pd.DataFrame
@@ -88,6 +97,7 @@ def _max_abs_normalisation(df):  # df: pd.dataframe
         )
     # view normalized data
     # logger.info(df_maxabs_scaled)
+
     # df_maxabs_scaled.plot(kind="bar", stacked=True)
     return df_maxabs_scaled
 
@@ -150,6 +160,12 @@ class PerfMetricEntry(object):
         "average": get_avg,
         "maximum": get_max,
     }
+    # Miniimum set of metrics to consider, can be provided by tge config .json
+    DEFAULT_METRIC_REGEX = [
+        re.compile(
+            r"^(reactor_utilization)|(reactor_cpu_|memory_|cache_).*|(reactor_polls|reactor_sleep_time_ms_total)"
+        ),  # , re.DEBUG)
+    ]
     # The following are the metrics we are interested in
     # These are the default if not specified in in the config file
     # These apply to Crimson OSD only, need extending for classic OSD
@@ -161,9 +177,26 @@ class PerfMetricEntry(object):
             "reduce": "difference",
         },
         "memory": {
-            "regex": re.compile(r"^(memory_.*_memory)"),
+            # "regex": re.compile(r"^(memory_.*_memory)"),
+            # Capute all other metrics, like cross_cpu_free_operations
+            "regex": re.compile(r"^(memory_.*)"),
             "normalisation": "minmax",
             "unit": "MBs",
+            "reduce": "difference",
+        },
+        "cache_2q": {
+            # Only a subset since there is lots of cache_* and needs further filtering
+            "regex": re.compile(
+                r"^(cache_2q_(hot_num_extents|hit|miss|warm_in_num_extents))"
+            ),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
+        "cache_cached": {
+            "regex": re.compile(r"^(cache_cache(_access|_hit|d_extents))"),
+            "normalisation": "minmax",
+            "unit": "operations",
             "reduce": "difference",
         },
         "reactor_cpu": {
@@ -250,33 +283,34 @@ class PerfMetricEntry(object):
         1. A list with only two elements, (before/after test) we need to apply
         the operator on pairs of items from the list, until we end up with a
         single item. We call this the "reduced" dataframe.
+
         2. A list with more than two elements, we need to apply the operator on
         each sample input .json file, so we get a coalesced data point to represent
         the sample. Each sample .json is normally indexed with a timestamp.
         For this case we produce three dataframes:
         - a reduced dataframe with the average of the samples
-        - a full sequence dataframe with the reactor_utilization
-        - a time sequence dataframe with the reactor_utilization, each
-          represents the average of the samples in the timestamp.
+        - a full sequence dataframe for the reactor_utilization
+        - a time sequence dataframe for the reactor_utilization, each
+          represents the average of the samples (multiple reactors) in the timestamp.
 
         On both cases, we construct dicts/dataframes with keys/columns the
         metric names, values the measurements (per shard).
         """
+        # Main key : "metrics"
         self.options = options
         self.input = options.input  # list of input .json files
-        self.regex = re.compile(options.regex)  # , re.DEBUG)
+        # Check that the input option regex is a valid regex
+        if options.regex:
+            self.metric_name_re = self._check_metric_regex(
+                self.DEFAULT_METRIC_REGEX, options.regex
+            )
         self.directory = options.directory
         self.config = {}
         # self.time_re = re.compile(r"_time_ms$")
         # Prefixes (or define Regexes) for the metrics we are interested in, we implicitly skip anything else
-        # Main key : "metrics"
-        self.metric_name_re = [
-            re.compile(
-                r"^(reactor_utilization)|(reactor_cpu_|memory_).*|(reactor_polls|reactor_sleep_time_ms_total)"
-            ),  # , re.DEBUG)
-        ]
 
         # The reduced dataframe will have the metrics as columns, and the shards as rows:
+        self.m_families = {}  # Metric families, to group metrics with similar attributes
         self.reduced_df = {}
         self.df = None  # Pandas dataframe
         self.ds_list = []  # List of dataframes, reduced to a single one for (before/after) sample set
@@ -285,10 +319,19 @@ class PerfMetricEntry(object):
         self.shards_seen = set()  # shards seen in the input files
         # Inner class instance object: time_sequence type of data metrics:
         self.time_sequence = None
+        self.reactor_utilization = None  # mean reactor_utilization across shards
         self.reactor_utilization_df = (
             None  # Reactor utilization, we need to calculate this
         )
         self.generated_files = []  # list of files generated
+
+    def _check_metric_regex(self, old_re, new_re) -> List[re.Pattern]:
+        try:
+            _rc = [re.compile(new_re)]
+            return _rc
+        except re.error:
+            logger.error(f"Invalid regex: {new_re}, using default: {old_re}")
+            return old_re
 
     def make_chart(self, df):
         """
@@ -396,6 +439,8 @@ class PerfMetricEntry(object):
             "memory": re.compile(r"^(memory_.*_memory)"),
             "reactor_cpu": re.compile(r"^(reactor_cpu_.*|reactor_sleep_time_ms_total)"),
             "reactor_polls": re.compile(r"^(reactor_polls)"),
+            "cache_2q": self.METRICS["cache_2q"]["regex"],
+            "cache_cached": self.METRICS["cache_cached"]["regex"],
         }
         callbacks = {
             "minmax": _minmax_normalisation,
@@ -564,8 +609,16 @@ class PerfMetricEntry(object):
     ) -> Dict[str, Any]:
         """
         Filter the (array of dicts) to the measurements we want.
-        ds_list is normally the contents of a single .json file, which is a list of dicts (samples).
-        Each dict has the main key "metrics" and the values are the measurements, per shard.
+        ds_list is normally the contents of a single .json file, which is a
+        list of dicts (samples). Each dict has the main key "metrics" and the
+        values are the measurements. Each measurement is a dictionary, there
+        are two general types:
+
+        * single value metrics, e.g. reactor_utilization, reactor_polls per
+        shard,
+
+        * multi value metrics, e.g. cache_*, which have several attributes,
+        like src, etc.
 
         There are two strategies that can be used to filter the metrics:
         * main keys are shards: the values dictionaries whose keys are metric
@@ -573,37 +626,123 @@ class PerfMetricEntry(object):
         * main key is "metrics" and the values are dictionaries whose keys are
         shards, and their values are measurements (per shard).
 
-        Returns a single dict with keys the shard names, values the metric names above
-        We might extend this for the type of OSD metric (classic, crimson)
-        Need to change the structure: as a data frame, the index are the shards (N),
+        This method returns a single dict with keys the shard names, values the
+        metric names from the set above.
+
+        We might extend this method for the type of OSD metric (classic, crimson).
+
+        FUTURE:
+        Try a different structure: as a data frame, the index are the shards (N),
         the columns are the metrics (M), and the values the measurements (arrays: N*M), but
         we have K samples per shard, so we need to keep the samples as a list, or reduce per
         shard eg. take the avg of each K samples to produce a single value per shard.
+
+        Each ds_list is a list of samples of measurements (e.g.
+        reactor_utilization) taken from the OSD, taken at a given time (eg.
+        before/adfter the test run).
+        So each item in the ds_list is a sample.
         """
+
+        def _get_metric_family(metric: Dict[str, Any]) -> str:
+            """
+            Get the metric family in terms of attributes (as a set) so the metrics can be agglutinated together
+            """
+            m_set = set(metric.keys())
+            m_str = "_".join(sorted(m_set))
+            return m_str
+
+        def _get_initial_metric(metric: Dict[str, Any]) -> Dict[str, Any]:
+            """
+            Get the initial metric, this is a dict with the keys the attributes of the metric, and values
+            as lists to which we append the new values
+            """
+            return {k: [v] for k, v in metric.items()}
+
+        def _get_aggregated_metric(
+            accum: Dict[str, Any], metric: Dict[str, Any]
+        ) -> Dict[str, Any]:
+            """
+            Aggregate the metric into the accum dict.
+            Get the aggregated metric as a dataframe, this is a dict with the keys the attributes of the metric, and values
+            as lists to which we append the new values
+            return pd.DataFrame(metric)
+            """
+            for k, v in metric.items():
+                if k in accum:
+                    accum[k].append(v)
+                else:
+                    accum[k] = [v]
+            return accum
+
+        def _update_family(
+            metric_name: str, metric: Dict[str, Any], family: str
+        ) -> None:
+            """
+            Update the named family dictionary with the metric
+            The families dict will have the list of metrics that share the
+            same attributes, and the list of associated dataframes
+            In two phases: we aggregate the values forming arrays of columns, then convert into a dataframe,
+            in one phase will be to update the dataframe with each new sample, potentially reducing it
+            """
+            if family not in self.m_families:
+                self.m_families.update( { family: {metric_name: _get_initial_metric(metric)}} )
+                #self.m_families[family] = {metric_name: _get_initial_metric(metric)}
+            else:
+                if metric_name not in self.m_families[family]:
+                    self.m_families[family].update(
+                        {metric_name: _get_aggregated_metric({}, metric)}
+                    )
+                else:
+                    try:
+                        _get_aggregated_metric(self.m_families[family][metric_name], metric)
+                    except Exception as e:
+                        logger.error(
+                            f"Exception {e} updating family {family} with metric {metric_name}"
+                        )
+            logger.info(
+                f"families: {pp.pprint(self.m_families)}"
+            )  # Reduce them to dataframes
+
+        # Ensure that ds_list is a list of dicts
         if isinstance(ds_list, dict):
             ds_list = [ds_list]
-        result = {}  # This needs to be a cummulative dict, since we might want the full sequence
+        # This needs to be a cummulative dict, since we might want the full
+        # sequence It has the format of a (nearly) data frame: main keys are
+        # shards, then the metric name, for each single list of value
+        # (numeric), but we need to extend it for multi-attribute metrics (e.g.
+        # cache_*)
+
+        result = {}  # This is for the shard first (simple metric) structure
         _shard = None
-        for ds in ds_list:
-            # ds is a dict with the key "metrics" and the values are dicts with the shard names
+        for _i, ds in enumerate(ds_list):
+            # ds (data set) is a dict with the key "metrics" and the values are in turn dicts,
+            # the shard name/id should always be present
             if "metrics" not in ds:
-                logger.error(f"Key 'metrics' not found in {ds}")
+                logger.error(f"Key 'metrics' not found in item {_i}, skipping ...")
                 continue
+
             for item in ds["metrics"]:
-                # _key = list(item.keys()).pop()
                 for _metric in item.keys():
                     # We need to check if the key matches the regex for the metric name
                     # This is a list of regexes, so we need to check each one
                     for regex in self.metric_name_re:
                         if regex.search(_metric):
+                            # TBC: need to find the timestamp if present
+                            # there is a bug overhere
+                            family = _get_metric_family(item[_metric])
+                            _update_family(_metric, item[_metric], family)
+                            # The following only deals with shard and value
+                            # attributes, we need to extend to any other family
                             try:
                                 _shard = int(item[_metric]["shard"])
+
                                 if _shard not in result:
                                     result.update({_shard: {}})
                                 if _metric not in result[_shard]:
                                     result[_shard][_metric] = []
+
                                 result[_shard][_metric].append(item[_metric]["value"])
-                                # We need to keep track of the metrics metrics_seen and shards seen
+                                # We need to keep track of the metrics_seen and shards seen
                                 if _metric not in self.metrics_seen:
                                     self.metrics_seen.add(_metric)
                                 if _shard not in self.shards_seen:
@@ -620,7 +759,7 @@ class PerfMetricEntry(object):
     def transform_metrics(self, ds_list: Dict[str, Any]) -> Dict[str, Any]:
         """
         Transform the the ds_list (that is shard first) into a dictionary with
-        metrics first, then shards which contain the measurements as valules.
+        metrics first, then shards which contain the measurements as values.
         This form might easier to use for a time_sequence indexed dataframe.
         """
         result = {
@@ -676,12 +815,16 @@ class PerfMetricEntry(object):
         """
         logger.info(f"loading {len(json_files)} .json files ...")
         self.ds_list = [self.filter_metrics(load_json(f)) for f in json_files]
-        logger.info(f"ds_list: {self.ds_list}")
+        logger.info(f"ds_list: {pp.pprint(self.ds_list)}")
+        logger.info(
+            f"families: {pp.pprint(self.m_families)}"
+        )  # Reduce them to dataframes
 
     def _reduce_metrics_df(self):
         """
-        # Prepare a dataframe with the data, the index are the samples in ds_list,
-        # the columns are the shards, the values are the metrics -- similar to what we did for slicing
+        Prepare a dataframe with the data, the index are the samples in ds_list,
+        the columns are the shards, the values are the metrics -- similar to what we did for slicing
+        How can we extend this method to handle metrics that have multiple attributes?
         """
         ds_d = {}
         for m in self.metrics_seen:
@@ -694,7 +837,7 @@ class PerfMetricEntry(object):
             # Experiment: a dataframe for each metric:
             df_list = [pd.DataFrame(ds) for ds in ds_d.values()]
             # df_list = [ pd.DataFrame(ds).T for ds in ds_d.values() ]
-            # logger.info(f"ds_list: {df_list}")
+            logger.info(f"ds_list: {df_list}")
             # From this df we might need to reduce the values per sample across shards
 
             for i, df in enumerate(df_list):
@@ -720,9 +863,14 @@ class PerfMetricEntry(object):
         Load the files in the list: "input" key, this is a special case that we also want to
         load the time sequence of the reactor_utilization, so we need to keep the data as a dictionary,
         the keys are the time stamps, the values the reactor_utilization. We
-        reduce each such sample .json as indicated (normally avergae).
+        reduce each such sample .json as indicated (normally average).
         """
-        regex = re.compile(self.config["time_sequence"])
+        # This regex extracts the timestamp from the filename
+        try:
+            regex = re.compile(self.config["time_sequence"])
+        except re.error:
+            logger.error(f"Invalid regex: {self.config['time_sequence']}, bailing out ")
+            return
         logger.info(f"loading {len(json_files)} .json files as a time sequence...")
         ds_full_seq = {}
         ds_d = {}
@@ -731,6 +879,12 @@ class PerfMetricEntry(object):
             if m:
                 logger.info(f"Loading time sequence from {f}")
                 ts = m.group(1)
+                # Try convert ts into a timestamp
+                try:
+                    ts = datetime.strptime(ts, "%Y%m%d_%H%M%S")
+                except ValueError:
+                    logger.warning(f"ValueError: cannot parse {ts} as a timestamp")
+
                 # Each sample .json contains a list of dicts
                 _d = self.filter_metrics(load_json(f))
                 # Aggregate each sample, then transform all at the end
@@ -871,6 +1025,15 @@ class PerfMetricEntry(object):
             self.config["operator"] = "difference"
         logger.info(f"Operator is {self.config['operator']}")
 
+    def define_metrics_regex(self):
+        """
+        Attempt to load the regex describing the list of metrics we are interested in
+        """
+        if "regex" in self.config:
+            prev = self.metric_name_re
+            self.metric_name_re = self._check_metric_regex(prev, self.config["regex"])
+            logger.info(f"Using metric_name_re {self.metric_name_re} from config")
+
     def load_config(self):
         """
         Load the configuration .json input file
@@ -882,6 +1045,7 @@ class PerfMetricEntry(object):
           is normally for the reactor_utilization, which is a dictionary with the time stamps
           as keys and the reactor_utilization as values.
         - operator: type of operator to use for the reduction
+        - regex: regex to match the metric names we are interested in (optional)
         """
         try:
             with open(self.input, "r") as config:
@@ -890,6 +1054,7 @@ class PerfMetricEntry(object):
             raise argparse.ArgumentTypeError(str(e))
 
         self.define_operator()
+        self.define_metrics_regex()
 
         if "input" in self.config:
             if "time_sequence" in self.config:
@@ -928,6 +1093,7 @@ class PerfMetricEntry(object):
             # This expects a single, coalesced dataframe, so we need to either reduce the time_sequence,
             # in addition to produce the time sequence plot
             self.make_metrics_chart(self.df, self.config["output"])
+
             # Add the names of the generated charts to the same output .json
             # This only applies to the time_sequence, so we need to filter it
             # self.df = self.df.filter(regex=r"^(reactor_utilization)")
@@ -1166,9 +1332,16 @@ type of metrics (classic, crimson) and output .json file, etc.
         logLevel = logging.INFO
 
     with tempfile.NamedTemporaryFile(dir="/tmp", delete=False) as tmpfile:
-        logging.basicConfig(filename=tmpfile.name, encoding="utf-8", level=logLevel)
+        logging.basicConfig(
+            filename=tmpfile.name, encoding="utf-8", level=logLevel, format=FORMAT
+        )
 
     logger.debug(f"Got options: {options}")
+    # Silence other loggers
+    for log_name, log_obj in logging.Logger.manager.loggerDict.items():
+        if log_name != "__main__":
+            log_obj.disabled = True
+
     dsPerf = PerfMetricEntry(options)
     dsPerf.run()
     # Use a cumulateive arg to keep track of the generated files

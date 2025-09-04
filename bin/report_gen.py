@@ -575,10 +575,12 @@ class Reporter(object):
                         self.config["output"]["path"], "figures/", file_name
                     )
                     logger.info(f"{file_name}: linking {src} to {dst}")
-                    # try:
-                    # except FileExistsError:
-                    if not os.path.isfile(dst):
-                        os.symlink(src, dst)
+
+                    if not os.path.isfile(dst) and not os.path.islink(dst):
+                        try:
+                            os.symlink(src, dst)
+                        except FileExistsError:
+                            logger.warning(f"Symlink {dst} already exists")
 
                     gen_tex_figure_md_entry(
                         key=key, title=title, file_name=file_name, dir_path="figures"
@@ -623,9 +625,11 @@ class Reporter(object):
             """
             Run the perf_metrics.py script with the given config and output.
             This is a helper function to run the perf_metrics.py script to generate the metrics.
-            """
+            TEMPORARLY DISABLED UNTIL COMPLETED THE EXTENSIONS FOR MULTIPLE ATTRIBUTES METRICS
             command = f"perf_metrics.py -d {dir_path} -i {config} -j -v"
             return run_script(command, dir_path, f"{title}_metrics")
+            """
+            pass
 
         def recreate_cpu_avg(name: str, workload: str, test_run: str, dir_path: str):
             """
@@ -793,6 +797,9 @@ class Reporter(object):
                         logger.error(f"Directory {dir_path} is empty")
                         continue
                     update_ds_list(name, workload, test_run, dir_path)
+                    # We might want to structure this list via name and workload, so we can generate
+                    # the contenst of hte document once the compariison charts are generated
+
                     list_files = self.traverse_dir(dir_path)
                     if list_files is None:
                         logger.error(f"Error traversing directory {dir_path}")
