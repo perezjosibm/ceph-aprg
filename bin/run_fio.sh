@@ -161,9 +161,25 @@ fun_measure() {
 
   #IFS=',' read -r -a pid_array <<< "$1"
   # CPU core util (global) and CPU thread util for the pid given
+  # timeout ${time_period_sec} strace -fp $PID -o ${TEST_NAME}_strace.out -tt -T -e trace=all -c -I 1  &
   top -b -H -1 -p "${PID}" -n ${NUM_SAMPLES} >> ${TEST_NAME}_top.out
   echo "${TEST_NAME}_top.out" >> ${TEST_TOP_OUT_LIST}
 }
+
+#############################################################################################
+fun_diskstats() {
+  local TEST_NAME=$1
+  local NUM_SAMPLES=$2
+  local SLEEP_SECS=$3
+
+  #Take a sample every 60 secs, 3 samples in total
+  for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
+    local ds=${TEST_NAME}_$(date +%Y%m%d_%H%M%S)_ds.json
+    jc --pretty /proc/diskstats > ${ds}
+    sleep ${SLEEP_SECS};
+  done
+}
+
 
 #############################################################################################
 fun_osd_dump() {
@@ -353,6 +369,7 @@ fun_run_workload() {
     if [ "$SKIP_OSD_MON" = false ] && [ "${OSD_TYPE}" == "crimson" ]; then
         timestamp=$(date +%Y%m%d_%H%M%S)
         fun_osd_dump ${TEST_RESULT} 24 5 ${OSD_TYPE} ${timestamp} "reactor_utilization" &
+        fun_diskstats ${TEST_RESULT} 24 5  &
     fi
 
     # We have a watchdog: if the OSD dies and

@@ -357,15 +357,30 @@ fun_run_bal_vs_default_tests() {
   fi
 }
 
+fun_get_diskstats(){
+    # Get the diskstats before starting the test, should provide full path
+    local TEST_NAME=$1
+    #local RUN_DIR=$2
+    local ds=${TEST_NAME}_$(date +%Y%m%d_%H%M%S).json
+    jc --pretty /proc/diskstats > ${RUN_DIR}/${ds}
+}
+
 #############################################################################################
 # Remember to regenerate the radwrite64k.fio for the config of drives
 fun_run_precond(){
-  local TEST_NAME=$1
+    local TEST_NAME=$1
 
-  echo -e "${GREEN}== Preconditioning ==${NC}"
-  jc --pretty /proc/diskstats > ${RUN_DIR}/${TEST_NAME}.json && \
-      fio ${FIO_JOBS}randwrite64k.fio && \
-      jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -d ${RUN_DIR} -a  ${TEST_NAME}.json 
+    echo -e "${GREEN}== Preconditioning ==${NC}"
+    jc --pretty /proc/diskstats > ${RUN_DIR}/${TEST_NAME}.json
+    fun_get_diskstats ${TEST_NAME}
+    fio ${FIO_JOBS}randwrite64k.fio --output=${RUN_DIR}/precond_${TEST_NAME}.json --output-format=json
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}== FIO preconditioning failed ==${NC}"
+        exit 1
+    fi
+    fun_get_diskstats ${TEST_NAME}
+    # We might need to exted to get a non-destructive option since we might need to look at further measurements
+    jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -d ${RUN_DIR} -a  ${TEST_NAME}.json 
 }
 
 #############################################################################################

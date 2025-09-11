@@ -42,7 +42,7 @@ FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
 logging.getLogger("seaborn").setLevel(logging.WARNING)
 logging.getLogger("matplotlib").setLevel(logging.WARNING)
 # logging.getLogger("pandas").setLevel(logging.WARNING)
-pp = pprint.PrettyPrinter(width=41, compact=True)
+pp = pprint.PrettyPrinter(width=61, compact=True)
 
 
 def _znormalisation(df):  # df: pd.DataFrame
@@ -160,16 +160,54 @@ class PerfMetricEntry(object):
         "average": get_avg,
         "maximum": get_max,
     }
+
     # Miniimum set of metrics to consider, can be provided by tge config .json
+    # r"^(reactor_utilization|reactor_polls|reactor_sleep_time_ms_total|(reactor_cpu_|memory_|cache_).*)"
     DEFAULT_METRIC_REGEX = [
         re.compile(
-            r"^(reactor_utilization)|(reactor_cpu_|memory_|cache_).*|(reactor_polls|reactor_sleep_time_ms_total)"
-        ),  # , re.DEBUG)
-    ]
+            r"^(reactor_|memory_|cache_).*"
+        ),
+        re.compile(r"(io_queue_|segment_manager_|network_bytes_|scheduler_|journal_).*") 
+    ] # , re.DEBUG)
+    # Subfamilies: these are regexes to filter the metrics we are interested in
     # The following are the metrics we are interested in
     # These are the default if not specified in in the config file
     # These apply to Crimson OSD only, need extending for classic OSD
+    # Use the following to select subfamilies as well:
+    # If a metric name matches the regex, the its plot together as a subfamily
+    # and use the key as the name of the subfamily (and the plot's title)
+
     METRICS = {
+        "reactor_aio": {
+            "regex": re.compile(r"^(reactor_aio_(reads|writes))"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
+        "reactor_aio_bytes": {
+            "regex": re.compile(r"^(reactor_aio_bytes_.*)"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
+        "reactor_time": {
+            "regex": re.compile(r"^(reactor_awake_time_ms_total|reactor_sleep_time_ms_total|reactor_cpu_.*_ms)"),
+            "normalisation": "minmax",
+            "unit": "ms",
+            "reduce": "difference",
+        },
+        "scheduler_time": {
+            "regex": re.compile(r"^(scheduler_.*_ms)"),
+                "normalisation": "minmax",
+                "unit": "ms",
+                "reduce": "difference",
+            },
+        "scheduler_tasks_processed": {
+            "regex": re.compile(r"^(scheduler_tasks_processed)"),
+                "normalisation": "minmax",
+                "unit": "tasks",
+                "reduce": "difference",
+            },
         "memory_ops": {
             "regex": re.compile(r"^(memory_.*_operations)"),
             "normalisation": "minmax",
@@ -199,6 +237,12 @@ class PerfMetricEntry(object):
             "unit": "operations",
             "reduce": "difference",
         },
+        "cache_commited": {
+            "regex": re.compile(r"^(cache_committed_delta_bytes)"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
         "reactor_cpu": {
             "regex": re.compile(r"^(reactor_cpu_.*|reactor_sleep_time_ms_total)"),
             "normalisation": "minmax",
@@ -206,7 +250,7 @@ class PerfMetricEntry(object):
             "reduce": "difference",
         },
         "reactor_polls": {
-            "regex": re.compile(r"^(reactor_polls)"),
+            "regex": re.compile(r"^(reactor_polls|reactor_tasks_processed)"),
             "normalisation": "minmax",
             "unit": "polls",
             "reduce": "difference",
@@ -299,6 +343,7 @@ class PerfMetricEntry(object):
         # Main key : "metrics"
         self.options = options
         self.input = options.input  # list of input .json files
+        self.metric_name_re = self.DEFAULT_METRIC_REGEX
         # Check that the input option regex is a valid regex
         if options.regex:
             self.metric_name_re = self._check_metric_regex(
@@ -538,6 +583,16 @@ class PerfMetricEntry(object):
         if self.reactor_utilization is None:
             _get_reactor_util(self, df, outname)
 
+    def _get_metric_group(self, metric):
+        """
+        This function can also be used to indicate the subfamily of the metric
+        """
+        for k in self.METRICS:
+            if self.METRICS[k]["regex"].search(metric):
+                return k
+        return None
+
+
     def reduce(
         self, a_data: Dict[str, Any], b_data: Dict[str, Any], cb_name=None
     ) -> Dict[str, Any]:
@@ -547,13 +602,6 @@ class PerfMetricEntry(object):
         otherwise use the default operator indicated in the METRICS dictionary.
                 return callbacks[self.config["operator"]](a_data, b_data)
         """
-
-        def _get_metric_group(metric):
-            for k in self.METRICS:
-                if self.METRICS[k]["regex"].search(metric):
-                    return k
-            return None
-
         def _get_diff(a_data: List[float], b_data: List[float]) -> List[float]:
             return [a - b for a, b in zip(a_data, b_data)]
 
@@ -586,7 +634,7 @@ class PerfMetricEntry(object):
                 cb = callbacks[cb_name]
             else:
                 # Get the metric group
-                m_group = _get_metric_group(m)
+                m_group = self._get_metric_group(m)
                 if m_group is None:
                     logger.debug(f"Metric {m} not in any group")
                     cb = callbacks["difference"]
@@ -674,6 +722,38 @@ class PerfMetricEntry(object):
                     accum[k] = [v]
             return accum
 
+        def _is_metric_wanted(metric_name: str) -> bool:
+            """
+            Check if the metric name is in the list of wanted metrics
+            """
+            for regex in self.metric_name_re:
+                if regex.search(metric_name):
+                    return True
+            return False 
+
+        def _update_shard_value_only(
+            metric_name: str, item: Dict[str, Any], result: Dict[str, Any]
+        ) -> None:
+            """
+            Update the result dict with the shard and value only, this is a simplified version
+            This is a dict with keys the shard names, values dicts with keys the metric names,
+            and values the list of measurements
+            """
+            try:
+                _shard = item[metric_name]["shard"]
+                if _shard not in result:
+                    result.update({_shard: {}})
+                if metric_name not in result[_shard]:
+                    result[_shard][metric_name] = []
+                result[_shard][metric_name].append(item[metric_name]["value"])
+                # We need to keep track of the metrics_seen and shards seen
+                if metric_name not in self.metrics_seen:
+                    self.metrics_seen.add(metric_name)
+                if _shard not in self.shards_seen:
+                    self.shards_seen.add(_shard)
+            except KeyError:
+                logger.error(f"KeyError: {item} has no shard key")
+
         def _update_family(
             metric_name: str, metric: Dict[str, Any], family: str
         ) -> None:
@@ -699,21 +779,13 @@ class PerfMetricEntry(object):
                         logger.error(
                             f"Exception {e} updating family {family} with metric {metric_name}"
                         )
-            logger.info(
-                f"families: {pp.pprint(self.m_families)}"
-            )  # Reduce them to dataframes
 
         # Ensure that ds_list is a list of dicts
         if isinstance(ds_list, dict):
             ds_list = [ds_list]
-        # This needs to be a cummulative dict, since we might want the full
-        # sequence It has the format of a (nearly) data frame: main keys are
-        # shards, then the metric name, for each single list of value
-        # (numeric), but we need to extend it for multi-attribute metrics (e.g.
-        # cache_*)
+        result = {}  # This is for the shard_value family (simple metric)
+            
 
-        result = {}  # This is for the shard first (simple metric) structure
-        _shard = None
         for _i, ds in enumerate(ds_list):
             # ds (data set) is a dict with the key "metrics" and the values are in turn dicts,
             # the shard name/id should always be present
@@ -723,32 +795,15 @@ class PerfMetricEntry(object):
 
             for item in ds["metrics"]:
                 for _metric in item.keys():
-                    # We need to check if the key matches the regex for the metric name
-                    # This is a list of regexes, so we need to check each one
-                    for regex in self.metric_name_re:
-                        if regex.search(_metric):
-                            # TBC: need to find the timestamp if present
-                            # there is a bug overhere
-                            family = _get_metric_family(item[_metric])
-                            _update_family(_metric, item[_metric], family)
-                            # The following only deals with shard and value
-                            # attributes, we need to extend to any other family
-                            try:
-                                _shard = int(item[_metric]["shard"])
+                    if _is_metric_wanted(_metric):
 
-                                if _shard not in result:
-                                    result.update({_shard: {}})
-                                if _metric not in result[_shard]:
-                                    result[_shard][_metric] = []
-
-                                result[_shard][_metric].append(item[_metric]["value"])
-                                # We need to keep track of the metrics_seen and shards seen
-                                if _metric not in self.metrics_seen:
-                                    self.metrics_seen.add(_metric)
-                                if _shard not in self.shards_seen:
-                                    self.shards_seen.add(_shard)
-                            except KeyError:
-                                logger.error(f"KeyError: {item} has no shard key")
+                        # TBC: need to find the timestamp if present
+                        family = _get_metric_family(item[_metric])
+                        _update_family(_metric, item[_metric], family)
+                        # The following only deals with shard and value
+                        # attributes, we later expand to any other if possible
+                        if family == "shard_value":
+                            _update_shard_value_only( _metric, item, result )
         return result
 
         # We might also need the full sequence of the reactor_utilization to
@@ -792,6 +847,81 @@ class PerfMetricEntry(object):
         }
         return result
 
+    def _save_families(self):
+        """
+        Save the families as a json file
+        """
+        _fname = self.config["output"].replace(".json", "_m_families.json")
+        save_json(_fname, self.m_families)
+        self.generated_files.append(_fname)
+
+    def _plot_group(self, groups: Dict[str, List[pd.DataFrame]]):
+        """
+        Plot the group of dataframes together
+        """
+        for group, df_ls in groups.items():
+            _is_first = True 
+            ax = None
+            for df in df_ls:
+                if not df.empty: 
+                    if _is_first :
+                        # df = df.rename_axis("shard") # if .T
+                        ax = df.plot(
+                            kind="linepoints",
+                            title=f"{group} {self.METRICS[group]['unit']}",
+                            figsize=(8, 4),
+                            grid=True,
+                            #xlabel="samples",
+                            #ylabel="metric",
+                            fontsize=8,
+                        )
+                        _is_first = False
+                    else:
+                        df.plot(
+                            ax=ax,
+                            kind="linepoints",
+                            figsize=(8, 4),
+                            grid=True,
+                            #xlabel="samples",
+                            #ylabel="metric",
+                            fontsize=8,
+                        )
+            logging.info(f"Attempting to plot group {group}")
+            chart_name = self.config["output"].replace(".json", f"_{group}.png")
+            plt.savefig(
+                chart_name,
+                # dpi=300,
+                bbox_inches="tight",
+            )
+            plt.show()
+
+    def _plot_families(self):
+        """
+        Plot the families, each family is a dict with keys the metric names,
+        values the dataframes with the attributes as columns.
+        ax = df1.plot()
+        df2.plot(ax=ax) 
+        """
+        for family in self.m_families:
+            groups = {}
+            for metric_name in self.m_families[family]:
+                # Get the subfamily to plot the metrics together
+                group = self._get_metric_group(metric_name)
+                try:
+                    # Need to rename the "value" column into the metric name
+                    df = pd.DataFrame(self.m_families[family][metric_name])
+                    df.rename(columns={"value": metric_name}, inplace=True)
+                    logger.info(f"Family {family} metric {metric_name}:\n{pp.pformat(df)}")
+                    if group not in groups:
+                        groups[group] = [df]
+                    else:
+                        groups[group].append(df)
+                except Exception as e:
+                    logger.error(
+                        f"Exception {e} getting dataframe on family {family} metric {metric_name}"
+                    )
+            self._plot_group(groups)
+
     def load_files(self, json_files: List[str]) -> None:  # List[Dict[str,Any]]:
         """
         Load the .json files specified in the list: "input" config option key
@@ -815,9 +945,9 @@ class PerfMetricEntry(object):
         """
         logger.info(f"loading {len(json_files)} .json files ...")
         self.ds_list = [self.filter_metrics(load_json(f)) for f in json_files]
-        logger.info(f"ds_list: {pp.pprint(self.ds_list)}")
+        logger.info(f"ds_list: {pp.pformat(self.ds_list)}")
         logger.info(
-            f"families: {pp.pprint(self.m_families)}"
+            f"families: {pp.pformat(self.m_families)}"
         )  # Reduce them to dataframes
 
     def _reduce_metrics_df(self):
@@ -1034,6 +1164,8 @@ class PerfMetricEntry(object):
             self.metric_name_re = self._check_metric_regex(prev, self.config["regex"])
             logger.info(f"Using metric_name_re {self.metric_name_re} from config")
 
+        logger.info(f"Using metric_name_re {self.metric_name_re}")
+
     def load_config(self):
         """
         Load the configuration .json input file
@@ -1090,6 +1222,9 @@ class PerfMetricEntry(object):
             # self.make_chart(pd.DataFrame(load_json(options.plot)).T)
         else:
             self.load_config()
+            # Porbably families deserve to be aclass of their own
+            self._save_families()
+            self._plot_families()
             # This expects a single, coalesced dataframe, so we need to either reduce the time_sequence,
             # in addition to produce the time sequence plot
             self.make_metrics_chart(self.df, self.config["output"])
@@ -1304,7 +1439,7 @@ type of metrics (classic, crimson) and output .json file, etc.
         type=str,
         required=False,
         help="Regex to describe the metrics to be considered",
-        default=r"memory_*",
+        default="" #r"memory_*",
     )
 
     parser.add_argument(
