@@ -398,6 +398,10 @@ while getopts 'ab:t:s:r:jl' option; do
        usage >&2
        exit 1
        ;;
+    \?) printf "illegal option: -%s\n" "$OPTARG" >&2
+       usage >&2
+       exit 1
+       ;;
   esac
  done
  fun_run_precond "precond"

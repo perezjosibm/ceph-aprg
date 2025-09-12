@@ -14,6 +14,19 @@ FIO_JOBS=/root/bin/rbd_fio_examples/
 TEST_TYPE=aio # aio or seastore 
 export RBD_SIZE=200G
 
+function get_diskstats(){
+  local TEST_NAME=$1
+  local NUM_SAMPLES=$2
+  local SLEEP_SECS=$3
+
+  #Take a sample every 60 secs, 3 samples in total
+  for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
+    local ds=${TEST_NAME}_$(date +%Y%m%d_%H%M%S)_ds.json
+    jc --pretty /proc/diskstats > ${TEST_DIR}/${ds}
+    sleep ${SLEEP_SECS};
+  done
+}
+
 function run_benchmark() {
     local TEST_TYPE=$1 
     if [ -z "$TEST_TYPE" ]; then
@@ -47,14 +60,22 @@ function run_benchmark() {
     ceph tell osd.0 dump_metrics > ${TEST_DIR}/${TEST_NAME}_perf_before.json
     fi
 
-    jc --pretty /proc/diskstats > ${TEST_DIR}/${TEST_NAME}_ds_before.json
+    jc --pretty /proc/diskstats > ${TEST_DIR}/${TEST_NAME}_ds.json
 
-    IO_DEPTH=4 NUM_JOBS=4 RBD_NAME=fio_test_0 taskset -ac ${FIO_CORES} fio ${FIO_JOBS}/${TEST_NAME}.fio --output=${TEST_DIR}/${TEST_NAME}.json  --output-format=json 2> ${TEST_DIR}/${TEST_NAME}.err & fio_pid=$!; sleep 30; timeout 300 strace -fp $fio_pid -o ${TEST_DIR}/${TEST_NAME}_fio_strace.out -e trace=all -c & timeout 300 strace -fp $osd_pid -o ${TEST_DIR}/${TEST_NAME}_osd_strace.out -e trace=all -c &
+    IO_DEPTH=4 NUM_JOBS=4 RBD_NAME=fio_test_0 taskset -ac ${FIO_CORES} fio ${FIO_JOBS}/${TEST_NAME}.fio --output=${TEST_DIR}/${TEST_NAME}.json  --output-format=json 2> ${TEST_DIR}/${TEST_NAME}.err & fio_pid=$!; sleep 30; timeout 300 strace -fp $fio_pid -o ${TEST_DIR}/${TEST_NAME}_fio_strace.out -e trace=all -c & 
+
+    if [ "$TEST_TYPE" == "sea" ]; then
+        timeout 300 strace -fp $osd_pid -o ${TEST_DIR}/${TEST_NAME}_osd_strace.out -e trace=all -c &
+    fi
+    get_diskstats ${TEST_NAME} 5 30  &
+    stats_pid=$!
 
     echo "$(date) Waiting for FIO to complete, (pid ${fio_pid})..."
     wait $fio_pid
 
-    jc --pretty /proc/diskstats > ${TEST_DIR}/${TEST_NAME}_ds_after.json
+    kill -9 $stats_pid
+    #jc --pretty /proc/diskstats > ${TEST_DIR}/${TEST_NAME}_ds_after.json
+    jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -d ${TEST_DIR} -a  ${TEST_NAME}_ds.json 
     echo "$(date) FIO completed."
     if [ "$TEST_TYPE" == "sea" ]; then
         ceph tell osd.0 dump_metrics > ${TEST_DIR}/${TEST_NAME}_perf_after.json
@@ -85,7 +106,7 @@ while getopts 'at:d:' option; do
     esac
 done
 [[ ! -d $TEST_DIR ]] && mkdir $TEST_DIR
-if [ "$TEST_TYPE" == "all"]; then
+if [ "$TEST_TYPE" == "all" ]; then
     for t in aio sea; do
         run_benchmark $t
     done
