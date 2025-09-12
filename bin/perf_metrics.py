@@ -866,9 +866,18 @@ class PerfMetricEntry(object):
                 if not df.empty: 
                     if _is_first :
                         # df = df.rename_axis("shard") # if .T
+                        # result = pd.merge(left, right, on="shard", how="outer") # union of keys from both frames
+                        # result = pd.merge(left, right, on="shard", how="left")
+                        # result = left.join([right, right2])
+                        df = df.rename_axis("samples")
+                        try:
+                            _units = self.METRICS[group]["unit"]
+                        except KeyError:
+                            _units = "metric"
+
                         ax = df.plot(
-                            kind="linepoints",
-                            title=f"{group} {self.METRICS[group]['unit']}",
+                            kind="line",
+                            title=f"{group} {_units}",
                             figsize=(8, 4),
                             grid=True,
                             #xlabel="samples",
@@ -879,14 +888,14 @@ class PerfMetricEntry(object):
                     else:
                         df.plot(
                             ax=ax,
-                            kind="linepoints",
+                            kind="line",
                             figsize=(8, 4),
                             grid=True,
                             #xlabel="samples",
                             #ylabel="metric",
                             fontsize=8,
                         )
-            logging.info(f"Attempting to plot group {group}")
+            logging.info(f"Attempting to plot group {group}:\n{pp.pformat(df)}")
             chart_name = self.config["output"].replace(".json", f"_{group}.png")
             plt.savefig(
                 chart_name,
@@ -1193,7 +1202,9 @@ class PerfMetricEntry(object):
                 self.load_time_sequence(self.config["input"])
             else:
                 self.load_files(self.config["input"])
-                self.apply_reduction(self.ds_list)
+                # Temporarly disabling the reduction until we corner down checking items
+                # are valid scalars in the list comprehension (perhaps a simple auxiliary funciton to call instead of the '-'operator)
+                #self.apply_reduction(self.ds_list)
         else:
             logger.error("KeyError: self.config has no 'input' key")
 
