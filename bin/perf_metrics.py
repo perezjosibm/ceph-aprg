@@ -24,7 +24,8 @@ import re
 import json
 import tempfile
 import pprint
-import datetime
+from datetime import datetime
+from functools import reduce
 
 # import numpy as np
 import pandas as pd
@@ -858,43 +859,58 @@ class PerfMetricEntry(object):
     def _plot_group(self, groups: Dict[str, List[pd.DataFrame]]):
         """
         Plot the group of dataframes together
+        Join the dataframes per group, then plot a single df per group
+        df = df.rename_axis("shard") # if .T
+        result = pd.merge(left, right, on="shard", how="outer") # union of keys from both frames
+        result = pd.merge(left, right, on="shard", how="left")
+        result = left.join([right, right2])
+        dfs = [df.set_index('id') for df in dfList]
+        df = pd.concat(dfs, axis=1, join='inner')
         """
         for group, df_ls in groups.items():
-            _is_first = True 
-            ax = None
-            for df in df_ls:
-                if not df.empty: 
-                    if _is_first :
-                        # df = df.rename_axis("shard") # if .T
-                        # result = pd.merge(left, right, on="shard", how="outer") # union of keys from both frames
-                        # result = pd.merge(left, right, on="shard", how="left")
-                        # result = left.join([right, right2])
-                        df = df.rename_axis("samples")
-                        try:
-                            _units = self.METRICS[group]["unit"]
-                        except KeyError:
-                            _units = "metric"
+            #result_df = df_ls[0].join(df_ls[1:], how="outer", lsuffix='_left', rsuffix='_right')
+            # ValueError: Indexes have overlapping values: Index(['shard'], dtype='object') 
+            #df = df_ls[0].join(df_ls[1:]) 
+            try:
+                df_ls = [df.set_index("shard") for df in df_ls]
+            except Exception as e:
+                logger.error(f"Exception {e} setting index shard for group {group}")
+            try:
+                # Need to extract the liist of columns from the group name
+                # (reversing the "encoding", and remove the value attribute),
+                # and investigate whether the concat can be done specifiying a
+                # set of columns
+                df = pd.concat(df_ls, axis=1)
+                # This duplicates vvalues:
+                # df = reduce(lambda df1,df2: pd.merge(df1,df2, on='shard'), df_ls)
+            except Exception as e:
+                logger.error(f"Exception {e} concatenating dataframes for group {group}... skipping")
+                continue
+            #df = df.rename_axis("samples")
+            try:
+                _units = self.METRICS[group]["unit"]
+            except KeyError:
+                _units = "metric"
 
-                        ax = df.plot(
-                            kind="line",
-                            title=f"{group} {_units}",
-                            figsize=(8, 4),
-                            grid=True,
-                            #xlabel="samples",
-                            #ylabel="metric",
-                            fontsize=8,
-                        )
-                        _is_first = False
-                    else:
-                        df.plot(
-                            ax=ax,
-                            kind="line",
-                            figsize=(8, 4),
-                            grid=True,
-                            #xlabel="samples",
-                            #ylabel="metric",
-                            fontsize=8,
-                        )
+            _fname = self.config["output"].replace(".json", f"_{group}.json")
+            with open(_fname, "w", encoding="utf-8") as f:
+                print(df.to_json(f, orient="split"), file=f)
+                f.close()
+
+            # Try using seaborn instead
+            self.generated_files.append(_fname)
+            try:
+                df.plot(
+                    kind="line",
+                    title=f"{group} ({_units})",
+                    figsize=(8, 4),
+                    grid=True,
+                    #xlabel="samples",
+                    #ylabel="metric",
+                    fontsize=8,
+                )
+            except Exception as e:
+                logger.error(f"Exception {e} plotting group {group}")
             logging.info(f"Attempting to plot group {group}:\n{pp.pformat(df)}")
             chart_name = self.config["output"].replace(".json", f"_{group}.png")
             plt.savefig(
@@ -921,7 +937,7 @@ class PerfMetricEntry(object):
                     df = pd.DataFrame(self.m_families[family][metric_name])
                     df.rename(columns={"value": metric_name}, inplace=True)
                     logger.info(f"Family {family} metric {metric_name}:\n{pp.pformat(df)}")
-                    if group not in groups:
+                    if group is not None and group not in groups:
                         groups[group] = [df]
                     else:
                         groups[group].append(df)
@@ -1236,9 +1252,15 @@ class PerfMetricEntry(object):
             # Porbably families deserve to be aclass of their own
             self._save_families()
             self._plot_families()
+
             # This expects a single, coalesced dataframe, so we need to either reduce the time_sequence,
             # in addition to produce the time sequence plot
-            self.make_metrics_chart(self.df, self.config["output"])
+            try:
+                assert self.df is not None
+                self.make_metrics_chart(self.df, self.config["output"])
+            except AssertionError:
+                logger.error("No dataframe in self.df to plot, bailing out ...")
+                return
 
             # Add the names of the generated charts to the same output .json
             # This only applies to the time_sequence, so we need to filter it

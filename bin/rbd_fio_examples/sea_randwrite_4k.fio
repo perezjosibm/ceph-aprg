@@ -1,0 +1,35 @@
+######################################################################
+# Example test for the RBD engine.
+#
+# Runs a 4k random write test against a RBD via librbd
+#
+# NOTE: crafted for a comparison against bare AIO 
+######################################################################
+[global]
+#logging
+#write_iops_log=${LOG_NAME}
+#write_bw_log=${LOG_NAME}
+#write_lat_log=${LOG_NAME}
+ioengine=rbd
+clientname=admin
+pool=rbd
+bs=4k
+rw=randwrite
+direct=1
+group_reporting=1
+time_based
+runtime=5m
+thread=1
+ramp_time=30s
+#name=raw-randwrite
+#steadystate=iops:5%
+steadystate_duration=10s
+#steadystate_ramp_time=60s
+##steadystate_check_interval=30s
+numjobs=${NUM_JOBS} # num concurrent clients/processes
+iodepth=${IO_DEPTH}
+
+[fio_test_0]
+rbdname=${RBD_NAME}
+size=200G
+max_latency=1s

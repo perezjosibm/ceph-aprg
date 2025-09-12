@@ -1,0 +1,33 @@
+######################################################################
+# Example test for the AIO engine.
+#
+# Runs a 4k random write test 
+#
+# NOTE: crafted for a comparison against FIO RDB
+######################################################################
+[global]
+#logging
+#write_iops_log=${LOG_NAME}
+#write_bw_log=${LOG_NAME}
+#write_lat_log=${LOG_NAME}
+ioengine=libaio
+bs=4K
+rw=randwrite
+direct=1
+group_reporting=1
+time_based
+runtime=5m
+thread=1
+ramp_time=30s
+#name=raw-randwrite
+#steadystate=iops:5%
+steadystate_duration=10s
+#steadystate_ramp_time=60s
+##steadystate_check_interval=30s
+numjobs=${NUM_JOBS} # num concurrent clients/processes
+iodepth=${IO_DEPTH}
+                            
+[nvme0n1p2]
+filename=/dev/nvme0n1p2
+size=200G
+max_latency=1s
