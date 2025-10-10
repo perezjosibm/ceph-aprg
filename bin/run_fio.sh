@@ -190,22 +190,22 @@ fun_osd_dump() {
   local LABEL=$5
   local METRICS=$6 #"reactor_utilization"
 
-  #Take a sample every 60 secs, 3 samples in total
+  if [ "${OSD_TYPE}" == "crimson" ]; then
+      cmd="/ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS}"
+  else
+      cmd="/ceph/build/bin/ceph tell osd.0 perf dump"
+      # ceph tell osd.0 heap stats
+      # ceph daemon osd.0 perf histogram dump
+      # ceph daemon osd.0 perf dump
+  fi
+
   for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
     #for oid in ${!osd_id[@]}; do
     # Use only osd.0 always
      #timestamp=$(date +'%Y-%m-%dT%H:%M:%S') 
      #echo "{ \"timestamp\": \"$timestamp\" }," >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
-      if [ "${OSD_TYPE}" == "crimson" ]; then
-        /ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS} >> ${TEST_NAME}_dump_${LABEL}.json
-      else
-        /ceph/build/bin/ceph tell osd.0 perf dump >> ${TEST_NAME}_dump_${LABEL}.json
-        # Classic does not seem to support a similar command
-        #/ceph/build/bin/ceph daemonperf osd.0 >> ${TEST_NAME}_dump_${LABEL}.json
-        # ceph tell osd.0 heap stats
-        # ceph daemon osd.0 perf histogram dump
-        # ceph daemon osd.0 perf dump
-      fi
+      echo "${cmd}" 
+      eval "$cmd" >> ${TEST_NAME}_${LABEL}.json
     #done
     sleep ${SLEEP_SECS};
   done
@@ -275,7 +275,7 @@ fun_run_workload_loop() {
     fun_set_globals $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX $WORKLOAD_NAME
 
     if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "before"
+        fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "dump_before"
     fi
 
     for job in $RANGE_NUMJOBS; do
@@ -292,6 +292,10 @@ fun_run_workload_loop() {
                     num_attempts=$((num_attempts+1))
                 else
                     echo "== Attempt $((num_attempts+1)) succeeded =="
+                    if [ "$SKIP_OSD_MON" = false ]; then
+                        timestamp=$(date +%Y%m%d_%H%M%S)
+                        fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "dump_${timestamp}"
+                    fi
                 fi
             done
             if [[ "$rc" == "false" ]]; then
@@ -301,7 +305,7 @@ fun_run_workload_loop() {
         done # loop IO_DEPTH
     done # loop num_jobs
     if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "after"
+        fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "dump_after"
     fi
     # Post processing:
     fun_post_process   
@@ -368,8 +372,8 @@ fun_run_workload() {
     fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
     if [ "$SKIP_OSD_MON" = false ] && [ "${OSD_TYPE}" == "crimson" ]; then
         timestamp=$(date +%Y%m%d_%H%M%S)
-        fun_osd_dump ${TEST_RESULT} 24 5 ${OSD_TYPE} ${timestamp} "reactor_utilization" &
-        fun_diskstats ${TEST_RESULT} 24 5  &
+        fun_osd_dump ${TEST_RESULT} 10 10 ${OSD_TYPE} ${timestamp} "reactor_utilization" &
+        fun_diskstats ${TEST_RESULT} 2 60  &
     fi
 
     # We have a watchdog: if the OSD dies and
@@ -377,7 +381,16 @@ fun_run_workload() {
     wait;
     # Measure the diskstats after the completion of FIO instances
     jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
-
+    # Filter FIO .json: remove any job that has got an error
+    # eg if the latency_target was not met or any other error
+    # for x in $(cat fio_${TEST_NAME}.err | grep 'error=' | awk -F= '{print $2}' | sort -u); do
+    #     if [ "$x" != "0" ]; then
+    #         echo "== Removing FIO error $x from fio_${TEST_NAME}.json =="
+    #         sed -i "/\"error\": $x,/d" fio_${TEST_NAME}.json
+    #     fi
+    # done
+    sed -i '/^fio: .*/d' fio_${TEST_NAME}.json
+    
     # Exit the loops if the latency disperses too much from the median
     if [ "$RESPONSE_CURVE" = true ] && [ "$RC_SKIP_HEURISTIC" = false ]; then
         mop=${mode[${WORKLOAD}]}
@@ -388,7 +401,7 @@ fun_run_workload() {
         #covar=$(jq ".jobs | .[] | .${mop}.clat_ns.mean/1000000 < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
         latency=$(jq ".jobs | .[] | .${mop}.clat_ns.mean/1000000 " fio_${TEST_NAME}.json)
         if (( $(echo $latency $MAX_LATENCY | awk '{if ($1 > $2) print 1;}') )); then
-            echo "== Latency ${latency} too high, failing this attempt =="
+            echo "== Latency: ${latency}(ms) too high, failing this attempt =="
             return $FAILURE
         fi
     fi

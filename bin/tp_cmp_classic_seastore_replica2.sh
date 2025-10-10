@@ -7,9 +7,10 @@
 STORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2' # dual OSD
 #STORE_DEVS='/dev/nvme9n1p2' # single OSD
 #STORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2,/dev/nvme2n1p2,/dev/nvme6n1p2,/dev/nvme3n1p2,/dev/nvme5n1p2,/dev/nvme0n1p2,/dev/nvme4n1p2'
-# Gloabl options
+# Global options
 export NUM_RBD_IMAGES=32
 export RBD_SIZE=2GB #500GB
+export RBD_POOL_REPLICA=2
 
 # Test plan: to be extended to a .json file
 # For Classic OSD, we can only vary the number of OSDs, since there is no reactor model

@@ -90,7 +90,8 @@ plot '{dat_name}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
         # comm_sorted = self.proc_groups[proc_name]['sorted'][metric]
         _comm_sorted = self.comm_sorted[proc_name][metric]
         # print( comm_sorted , sep=", " )
-        header = "#" + ",".join(_comm_sorted)
+        # Header is the name of the threads
+        header = ",".join(_comm_sorted)
         print(header)
         ds = {}
         # Either use num_samples or count for each comm
@@ -148,6 +149,7 @@ class FioPlot(object):
         self.contents = contents  # the str buffers for the .tex and .md contents
         self.list_subtables = list_subtables  # typically a list of TestRunTables
         self.header = ""  # the header for the .plot script
+        self.template = ""
         self.is_cmp = is_cmp  # whether this is a comparison plot
         self.data = ""  # the .dat file contents, normally empty for comparison plots
 
@@ -209,7 +211,6 @@ set autoscale y2
         if not self.is_cmp:
             # The .dat file is normally empty for comparison plots, so we can use the same name
             self.out_data = f"{dp}.dat"
-        self.template = ""
 
     def save_files(self):
         """
@@ -282,14 +283,14 @@ set autoscale y2
             We include and refer this in the .tex body, as well as the .md file
             """
             chart_name = f"{out_chart}_{workload}_{out_chart_suffix}.png"
-            self.contents["tex"] += "\\begin{{figure}}[H]\n"
+            self.contents["tex"] += "\\begin{figure}[!ht]\n"
             self.contents["tex"] += "\\centering\n"
             self.contents["tex"] += (
                 f"\\includegraphics[width=0.8\\textwidth]{{figures/{chart_name}}}\n"
             )
             self.contents["tex"] += f"\\caption{{{title} - {workload}}}\n"
             self.contents["tex"] += f"\\label{{fig:{out_chart}_{workload}}}\n"
-            self.contents["tex"] += "\\end{{figure}}\n"
+            self.contents["tex"] += "\\end{figure}\n"
 
             self.contents["md"] += f"![{title} - {workload}](figures/{chart_name})\n\n"
 
@@ -326,13 +327,14 @@ set title "{title}-{workload}"
             # entries for the plot script (each entry is a response curve)
             entries = []
             self.template += generate_out_chart(out_chart, workload, title)
+            # Remember to set the xlabel to MBs for sequential workloads
             lc = 1  # line color
             for name, ds in self.ds_list.items():
                 # Generate the entry for each workload in the ds_list
                 # logger.info(f"Generating comparison entry {workload} for {name}")
                 entry = ds[workload]
                 dir_path = entry["path"]
-                dat_name = f"{entry["test_run"]}_{workload}.dat"  # The original aggregated FIO and metrics
+                dat_name = f"{entry['test_run']}_{workload}.dat"  # The original aggregated FIO and metrics
                 dp_dat = os.path.join(dir_path, dat_name)
                 entries.append(generate_entry(name, dp_dat, lc))
                 lc += 1  # increment the line color for each entry
@@ -343,12 +345,11 @@ set title "{title}-{workload}"
 
         logger.info(f"Generated template:\n {self.header}\n{self.template}")
         pp = pprint.PrettyPrinter(width=41, compact=True)
-        logger.info(f"Generated contents:\n {pp.pprint(self.contents)}\n")
+        logger.info(f"Generated contents:\n {pp.pformat(self.contents)}\n")
 
         self.set_out_file_names()
         # Save the entries_str and the template
         self.save_files()
-        # print(f"{self.header}\n{self.template}")
 
 
 class FioRcPlot(FioPlot):
