@@ -11,19 +11,23 @@
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
-
+# Include this from a generic/common module:
 declare -A map=([rw]=randwrite [rr]=randread [sw]=write [sr]=read [pre]=write)
 declare -A name=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread [pre]=prefill)
 declare -A bsize=([rw]="4k" [rr]="4k" [sw]="64k" [sr]="64k" [pre]="64k")
 declare -a workloads_order=( rr rw sr sw pre )
 
+# We probably want to ensure that we run this once at the start of the main test (eg. run_balanced_osd.sh)
 NUM_VOLUMES=32
 VOLNAME_PREFIX="fio_test"
-BLOCK_SIZE="64k"
+BLOCK_SIZE="64k" # for preconditioning
 LATENCY_TARGET=false
+OUT_DIR="./rbd_fio_examples"
 
-while getopts 'ln:p:' option; do
+while getopts 'ln:p:d:' option; do
   case "$option" in
+    d) OUT_DIR=$OPTARG
+        ;;
     l) LATENCY_TARGET=true
         ;;
     n) NUM_VOLUMES=$OPTARG
@@ -45,25 +49,25 @@ done
 for WORKLOAD in ${workloads_order[@]}; do
   if [ "$LATENCY_TARGET" = true ]; then
     IO_DEPTH="128"
-    outfilename="rbd_lt_mj_${name[${WORKLOAD}]}.fio"
+    outfilename="${OUT_DIR}/rbd_lt_mj_${name[${WORKLOAD}]}.fio"
   else
-    outfilename="rbd_mj_${name[${WORKLOAD}]}.fio"
+    outfilename="${OUT_DIR}/rbd_mj_${name[${WORKLOAD}]}.fio"
   fi
   BLOCK_SIZE=${bsize[${WORKLOAD}]} 
   read -r -d '' head <<EOF || true
 ######################################################################
 [global]
 #logging
-write_iops_log=\${LOG_NAME}
-write_bw_log=\${LOG_NAME}
-write_lat_log=\${LOG_NAME}
+#write_iops_log=\${LOG_NAME}
+#write_bw_log=\${LOG_NAME}
+#write_lat_log=\${LOG_NAME}
 ioengine=rbd
 clientname=admin
 pool=rbd
 bs=${BLOCK_SIZE}
 rw=${map[${WORKLOAD}]}
 direct=1
-runtime=5m
+runtime=\${RUNTIME}
 time_based
 group_reporting
 ramp_time=30s

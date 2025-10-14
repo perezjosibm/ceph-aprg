@@ -42,6 +42,7 @@ declare -A mode=([rw]=write [rr]=read [sw]=write [sr]=read
 # Single FIO instances: for sequential workloads, bs=64k fixed
 # Need to be valid ranges
 # Option -w (WORKLOAD) is used as index for these:
+# We need to refine the values for hockey so that each workload has its own list of iodepth/numjobs
 declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="1 2 4 8 16 24 32 40 52 64"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 [rr_norm]=16 [rw_norm]=16 [rr_zipf]=16 [rw_zipf]=16 [rr_zoned]=16 [rw_zoned]=16)
 declare -A m_s_numjobs=( [ex8osd]="1 4 8" [hockey]="1"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 [rr_norm]=16 [rw_norm]=4 [rr_zipf]=16 [rw_zipf]=4 [rr_zoned]=16 [rw_zoned]=4)
 #declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
@@ -71,7 +72,7 @@ OSD_CORES="0-31" # range of CPU cores to monitor
 NUM_PROCS=8 # num FIO processes
 TEST_PREFIX="4cores_8img"
 RUN_DIR="/tmp"
-WITH_PERF=true
+WITH_FLAMEGRAPHS=true
 SKIP_OSD_MON=false
 RUN_ALL=false
 SINGLE=false
@@ -86,7 +87,6 @@ PACK_DIR="/packages/"
 MAX_LATENCY=20 #in millisecs
 STOP_CLEAN=false
 NUM_ATTEMPTS=3 # number of attempts to run the workload
-
 SUCCESS=0
 FAILURE=1
 
@@ -106,7 +106,7 @@ while getopts 'ac:d:f:jklrsrw:p:nt:gxz' option; do
         ;;
     w) WORKLOAD=$OPTARG
         ;;
-    n) WITH_PERF=false
+    n) WITH_FLAMEGRAPHS=false # no flamegraphs by default
         ;;
     s) SINGLE=true
         ;;
@@ -150,7 +150,14 @@ fun_join_by() {
 fun_perf() {
   local PID=$1 # , separate string of pid
   local TEST_NAME=$2
-  perf record -e cycles:u --call-graph dwarf -i -p ${PID} -o ${TEST_NAME}.perf.out sleep 10 2>&1 >/dev/null
+  local WITH_FLAMEGRAPHS=$3
+
+  if [ "$WITH_FLAMEGRAPHS" = true ]; then
+      perf record -e cycles:u --call-graph dwarf -i -p ${PID} -o ${TEST_NAME}.perf.out --quiet sleep 10 2>&1 >/dev/null
+  fi
+  # We might add --cpu <cpu> option for the OSD cores
+  local ts=${TEST_NAME}_$(date +%Y%m%d_%H%M%S)_perf_stat.json
+  perf stat -i -p ${PID} -j -o ${ts} -- sleep ${RUNTIME} 2>&1 >/dev/null
 }
 
 #############################################################################################
@@ -183,28 +190,29 @@ fun_diskstats() {
 
 #############################################################################################
 fun_osd_dump() {
+    # Probaable best to refactor this to use shift and $@ instead of the fixed number of args 
   local TEST_NAME=$1
   local NUM_SAMPLES=$2
   local SLEEP_SECS=$3
-  local OSD_TYPE=$4
-  local LABEL=$5
-  local METRICS=$6 #"reactor_utilization"
+  #local osd_type=$4
+  local LABEL=$4
+  local METRICS=$5 #"reactor_utilization"
 
-  if [ "${OSD_TYPE}" == "crimson" ]; then
-      cmd="/ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS}"
-  else
+  if [ "${OSD_TYPE}" == "classic" ]; then
       cmd="/ceph/build/bin/ceph tell osd.0 perf dump"
+  else
+      cmd="/ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS}"
       # ceph tell osd.0 heap stats
       # ceph daemon osd.0 perf histogram dump
       # ceph daemon osd.0 perf dump
   fi
 
+  echo "OSD type: ${OSD_TYPE}: num_samples: ${NUM_SAMPLES}: cmd:${cmd}" 
   for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
     #for oid in ${!osd_id[@]}; do
     # Use only osd.0 always
      #timestamp=$(date +'%Y-%m-%dT%H:%M:%S') 
      #echo "{ \"timestamp\": \"$timestamp\" }," >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
-      echo "${cmd}" 
       eval "$cmd" >> ${TEST_NAME}_${LABEL}.json
     #done
     sleep ${SLEEP_SECS};
@@ -227,7 +235,7 @@ fun_set_globals() {
     # Probably best to save this info in a .json, named eg 'k6eymap.json' so we can retrieve easily
     WORKLOAD=$1
     SINGLE=$2
-    WITH_PERF=$3
+    WITH_FLAMEGRAPHS=$3
     TEST_PREFIX=$4
     WORKLOAD_NAME=$5 # used for respose curves
 
@@ -268,14 +276,14 @@ fun_set_globals() {
 fun_run_workload_loop() {
     local WORKLOAD=$1
     local SINGLE=$2
-    local WITH_PERF=$3
+    local WITH_FLAMEGRAPHS=$3
     local TEST_PREFIX=$4
     local WORKLOAD_NAME=$5 # used for respose curves
 
-    fun_set_globals $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX $WORKLOAD_NAME
+    fun_set_globals $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD_NAME
 
     if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "dump_before"
+        fun_osd_dump ${TEST_RESULT} 1 1  "dump_before" # ${OSD_TYPE}
     fi
 
     for job in $RANGE_NUMJOBS; do
@@ -285,7 +293,7 @@ fun_run_workload_loop() {
             while [[ $num_attempts -lt $NUM_ATTEMPTS && $rc -eq $FAILURE ]]; do
                 # We might need to check for OSD failure, etc
                 echo "== Attempt $((num_attempts+1)) for job $job with io depth $io =="
-                fun_run_workload $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX $WORKLOAD_NAME $job $io
+                fun_run_workload $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD_NAME $job $io
                 rc=$?
                 if [[ $rc == $FAILURE ]]; then
                     echo "== Attempt $((num_attempts+1)) failed, retrying... =="
@@ -294,7 +302,7 @@ fun_run_workload_loop() {
                     echo "== Attempt $((num_attempts+1)) succeeded =="
                     if [ "$SKIP_OSD_MON" = false ]; then
                         timestamp=$(date +%Y%m%d_%H%M%S)
-                        fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "dump_${timestamp}"
+                        fun_osd_dump ${TEST_RESULT} 1 1  "dump_${timestamp}" # ${OSD_TYPE}
                     fi
                 fi
             done
@@ -305,7 +313,7 @@ fun_run_workload_loop() {
         done # loop IO_DEPTH
     done # loop num_jobs
     if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump ${TEST_RESULT} 1 1 ${OSD_TYPE} "dump_after"
+        fun_osd_dump ${TEST_RESULT} 1 1  "dump_after" # ${OSD_TYPE}
     fi
     # Post processing:
     fun_post_process   
@@ -316,7 +324,7 @@ fun_run_workload_loop() {
 fun_run_workload() {
     local WORKLOAD=$1
     local SINGLE=$2
-    local WITH_PERF=$3
+    local WITH_FLAMEGRAPHS=$3
     local TEST_PREFIX=$4
     local WORKLOAD_NAME=$5 # used for respose curves
     local job=$6
@@ -338,21 +346,22 @@ fun_run_workload() {
             log_name=${TEST_NAME}
         fi
         # Execute FIO: for multijob/vols, we do not need to indicate the RBD_NAME
-        LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} \
+        # Note the test duration is specified in the .fio file!
+        LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} \
             taskset -ac ${FIO_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json \
             --output-format=json 2> fio_${TEST_NAME}.err &
+        # Capture the pid of the FIO instance
         fio_id["fio_${i}"]=$!
         global_fio_id+=($!)
+        echo "== $(date) == Launched FIO ${fio_name} with RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} on cores ${FIO_CORES} ==";
     done # loop NUM_PROCS
     sleep 30; # ramp up time
 
     if [ "$SKIP_OSD_MON" = false ]; then
         # Prepare list of pid to monitor
         osd_pids=$( fun_join_by ',' ${osd_id[@]} )
-        if [ "$WITH_PERF" = true ]; then
             echo "== $(date) == Profiling $osd_pids =="
             fun_perf "$osd_pids" ${TEST_NAME}
-        fi
     fi
 
     # We use this list of pid to extract the pid corresponding CPU util from the top profile
@@ -370,9 +379,11 @@ fun_run_workload() {
     fi
     all_pids=$( fun_join_by ',' ${osd_id[@]}  ${fio_id[@]} )
     fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
-    if [ "$SKIP_OSD_MON" = false ] && [ "${OSD_TYPE}" == "crimson" ]; then
-        timestamp=$(date +%Y%m%d_%H%M%S)
-        fun_osd_dump ${TEST_RESULT} 10 10 ${OSD_TYPE} ${timestamp} "reactor_utilization" &
+    if [ "$SKIP_OSD_MON" = false ]; then
+        if  [ "${OSD_TYPE}" != "classic" ]; then
+          timestamp=$(date +%Y%m%d_%H%M%S)
+          fun_osd_dump ${TEST_RESULT} 10 10  "rutil_${timestamp}" "reactor_utilization" & # ${OSD_TYPE}
+        fi 
         fun_diskstats ${TEST_RESULT} 2 60  &
     fi
 
@@ -381,7 +392,8 @@ fun_run_workload() {
     wait;
     # Measure the diskstats after the completion of FIO instances
     jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
-    # Filter FIO .json: remove any job that has got an error
+    # Filter FIO .json: remove any error line not in .json format
+    sed -i '/^fio: .*/d' fio_${TEST_NAME}.json
     # eg if the latency_target was not met or any other error
     # for x in $(cat fio_${TEST_NAME}.err | grep 'error=' | awk -F= '{print $2}' | sort -u); do
     #     if [ "$x" != "0" ]; then
@@ -389,7 +401,6 @@ fun_run_workload() {
     #         sed -i "/\"error\": $x,/d" fio_${TEST_NAME}.json
     #     fi
     # done
-    sed -i '/^fio: .*/d' fio_${TEST_NAME}.json
     
     # Exit the loops if the latency disperses too much from the median
     if [ "$RESPONSE_CURVE" = true ] && [ "$RC_SKIP_HEURISTIC" = false ]; then
@@ -474,7 +485,7 @@ fun_post_process() {
     #/root/bin/fio_generate_plots ${TEST_NAME} 650 280 2>&1 > /dev/null
 
     # Process perf if any
-    if [ "$WITH_PERF" = true ]; then
+    if [ "$WITH_FLAMEGRAPHS" = true ]; then
         for x in $(ls *perf.out); do
             #y=${x/perf.out/scripted.gz}
             z=${x/perf.out/fg.svg}
@@ -610,11 +621,11 @@ fun_animate() {
 fun_post_process_cold() {
   local WORKLOAD=$1
   local SINGLE=$2
-  local WITH_PERF=$3
+  local WITH_FLAMEGRAPHS=$3
   local TEST_PREFIX=$4
   local WORKLOAD_NAME=$5 # used for respose curves
 
-  fun_set_globals $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX $WORKLOAD_NAME
+  fun_set_globals $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD_NAME
   echo "== post-processing archives for ${WORKLOAD} in ${TEST_RESULT} =="
   # find aarchives of such 
   for x in ${TEST_RESULT}*.zip; do
@@ -679,14 +690,14 @@ fi
       for wk in ${workloads_order[@]}; do
         #fun_prime
         if [ "$POST_PROC" = true ]; then
-          fun_post_process_cold $wk $single_procs  $WITH_PERF $TEST_PREFIX $WORKLOAD 
+          fun_post_process_cold $wk $single_procs  $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD 
         else
-          fun_run_workload_loop $wk $single_procs  $WITH_PERF $TEST_PREFIX $WORKLOAD
+          fun_run_workload_loop $wk $single_procs  $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD
         fi
       done
     done
   else
-    fun_run_workload_loop $WORKLOAD $SINGLE $WITH_PERF $TEST_PREFIX
+    fun_run_workload_loop $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX
   fi
 
   echo ${osd_id[@]}

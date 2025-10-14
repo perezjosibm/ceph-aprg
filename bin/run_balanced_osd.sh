@@ -58,12 +58,14 @@ MAX_NUM_HT_CPUS_PER_SOCKET=52
 NUMA_NODES_OUT=/tmp/numa_nodes.json
 
 # Globals:
+export RUNTIME=300
 LATENCY_TARGET=false 
 MULTI_JOB_VOL=false
 PRECOND=false
 WATCHDOG=false
 TEST_PLAN=${SCRIPT_DIR}/tp_cmp_classic_seastore.sh # default test plan if none provided
 SKIP_EXEC=false 
+REGEN=false 
 
 # Associative arrays to hold the test cases
 declare -A test_table
@@ -211,7 +213,7 @@ fun_run_fio(){
 #########################################
   # Oficial FIO command:
   # x: skip response curves stop heuristic, n:no perf
-  cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR}"
+  cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -t ${OSD_TYPE}"
 #########################################
   # Experimental: -w for single, and -k for skipping OSD monitoring
   #cmd="/root/bin/run_fio.sh -s ${OPTS} -w sr -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR}"
@@ -366,6 +368,24 @@ fun_get_diskstats(){
 }
 
 #############################################################################################
+# Regenerate the FIO jobs .fio files according to the current NUM_RBD_IMAGES and LATENCY_TARGET
+fun_run_regen_fio_files(){
+    echo -e "${GREEN}== Regenerating FIO job files ==${NC}"
+    if [ "$LATENCY_TARGET" = true ]; then
+        OPTS="${OPTS} -l "
+    fi
+    cmd="/root/bin/gen_fio_job.sh ${OPTS} -n ${NUM_RBD_IMAGES} -d /root/bin/rbd_fio_examples" #  -p fio_test
+    echo "${cmd}"
+    eval "${cmd}"
+    rc=$? 
+     if [ $rc -eq 0 ]; then
+       echo -e "${GREEN}== FIO job files generated in ${FIO_JOBS} ==${NC}"
+     else
+       echo -e "${RED}== Error generating FIO job files in ${FIO_JOBS} ==${NC}"
+     fi
+
+}
+#############################################################################################
 # Remember to regenerate the radwrite64k.fio for the config of drives
 fun_run_precond(){
     local TEST_NAME=$1
@@ -421,7 +441,7 @@ fun_watchdog() {
 trap 'echo "$(date)== INT received, exiting... =="; fun_stop; exit 1' SIGINT SIGTERM SIGHUP
 
 # DEfine some FIO options, or a .json test plan instead
-while getopts 'ab:c:d:e:t:s:r:jlpxz:' option; do
+while getopts 'ab:c:d:e:g:t:s:r:jlpxz:' option; do
   case "$option" in
     a) fun_show_all_tests
        exit
@@ -450,6 +470,8 @@ while getopts 'ab:c:d:e:t:s:r:jlpxz:' option; do
         ;;
     p) PRECOND=true
         ;;
+    g) REGEN=true
+        ;;
     z) CACHE_ALG=$OPTARG
        if [ "$CACHE_ALG" != "LRU" ] && [ "$CACHE_ALG" != "2Q" ]; then
          echo -e "${RED}== Invalid cache algorithm: ${CACHE_ALG} ==${NC}"
@@ -474,6 +496,9 @@ while getopts 'ab:c:d:e:t:s:r:jlpxz:' option; do
  fun_save_test_plan
  cd /ceph/build/
 
+ if [ "$REGEN" = true ]; then
+     fun_run_regen_fio_files
+ fi
  if [ "$PRECOND" = true ]; then
      fun_run_precond "precond"
  fi
