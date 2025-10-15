@@ -65,7 +65,9 @@ PRECOND=false
 WATCHDOG=false
 TEST_PLAN=${SCRIPT_DIR}/tp_cmp_classic_seastore.sh # default test plan if none provided
 SKIP_EXEC=false 
-REGEN=false 
+REGEN=true # always regenerate the .fio jobs by default
+fio_pid=0 
+pid_watchdog=0 
 
 # Associative arrays to hold the test cases
 declare -A test_table
@@ -197,7 +199,7 @@ fun_run_fio(){
   [ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
   /root/bin/cephlogoff.sh 2>&1 > /dev/null && \
   # Preliminary: simply collect the threads from OSD to verify its as expected
-  /root/bin/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_cpu_distro.log && \
+  /root/bin/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_test_run.log && \
   #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
 
   if [ "$MULTI_JOB_VOL" = true ]; then
@@ -212,7 +214,7 @@ fun_run_fio(){
   #RBD_NAME=fio_test_0 fio --debug=io ${FIO_JOBS}rbd_prefill.fio  2>&1 > /dev/null && rbd du fio_test_0 && \
 #########################################
   # Oficial FIO command:
-  # x: skip response curves stop heuristic, n:no perf
+  # x: skip response curves stop heuristic, n:no flamegraphs
   cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -t ${OSD_TYPE}"
 #########################################
   # Experimental: -w for single, and -k for skipping OSD monitoring
@@ -220,10 +222,10 @@ fun_run_fio(){
   #cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -k"
   #cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -d ${RUN_DIR}"
 #########################################
-  echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
+  echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_test_run.log
   ##eval "${cmd}"
-  #${cmd} | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log &
-  ${cmd} >> ${RUN_DIR}/${test_name}_cpu_distro.log &
+  #${cmd} | tee >> ${RUN_DIR}/${test_name}_test_run.log &
+  ( ${cmd} >> ${RUN_DIR}/${test_name}_test_run.log ) &
   fio_pid=$!
 }
 
@@ -281,21 +283,21 @@ fun_run_fixed_bal_tests() {
           echo -e "${GREEN}== Title: ${title}==${NC}"
           echo "Test name: $test_name"
           # For later: try number of alien cores = 4 * number of backend CPU cores (= crimson-smp)
-          echo "${cmd}"  | tee -a "${RUN_DIR}/${test_name}_cpu_distro.log"
+          echo "${cmd}"  | tee -a "${RUN_DIR}/${test_name}_test_run.log"
           if [ "${SKIP_EXEC}" = true ]; then
-              echo "Test: $test_name" >> "${RUN_DIR}/${test_name}_cpu_distro.log"
-              echo "Command: ${cmd}" >> "${RUN_DIR}/${test_name}_cpu_distro.log"
+              echo "Test: $test_name" >> "${RUN_DIR}/${test_name}_test_run.log"
+              echo "Command: ${cmd}" >> "${RUN_DIR}/${test_name}_test_run.log"
           else 
-              eval "$cmd" >> "${RUN_DIR}/${test_name}_cpu_distro.log"
+              eval "$cmd" >> "${RUN_DIR}/${test_name}_test_run.log"
           fi
 
           if [ "$OSD_TYPE" == "classic" ]; then
               # Manually set the OSD process affinity
               cmd="taskset -a -c -p ${OSD_CPU}  $(pgrep osd)"
               if [ "${SKIP_EXEC}" = true ]; then
-                  echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_cpu_distro.log
+                  echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_test_run.log
               else 
-                  eval "$cmd" >> ${RUN_DIR}/${test_name}_cpu_distro.log
+                  eval "$cmd" >> ${RUN_DIR}/${test_name}_test_run.log
               fi
           fi
 
@@ -307,12 +309,6 @@ fun_run_fixed_bal_tests() {
           sleep 20 # wait until all OSD online, pgrep?
           fun_show_grid $test_name
 
-          echo "$(date) Starting watchdog"
-          WATCHDOG=true
-          ( fun_watchdog $fio_pid ) &
-          #/root/bin/watchdog.sh -p $fio_pid &
-          pid_watchdog=$!
-
           # Start FIO:
           echo "$(date) Starting FIO..."
           #( fun_run_fio $test_name ) & 
@@ -321,6 +317,12 @@ fun_run_fixed_bal_tests() {
           echo "$(date) FIO ${fio_pid} started"
           # Start watchdog: modified to run as a background job (subsell) since the pid returned was the 
           # same as this running script , so it killed itself!
+          echo "$(date) Starting watchdog..."
+          WATCHDOG=true
+          ( fun_watchdog ${fio_pid} ) &
+          #/root/bin/watchdog.sh -p $fio_pid &
+          pid_watchdog=$!
+
           # Wait for FIO to finish
           echo "$(date) Waiting for FIO to complete, (watchdog pid ${pid_watchdog})..."
           wait $fio_pid
@@ -336,8 +338,8 @@ fun_run_fixed_bal_tests() {
           sleep 60
       done
       # rotate log files if they exist
-      #[ -f ${RUN_DIR}/${test_name}_cpu_distro.log ] && mv ${RUN_DIR}/${test_name}_cpu_distro.log ${RUN_DIR}/${test_name}_cpu_distro.log.1
-      gzip -9fq ${RUN_DIR}/${test_name}_cpu_distro.log
+      #[ -f ${RUN_DIR}/${test_name}_test_run.log ] && mv ${RUN_DIR}/${test_name}_test_run.log ${RUN_DIR}/${test_name}_test_run.log.1
+      gzip -9fq ${RUN_DIR}/${test_name}_test_run.log
   done
 }
 
@@ -407,11 +409,13 @@ fun_run_precond(){
 # Stop the cluster and kill the FIO process -- moved to its own script
 fun_stop() {
     local pid_fio=$1
+
     echo "$(date)== Stopping the cluster... =="
     /ceph/src/stop.sh --crimson
-    if [[ -n "$pid_fio" ]]; then
+    if [[ $pid_fio -ne 0 ]]; then
          echo "$(date)== Killing FIO with pid $pid_fio... =="
-         kill TERM $pid_fio
+         kill -15 $pid_fio # TERM
+         #pkill -15 -P $pid_fio # descendants
     fi
     # kill -9 $(pgrep -f fio)
     # Kill all the background jobs
@@ -421,8 +425,10 @@ fun_stop() {
 }
 
 #############################################################################################
+# Watchdog to monitor the OSD process, if it dies, kill FIO and exit
 fun_watchdog() {
     local pid_fio=$1
+    
     while pgrep osd >/dev/null 2>&1 && [[ "$WATCHDOG" == "true" ]]; do
         sleep 1
     done
@@ -438,7 +444,7 @@ fun_watchdog() {
 #########################################
 # Main:
 #
-trap 'echo "$(date)== INT received, exiting... =="; fun_stop; exit 1' SIGINT SIGTERM SIGHUP
+trap 'echo "$(date)== INT received, exiting... =="; fun_stop ${fio_pid}; exit 1' SIGINT SIGTERM SIGHUP
 
 # DEfine some FIO options, or a .json test plan instead
 while getopts 'ab:c:d:e:g:t:s:r:jlpxz:' option; do
@@ -470,7 +476,7 @@ while getopts 'ab:c:d:e:g:t:s:r:jlpxz:' option; do
         ;;
     p) PRECOND=true
         ;;
-    g) REGEN=true
+    g) REGEN=false
         ;;
     z) CACHE_ALG=$OPTARG
        if [ "$CACHE_ALG" != "LRU" ] && [ "$CACHE_ALG" != "2Q" ]; then

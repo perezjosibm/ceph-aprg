@@ -213,7 +213,8 @@ fun_osd_dump() {
     # Use only osd.0 always
      #timestamp=$(date +'%Y-%m-%dT%H:%M:%S') 
      #echo "{ \"timestamp\": \"$timestamp\" }," >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
-      eval "$cmd" >> ${TEST_NAME}_${LABEL}.json
+      #eval "$cmd" >> ${TEST_NAME}_${LABEL}.json
+      $cmd >> ${TEST_NAME}_${LABEL}.json
     #done
     sleep ${SLEEP_SECS};
   done
@@ -500,8 +501,11 @@ fun_post_process() {
             rm -f ${x}
         done
     fi
-    # Curate perf_metrics (Crimson only):
-    /root/bin/pp_get_config_json.sh -d ${RUN_DIR} -w ${TEST_RESULT}
+    
+    if  [ "${OSD_TYPE}" != "classic" ]; then
+        # Curate perf_metrics (Crimson only):
+        /root/bin/pp_get_config_json.sh -d ${RUN_DIR} -w ${TEST_RESULT}
+    fi
 
     fun_tidyup ${TEST_RESULT}
 }
@@ -636,7 +640,7 @@ fun_post_process_cold() {
     # Test which (second degree files) need to be reconstructed
     [ -f "${OSD_CPU_AVG}" ] && rm -f ${OSD_CPU_AVG}
     if [ -f "${TEST_RESULT}_top.json" ]; then
-      echo "== Recostructing ${OSD_CPU_AVG}:"
+      echo "== Reconstructing ${OSD_CPU_AVG}:"
       python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" \
         --avg=${OSD_CPU_AVG} --pids=${TOP_PID_JSON} 2>&1 > /dev/null
     fi
@@ -661,9 +665,9 @@ fun_post_process_cold() {
 }
 
 #############################################################################################
-trap "exit" INT TERM
+#trap "exit" INT TERM
 #trap "kill 0" EXIT
-
+# 
 trap 'echo "$(date):run_fio == Got signal from parent, quiting =="; kill -9 ${fio_id[@]}; jobs -p | xargs -r kill -9; fun_tidyup ${TEST_RESULT} _failed; exit 1' SIGINT SIGTERM SIGHUP
 
 #############################################################################################
@@ -700,8 +704,6 @@ fi
     fun_run_workload_loop $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX
   fi
 
-  echo ${osd_id[@]}
-
-echo "$(date)== Done =="
+  echo "$(date)== run_fio: $TEST_PREFIX completed (OSD pid: ${osd_id[@]})=="
 popd
 exit 0 # Success

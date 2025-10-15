@@ -209,8 +209,11 @@ class TopEntry(object):
 
     def _is_p_in_pgroup(self, pg, p):
         """
-        Returns True if the given p is a member of pgroup
+        Returns True if the given sample p is a member of pgroup
         """
+        if 'command' not in p:
+            logger.error(f"Sample {p} does not have command field, ignoring")
+            return False
         a = set([p["parent_pid"], p["pid"]])
         pdict = self.PROC_INFO[pg]
         b = pdict["pids"]  # already a set set(pdict['pids'])

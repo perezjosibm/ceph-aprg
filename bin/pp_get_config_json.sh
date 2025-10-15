@@ -148,4 +148,4 @@ else
     ${pp_metrics_table[$table]} $workload
  fi    
 #for x in *_table.tex; do gsed -i -e 's/_/ /g' -e 's/%/\\%/g' $x; done
-echo "$(date)== Done =="
+echo "$(date) == Perf config generated =="
