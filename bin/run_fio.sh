@@ -90,9 +90,7 @@ NUM_ATTEMPTS=3 # number of attempts to run the workload
 SUCCESS=0
 FAILURE=1
 
-usage() {
-    cat $0 | grep ^"# !" | cut -d"!" -f2-
-}
+source /root/bin/common.sh
 
 while getopts 'ac:d:f:jklrsrw:p:nt:gxz' option; do
   case "$option" in
@@ -156,7 +154,8 @@ fun_perf() {
       perf record -e cycles:u --call-graph dwarf -i -p ${PID} -o ${TEST_NAME}.perf.out --quiet sleep 10 2>&1 >/dev/null
   fi
   # We might add --cpu <cpu> option for the OSD cores
-  local ts=${TEST_NAME}_$(date +%Y%m%d_%H%M%S)_perf_stat.json
+  #local ts=${TEST_NAME}_$(date +%Y%m%d_%H%M%S)_perf_stat.json
+  local ts=${TEST_NAME}_perf_stat.json
   perf stat -i -p ${PID} -j -o ${ts} -- sleep ${RUNTIME} 2>&1 >/dev/null
 }
 
@@ -174,6 +173,7 @@ fun_measure() {
 }
 
 #############################################################################################
+# Deprecated
 fun_diskstats() {
   local TEST_NAME=$1
   local NUM_SAMPLES=$2
@@ -189,13 +189,13 @@ fun_diskstats() {
 
 
 #############################################################################################
+# Probably best to refactor this to use shift and $@ instead of the fixed number of args 
 fun_osd_dump() {
-    # Probaable best to refactor this to use shift and $@ instead of the fixed number of args 
   local TEST_NAME=$1
   local NUM_SAMPLES=$2
   local SLEEP_SECS=$3
   #local osd_type=$4
-  local LABEL=$4
+  local OUTFILE=$4
   local METRICS=$5 #"reactor_utilization"
 
   if [ "${OSD_TYPE}" == "classic" ]; then
@@ -207,14 +207,15 @@ fun_osd_dump() {
       # ceph daemon osd.0 perf dump
   fi
 
-  echo "OSD type: ${OSD_TYPE}: num_samples: ${NUM_SAMPLES}: cmd:${cmd}" 
+  echo -e "${GREEN}== OSD type: ${OSD_TYPE}: num_samples: ${NUM_SAMPLES}: cmd:${cmd} ==${NC}"
   for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
     #for oid in ${!osd_id[@]}; do
     # Use only osd.0 always
      #timestamp=$(date +'%Y-%m-%dT%H:%M:%S') 
      #echo "{ \"timestamp\": \"$timestamp\" }," >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
       #eval "$cmd" >> ${TEST_NAME}_${LABEL}.json
-      $cmd >> ${TEST_NAME}_${LABEL}.json
+      #$cmd >> ${TEST_NAME}_${LABEL}.json
+      fun_get_json_from "${TEST_NAME}" "${cmd}" ${OUTFILE}
     #done
     sleep ${SLEEP_SECS};
   done
@@ -259,6 +260,7 @@ fun_set_globals() {
     # This condition might not be sufficent, since it also holds for MultiFIO instances
     #[[ $(( iodepth_size * numjobs_size )) -gt 1 ]] && RESPONSE_CURVE=true
 
+    # TEST_RESULT is the name for the whole dataset (normally 10 points according to iodepth x numjobs)
     TEST_RESULT=${TEST_PREFIX}_${NUM_PROCS}procs_${map[${WORKLOAD}]}
     OSD_TEST_LIST="${TEST_RESULT}_list"
     TOP_OUT_LIST="${TEST_RESULT}_top_list"
@@ -284,7 +286,7 @@ fun_run_workload_loop() {
     fun_set_globals $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD_NAME
 
     if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump ${TEST_RESULT} 1 1  "dump_before" # ${OSD_TYPE}
+        fun_osd_dump "dump_before" 1 1 ${TEST_RESULT}_dump.json  # ${OSD_TYPE}
     fi
 
     for job in $RANGE_NUMJOBS; do
@@ -300,22 +302,20 @@ fun_run_workload_loop() {
                     echo "== Attempt $((num_attempts+1)) failed, retrying... =="
                     num_attempts=$((num_attempts+1))
                 else
-                    echo "== Attempt $((num_attempts+1)) succeeded =="
+                    echo -e "${GREEN}== Attempt $((num_attempts+1)) succeeded ==${NC}"
                     if [ "$SKIP_OSD_MON" = false ]; then
-                        timestamp=$(date +%Y%m%d_%H%M%S)
-                        fun_osd_dump ${TEST_RESULT} 1 1  "dump_${timestamp}" # ${OSD_TYPE}
+                        #timestamp=$(date +%Y%m%d_%H%M%S)
+                        fun_osd_dump "dump_after " 1 1 ${TEST_RESULT}_dump.json  # ${OSD_TYPE}
                     fi
                 fi
             done
             if [[ "$rc" == "false" ]]; then
-                echo "== All attempts failed for job $job with io depth $io, exiting... =="
+                echo -e "${RED}== All attempts failed for job $job with io depth $io, exiting... ${NC}=="
+                fun_tidyup ${TEST_RESULT}
                 exit 1
             fi
         done # loop IO_DEPTH
     done # loop num_jobs
-    if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump ${TEST_RESULT} 1 1  "dump_after" # ${OSD_TYPE}
-    fi
     # Post processing:
     fun_post_process   
 }
@@ -334,6 +334,7 @@ fun_run_workload() {
     # Check if file in place to indicate stop cleanly:
 
     # Take diskstats measurements before FIO instances
+    # We might want to filter it down to the relevant disk only
     jc --pretty /proc/diskstats > ${DISK_STAT}
     for (( i=0; i<${NUM_PROCS}; i++ )); do
         export TEST_NAME=${TEST_PREFIX}_${job}job_${io}io_${BLOCK_SIZE_KB}_${map[${WORKLOAD}]}_p${i};
@@ -355,17 +356,18 @@ fun_run_workload() {
         fio_id["fio_${i}"]=$!
         global_fio_id+=($!)
         echo "== $(date) == Launched FIO ${fio_name} with RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} on cores ${FIO_CORES} ==";
+        # Check return code from FIO
     done # loop NUM_PROCS
     sleep 30; # ramp up time
 
     if [ "$SKIP_OSD_MON" = false ]; then
         # Prepare list of pid to monitor
         osd_pids=$( fun_join_by ',' ${osd_id[@]} )
-            echo "== $(date) == Profiling $osd_pids =="
-            fun_perf "$osd_pids" ${TEST_NAME}
+        echo "== $(date) == Profiling $osd_pids  with perf =="
+        fun_perf "$osd_pids" ${TEST_NAME}
     fi
 
-    # We use this list of pid to extract the pid corresponding CPU util from the top profile
+    # We use this list of pid to extract corresponding CPU util from top 
     fio_pids=$( fun_join_by ',' ${fio_id[@]} )
     top_out_name=${TEST_NAME}
     echo "== Monitoring OSD: $osd_pids FIO: $fio_pids =="
@@ -382,10 +384,10 @@ fun_run_workload() {
     fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
     if [ "$SKIP_OSD_MON" = false ]; then
         if  [ "${OSD_TYPE}" != "classic" ]; then
-          timestamp=$(date +%Y%m%d_%H%M%S)
-          fun_osd_dump ${TEST_RESULT} 10 10  "rutil_${timestamp}" "reactor_utilization" & # ${OSD_TYPE}
+          #timestamp=$(date +%Y%m%d_%H%M%S)
+          fun_osd_dump ${TEST_NAME} 10 10  ${TEST_RESULT}_rutil.json "reactor_utilization" & # ${OSD_TYPE}
         fi 
-        fun_diskstats ${TEST_RESULT} 2 60  &
+        fun_get_diskstats ${TEST_NAME} ${TEST_RESULT}_diskstats.json
     fi
 
     # We have a watchdog: if the OSD dies and
@@ -525,8 +527,8 @@ fun_tidyup() {
     # Run it again to get the references, TOC, etc
     # Archiving:
     zip -9mqj ${TEST_RESULT}${stat}.zip ${_TEST_LIST} ${TEST_RESULT}_json.out \
-        *_top.out *.json *.plot *.dat *.png *.gif ${TOP_OUT_LIST} \
-        osd*_threads.out *_list ${TOP_PID_LIST} *.svg *.tex  numa_args*.out *_diskstat.out
+        *_top.out *.json *.plot *.dat *.png *.gif  *.svg *.tex *.md ${TOP_OUT_LIST} \
+        osd*_threads.out *_list ${TOP_PID_LIST} numa_args*.out *_diskstat.out
     # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
     # rm -f *.log *_cpu_distro.log
 }

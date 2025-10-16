@@ -9,7 +9,6 @@
 # !    distribution tests for the given OSD backend type, 'all' for the three of them.
 # ! -b : Run a single balanced CPU core/reactor distribution tests for all the OSD backend types
 
-#!/usr/bin/env bash
 # Test plan experiment to compare the effect of balanced vs unbalanced CPU core distribution for the Seastar
 # reactor threads -- using a pure reactor env cyanstore -- extended for Bluestore as well
 #
@@ -19,13 +18,11 @@
 # exec 3>&1 4>&2
 # trap 'exec 2>&4 1>&3' 0 1 2 3
 # exec 1>/tmp/run_balanced_osd.log 2>&1
-#
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m' # No Color
-export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+#############################################################################################
+
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+source ${SCRIPT_DIR}/common.sh
 
 #############################################################################################
 # Default values for the test plan, can be overridden by a .json file or command line args
@@ -69,6 +66,7 @@ REGEN=true # always regenerate the .fio jobs by default
 fio_pid=0 
 pid_watchdog=0 
 
+#############################################################################################
 # Associative arrays to hold the test cases
 declare -A test_table
 declare -A test_row
@@ -97,22 +95,33 @@ num_cpus['disable_ht']=${MAX_NUM_PHYS_CPUS_PER_SOCKET}
 # Default options:
 BALANCE="all"
 
-usage() {
-    cat $0 | grep ^"# !" | cut -d"!" -f2-
-}
 #########################################
 fun_save_test_plan() {
     # Produce a .json with the test plan parameters:
-    json="{\"VSTART_CPU_CORES\": \"${VSTART_CPU_CORES}\", \"OSD_CPU\": \"${OSD_CPU}\", \"FIO_CPU_CORES\": \"${FIO_CPU_CORES}\", \"FIO_JOBS\": \"${FIO_JOBS}\", \"FIO_SPEC\": \"${FIO_SPEC}\", \"OSD_TYPE\": \"${OSD_TYPE}\", \"STORE_DEVS\": \"${STORE_DEVS}\", \"NUM_RBD_IMAGES\": \"${NUM_RBD_IMAGES}\", \"RBD_SIZE\": \"${RBD_SIZE}\", \"OSD_RANGE\":\"${OSD_RANGE}\", \"REACTOR_RANGE\":\"${REACTOR_RANGE}\", \"CACHE_ALG\":\"${CACHE_ALG}\", \"TEST_PLAN\":\"${TEST_PLAN}\"}"
+    read -r -d '' json <<EOF || true
+    { "VSTART_CPU_CORES": "${VSTART_CPU_CORES}",
+      "OSD_CPU": "${OSD_CPU}", 
+      "FIO_CPU_CORES": "${FIO_CPU_CORES}", 
+      "FIO_JOBS": "${FIO_JOBS}", 
+      "FIO_SPEC": "${FIO_SPEC}", 
+      "OSD_TYPE": "${OSD_TYPE}", 
+      "STORE_DEVS": "${STORE_DEVS}",
+      "NUM_RBD_IMAGES": "${NUM_RBD_IMAGES}",
+      "RBD_SIZE": "${RBD_SIZE}",
+      "OSD_RANGE": "${OSD_RANGE}",
+      "REACTOR_RANGE": "${REACTOR_RANGE}",
+      "CACHE_ALG": "${CACHE_ALG}",
+      "TEST_PLAN": "${TEST_PLAN}"
+   }
+EOF
     echo -e "${GREEN}== Saving test plan to ${RUN_DIR}/test_plan.json ==${NC}"
     echo "$json" | jq . > ${RUN_DIR}/test_plan.json
     rc=$? 
-     if [ $rc -eq 0 ]; then
-       echo -e "${GREEN}== Test plan saved to ${RUN_DIR}/test_plan.json ==${NC}"
-     else
-       echo -e "${RED}== Error saving test plan to ${RUN_DIR}/test_plan.json ==${NC}"
-     fi
-
+    if [ $rc -eq 0 ]; then
+        echo -e "${GREEN}== Test plan saved to ${RUN_DIR}/test_plan.json ==${NC}"
+    else
+        echo -e "${RED}== Error saving test plan to ${RUN_DIR}/test_plan.json ==${NC}"
+    fi
 }
 
 #############################################################################################
@@ -147,7 +156,7 @@ fun_set_osd_pids() {
     fi
   done
   
-  # Need to follow this convention
+  # Might Need to convert to .json 
   #return "${RUN_DIR}/${TEST_PREFIX}_threads_list"
 }
 
@@ -248,6 +257,7 @@ fun_run_fixed_bal_tests() {
   # TODO: consider refactor to a single loop: list all the combinations of NUM_OSD and NUM_REACTORS, which does
   # not apply to classic OSD
   sorted_keys=$(for x in  "${!test_table[@]}"; do echo $x; done | sort -n -k1)
+
   for NUM_OSD in ${sorted_keys}; do
     eval "${test_table["${NUM_OSD}"]}"
     for x in "${!test_row[@]}"; do printf "[%s]=%s\n" "$x" "${test_row[$x]}" ; done
@@ -361,14 +371,6 @@ fun_run_bal_vs_default_tests() {
   fi
 }
 
-fun_get_diskstats(){
-    # Get the diskstats before starting the test, should provide full path
-    local TEST_NAME=$1
-    #local RUN_DIR=$2
-    local ds=${TEST_NAME}_$(date +%Y%m%d_%H%M%S).json
-    jc --pretty /proc/diskstats > ${RUN_DIR}/${ds}
-}
-
 #############################################################################################
 # Regenerate the FIO jobs .fio files according to the current NUM_RBD_IMAGES and LATENCY_TARGET
 fun_run_regen_fio_files(){
@@ -385,28 +387,28 @@ fun_run_regen_fio_files(){
      else
        echo -e "${RED}== Error generating FIO job files in ${FIO_JOBS} ==${NC}"
      fi
-
 }
+
 #############################################################################################
 # Remember to regenerate the radwrite64k.fio for the config of drives
 fun_run_precond(){
     local TEST_NAME=$1
 
     echo -e "${GREEN}== Preconditioning ==${NC}"
-    jc --pretty /proc/diskstats > ${RUN_DIR}/${TEST_NAME}.json
-    fun_get_diskstats ${TEST_NAME}
+    jc --pretty /proc/diskstats > ${RUN_DIR}/${TEST_NAME}_precond.json
+    #fun_get_diskstats ${TEST_NAME}
     fio ${FIO_JOBS}randwrite64k.fio --output=${RUN_DIR}/precond_${TEST_NAME}.json --output-format=json
     if [ $? -ne 0 ]; then
         echo -e "${RED}== FIO preconditioning failed ==${NC}"
         exit 1
     fi
-    fun_get_diskstats ${TEST_NAME}
+    #fun_get_diskstats ${TEST_NAME}
     # We might need to exted to get a non-destructive option since we might need to look at further measurements
-    jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -d ${RUN_DIR} -a  ${TEST_NAME}.json 
+    jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -d ${RUN_DIR} -a  ${TEST_NAME}_precond.json 
 }
 
 #############################################################################################
-# Stop the cluster and kill the FIO process -- moved to its own script
+# Stop the cluster and kill the FIO process 
 fun_stop() {
     local pid_fio=$1
 
@@ -417,9 +419,8 @@ fun_stop() {
          kill -15 $pid_fio # TERM
          #pkill -15 -P $pid_fio # descendants
     fi
-    # kill -9 $(pgrep -f fio)
     # Kill all the background jobs
-    #jobs -p | xargs -r kill
+    jobs -p | xargs -r kill -9
     # remaining process in the group
     #kill 0
 }
@@ -517,5 +518,3 @@ while getopts 'ab:c:d:e:g:t:s:r:jlpxz:' option; do
      fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}
  fi
  exit
-
-
