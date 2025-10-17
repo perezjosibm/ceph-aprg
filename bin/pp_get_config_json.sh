@@ -2,6 +2,8 @@
 # ! Usage: ./$0.sh [-w <workload>] [-d rundir]
 # !		 
 # ! Generate config .json file for perf_metrics.py
+# ! Since we are now using a single file for the dump and rutil metrics, we might no longer
+# ! need this script, but keeping it for now.
 
 #PYTHONMODULES=~/Work/cephdev/ceph-aprg/bin # laptop
 PYTHONMODULES=/root/bin # o05 box
@@ -43,8 +45,7 @@ fun_gen_perf_config() {
         echo "Generating config file $y:"
         read -r -d '' json <<EOF || true
         { "input": [
-            "${workload}_dump_before.json",
-            "${workload}_dump_after.json"
+            "${workload}_dump.json",
             ],
             "output": "${z}",
             "type": "crimson",
@@ -78,7 +79,7 @@ fun_gen_reactor_config() {
         echo "Generating config file $y:"
         # get the list of metric jsons
         declare -a my_array
-        my_array=( $( ls ${workload}_dump*.json | grep -v "before" | grep -v "after" | awk '{ print "\""$0"\""}' ) )
+        my_array=( $( ls ${workload}_rutil*.json | grep -v "before" | grep -v "after" | awk '{ print "\""$0"\""}' ) )
         metric_list=$( fun_join_by ',' ${my_array[@]} )
         read -r -d '' json <<EOF || true
         { "input": [

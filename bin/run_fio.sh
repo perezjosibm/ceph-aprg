@@ -168,7 +168,8 @@ fun_measure() {
   #IFS=',' read -r -a pid_array <<< "$1"
   # CPU core util (global) and CPU thread util for the pid given
   # timeout ${time_period_sec} strace -fp $PID -o ${TEST_NAME}_strace.out -tt -T -e trace=all -c -I 1  &
-  top -b -H -1 -p "${PID}" -n ${NUM_SAMPLES} >> ${TEST_NAME}_top.out
+  # How to ensure it always show the COMMAND column?
+  top -w 512 -b -H -1 -p "${PID}" -n ${NUM_SAMPLES} >> ${TEST_NAME}_top.out
   echo "${TEST_NAME}_top.out" >> ${TEST_TOP_OUT_LIST}
 }
 
@@ -305,7 +306,7 @@ fun_run_workload_loop() {
                     echo -e "${GREEN}== Attempt $((num_attempts+1)) succeeded ==${NC}"
                     if [ "$SKIP_OSD_MON" = false ]; then
                         #timestamp=$(date +%Y%m%d_%H%M%S)
-                        fun_osd_dump "dump_after " 1 1 ${TEST_RESULT}_dump.json  # ${OSD_TYPE}
+                        fun_osd_dump "${TEST_NAME}" 1 1 ${TEST_RESULT}_dump.json  # ${OSD_TYPE}
                     fi
                 fi
             done
@@ -505,8 +506,8 @@ fun_post_process() {
     fi
     
     if  [ "${OSD_TYPE}" != "classic" ]; then
-        # Curate perf_metrics (Crimson only):
-        /root/bin/pp_get_config_json.sh -d ${RUN_DIR} -w ${TEST_RESULT}
+        # Curate perf_metrics (Crimson only): no longer needed since we are used a single file per dump and rutil
+        #/root/bin/pp_get_config_json.sh -d ${RUN_DIR} -w ${TEST_RESULT}
     fi
 
     fun_tidyup ${TEST_RESULT}
