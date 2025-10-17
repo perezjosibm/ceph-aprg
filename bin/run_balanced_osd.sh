@@ -97,6 +97,7 @@ BALANCE="all"
 
 #########################################
 fun_save_test_plan() {
+    local tt=$( fun_get_json_from_dict  test_table )
     # Produce a .json with the test plan parameters:
     read -r -d '' json <<EOF || true
     { "VSTART_CPU_CORES": "${VSTART_CPU_CORES}",
@@ -111,7 +112,8 @@ fun_save_test_plan() {
       "OSD_RANGE": "${OSD_RANGE}",
       "REACTOR_RANGE": "${REACTOR_RANGE}",
       "CACHE_ALG": "${CACHE_ALG}",
-      "TEST_PLAN": "${TEST_PLAN}"
+      "TEST_PLAN": "${TEST_PLAN}",
+      "TEST_TABLE": "${tt}"
    }
 EOF
     echo -e "${GREEN}== Saving test plan to ${RUN_DIR}/test_plan.json ==${NC}"

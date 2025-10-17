@@ -354,9 +354,10 @@ fun_run_workload() {
             taskset -ac ${FIO_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json \
             --output-format=json 2> fio_${TEST_NAME}.err &
         # Capture the pid of the FIO instance
-        fio_id["fio_${i}"]=$!
-        global_fio_id+=($!)
-        echo "== $(date) == Launched FIO ${fio_name} with RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} on cores ${FIO_CORES} ==";
+        lastfio_pid=$!
+        fio_id["fio_${i}"]=$lastfio_pid
+        global_fio_id+=( $lastfio_pid  )
+        echo "== $(date) == Launched FIO (pid: $lastfio_pid) ${fio_name} with RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} on cores ${FIO_CORES} ==";
         # Check return code from FIO
     done # loop NUM_PROCS
     sleep 30; # ramp up time
@@ -364,14 +365,14 @@ fun_run_workload() {
     if [ "$SKIP_OSD_MON" = false ]; then
         # Prepare list of pid to monitor
         osd_pids=$( fun_join_by ',' ${osd_id[@]} )
-        echo "== $(date) == Profiling $osd_pids  with perf =="
-        fun_perf "$osd_pids" ${TEST_NAME}
+        echo "== $(date) == Profiling OSD $osd_pids  with perf =="
+        ( fun_perf "$osd_pids" ${TEST_NAME} ) &
     fi
 
     # We use this list of pid to extract corresponding CPU util from top 
     fio_pids=$( fun_join_by ',' ${fio_id[@]} )
     top_out_name=${TEST_NAME}
-    echo "== Monitoring OSD: $osd_pids FIO: $fio_pids =="
+    echo "== $(date) Monitoring OSD: $osd_pids FIO: $fio_pids =="
     # Need to make it more resilient if the process being monitored dies
     if [ "$RESPONSE_CURVE" = true ]; then
         #fio_pids_acc="$fio_pids_acc,$fio_pids"
@@ -382,17 +383,20 @@ fun_run_workload() {
         printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
     fi
     all_pids=$( fun_join_by ',' ${osd_id[@]}  ${fio_id[@]} )
-    fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} &
+    ( fun_measure "${all_pids}" ${top_out_name} ${TOP_OUT_LIST} ) &
+
+    # Measure OSD dump_metrics and diskstats during the FIO run
     if [ "$SKIP_OSD_MON" = false ]; then
         if  [ "${OSD_TYPE}" != "classic" ]; then
           #timestamp=$(date +%Y%m%d_%H%M%S)
-          fun_osd_dump ${TEST_NAME} 10 10  ${TEST_RESULT}_rutil.json "reactor_utilization" & # ${OSD_TYPE}
+          ( fun_osd_dump ${TEST_NAME} 10 10  ${TEST_RESULT}_rutil.json "reactor_utilization" ) & # ${OSD_TYPE}
         fi 
         fun_get_diskstats ${TEST_NAME} ${TEST_RESULT}_diskstats.json
     fi
 
     # We have a watchdog: if the OSD dies and
     # running with --no-restart, then FIO is killed
+    # However, we are not protected if FIO takes longer!
     wait;
     # Measure the diskstats after the completion of FIO instances
     jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
@@ -505,10 +509,10 @@ fun_post_process() {
         done
     fi
     
-    if  [ "${OSD_TYPE}" != "classic" ]; then
-        # Curate perf_metrics (Crimson only): no longer needed since we are used a single file per dump and rutil
-        #/root/bin/pp_get_config_json.sh -d ${RUN_DIR} -w ${TEST_RESULT}
-    fi
+    # if  [ "${OSD_TYPE}" != "classic" ]; then
+    #     # Curate perf_metrics (Crimson only): no longer needed since we are used a single file per dump and rutil
+    #     #/root/bin/pp_get_config_json.sh -d ${RUN_DIR} -w ${TEST_RESULT}
+    # fi
 
     fun_tidyup ${TEST_RESULT}
 }
