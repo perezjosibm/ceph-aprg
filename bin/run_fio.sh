@@ -137,13 +137,6 @@ while getopts 'ac:d:f:jklrsrw:p:nt:gxz' option; do
   esac
  done
 # Validate the workload given
-fun_join_by() {
-  local d=${1-} f=${2-}
-  if shift 2; then
-    printf %s "$f" "${@/#/$d}"
-  fi
-}
-
 #############################################################################################
 fun_perf() {
   local PID=$1 # , separate string of pid

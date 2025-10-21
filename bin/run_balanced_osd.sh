@@ -112,12 +112,13 @@ fun_save_test_plan() {
       "OSD_RANGE": "${OSD_RANGE}",
       "REACTOR_RANGE": "${REACTOR_RANGE}",
       "CACHE_ALG": "${CACHE_ALG}",
-      "TEST_PLAN": "${TEST_PLAN}",
-      "TEST_TABLE": "${tt}"
+      "TEST_PLAN": "${TEST_PLAN}"
    }
 EOF
+      #"TEST_TABLE": "${tt}" -- broken in json
     echo -e "${GREEN}== Saving test plan to ${RUN_DIR}/test_plan.json ==${NC}"
     echo "$json" | jq . > ${RUN_DIR}/test_plan.json
+    echo "$tt" | jq . >> ${RUN_DIR}/test_table.json
     rc=$? 
     if [ $rc -eq 0 ]; then
         echo -e "${GREEN}== Test plan saved to ${RUN_DIR}/test_plan.json ==${NC}"

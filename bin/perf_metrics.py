@@ -1425,7 +1425,6 @@ class PerfMetricEntry(object):
             # self._plot_ln(self.full_sequence, "full_sequence") # FIXME
             # self._plot(self.avg_per_timestamp, "avg_per_timestamp")
 
-
 def main(argv):
     examples = """
     Examples:

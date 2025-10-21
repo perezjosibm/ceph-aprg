@@ -15,22 +15,29 @@ usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
 
+fun_join_by() {
+  local d=${1-} f=${2-}
+  if shift 2; then
+    printf %s "$f" "${@/#/$d}"
+  fi
+}
+
 # Generic bash associative array to json
 # $1: associative array name 
 # $2: output file -- using stdout if not provided
-# fun_get_json_from_dict(){
-#     local -n dict=$1
-#     #local outfile=$2
-#
-#     for key in "${!dict[@]}"; do
-#         printf '%s\0%s\0' "$key" "${dict[$key]}"
-#     done |
-#         jq -Rs '
-#     split("\u0000")
-#     | . as $a
-#     | reduce range(0; length/2) as $i 
-#     ({}; . + {($a[2*$i]): ($a[2*$i + 1]|fromjson? // .)})' #> ${outfile}
-# }
+fun_get_json_from_hash(){
+    local -n dict=$1
+    #local outfile=$2
+
+    for key in "${!dict[@]}"; do
+        printf '%s\0%s\0' "$key" "${dict[$key]}"
+    done |
+        jq -Rs '
+    split("\u0000")
+    | . as $a
+    | reduce range(0; length/2) as $i 
+    ({}; . + {($a[2*$i]): ($a[2*$i + 1]|fromjson? // .)})' #> ${outfile}
+}
 
 fun_get_json_from_dict(){
     local -n dict=$1
