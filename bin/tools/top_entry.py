@@ -2,15 +2,16 @@ import datetime
 import logging
 import re
 from enum import Enum
-import json
+#import json
 from json import JSONEncoder
 
 from job import Job
 
-__author__ = 'Dave Pinkney'
+__author__ = "Dave Pinkney"
 
 logger = logging.getLogger(__name__)
-#logger = logging.getLogger('spam_application')
+# logger = logging.getLogger('spam_application')
+
 
 class _CpuLineType(Enum):
     SINGLE = "single"
@@ -18,9 +19,9 @@ class _CpuLineType(Enum):
 
     @classmethod
     def get_type(cls, line: str) -> "_CpuLineType":
-        if re.match(r'\(s\)',line):
+        if re.match(r"\(s\)", line):
             return cls.SINGLE
-        elif re.match(r'\d+',line):
+        elif re.match(r"\d+", line):
             return cls.MULTI
         else:
             return None
@@ -31,24 +32,26 @@ class TopEntry(object):
     This class represents the output from one iteration of top.
     It will read top output from a file and initialize itself from it.
     """
+
     YEAR = datetime.date.today().year
 
     # Define Regular Expressions and Header Field Names
 
     # Date / Timestamp header - Not part of standard top output. Will be manufactured if needed using uptime.
-    DATE = 'date'                                  # int:  the datetime.date ordinal value (days since 70)
-    RE_DATE = re.compile(r'^(\d+)/(\d+)')
+    DATE = "date"  # int:  the datetime.date ordinal value (days since 70)
+    RE_DATE = re.compile(r"^(\d+)/(\d+)")
 
     # Uptime
-    TIME_OF_DAY = 'timeOfDay'                      # string
-    UPTIME_MINUTES = 'uptimeMinutes'               # int
-    NUM_USERS = 'numUsers'                         # int
-    LOAD_1_MINUTE = '1 minute load'                # float
-    LOAD_5_MINUTES = '5 minute load'               # float
-    LOAD_15_MINUTES = '15 minute load'             # float
+    TIME_OF_DAY = "timeOfDay"  # string
+    UPTIME_MINUTES = "uptimeMinutes"  # int
+    NUM_USERS = "numUsers"  # int
+    LOAD_1_MINUTE = "1 minute load"  # float
+    LOAD_5_MINUTES = "5 minute load"  # float
+    LOAD_15_MINUTES = "15 minute load"  # float
     # Uptime has variable time unit output, might be days, minutes, or just hours:min
 
-    RE_UPTIME = re.compile(r"""^top\s+-
+    RE_UPTIME = re.compile(
+        r"""^top\s+-
                               \s+(\d+):(\d+):(\d+)                                 # time of day
                               \s+up
                               \s+(\d+\s+days?,\s+\d+:\d+                           # uptime
@@ -58,31 +61,36 @@ class TopEntry(object):
                               \s+(\d+)\s+users?,                                   # num users
                               \s+load\s+average:
                               \s+([\d.]+),\s+([\d.]+),\s+([\d.]+)                  # load
-                              """, re.VERBOSE)
+                              """,
+        re.VERBOSE,
+    )
 
-    RE_UPTIME_DAYS = re.compile(r'(\d+)\s+days?,\s+(\d+):(\d+)')
-    RE_UPTIME_DAYS_MIN = re.compile(r'(\d+)\s+days?,\s+(\d+)\s+mins?')
-    RE_UPTIME_HOUR = re.compile(r'(\d+):(\d+)')
-    RE_UPTIME_MIN = re.compile(r'(\d+)\s+mins?')
+    RE_UPTIME_DAYS = re.compile(r"(\d+)\s+days?,\s+(\d+):(\d+)")
+    RE_UPTIME_DAYS_MIN = re.compile(r"(\d+)\s+days?,\s+(\d+)\s+mins?")
+    RE_UPTIME_HOUR = re.compile(r"(\d+):(\d+)")
+    RE_UPTIME_MIN = re.compile(r"(\d+)\s+mins?")
 
     # Tasks
-    TASKS_TOTAL = 'tasksTotal'                     # int
-    TASKS_RUNNING = 'tasksRunning'                 # int
-    TASKS_SLEEPING = 'tasksSleeping'               # int
-    TASKS_STOPPED = 'tasksStopped'                 # int
-    TASKS_ZOMBIE = 'tasksZombie'                   # int
-    RE_TASKS = re.compile(r'^(?:Tasks|Threads):\s+(\d+) total,\s+(\d+)\s+running,\s+(\d+)\s+sleeping,\s+(\d+)\s+stopped,\s+(\d+)\s+zombie')
+    TASKS_TOTAL = "tasksTotal"  # int
+    TASKS_RUNNING = "tasksRunning"  # int
+    TASKS_SLEEPING = "tasksSleeping"  # int
+    TASKS_STOPPED = "tasksStopped"  # int
+    TASKS_ZOMBIE = "tasksZombie"  # int
+    RE_TASKS = re.compile(
+        r"^(?:Tasks|Threads):\s+(\d+) total,\s+(\d+)\s+running,\s+(\d+)\s+sleeping,\s+(\d+)\s+stopped,\s+(\d+)\s+zombie"
+    )
 
     # CPU
-    CPU_UNNICED = 'cpuUser'                     # float
-    CPU_SYSTEM = 'cpuSystem'                       # float
-    CPU_NICED = 'cpuNiced'                         # float
-    CPU_IDLE = 'cpuIdle'                           # float
-    CPU_WAIT = 'cpuIoWait'                         # float
-    CPU_HI = 'cpuHardwareInt'                      # float
-    CPU_SI = 'cpuSoftwareInt'                      # float
-    CPU_ST = 'cpuStolen'                           # float
-    RE_CPU = re.compile(r"""^[%]?Cpu(\d+|\(s\))\s*:   # single line or multi-core
+    CPU_UNNICED = "cpuUser"  # float
+    CPU_SYSTEM = "cpuSystem"  # float
+    CPU_NICED = "cpuNiced"  # float
+    CPU_IDLE = "cpuIdle"  # float
+    CPU_WAIT = "cpuIoWait"  # float
+    CPU_HI = "cpuHardwareInt"  # float
+    CPU_SI = "cpuSoftwareInt"  # float
+    CPU_ST = "cpuStolen"  # float
+    RE_CPU = re.compile(
+        r"""^[%]?Cpu(\d+|\(s\))\s*:   # single line or multi-core
                         \s*([.\d]+)[%\s]us,          # user
                         \s*([.\d]+)[%\s]sy,          # system
                         \s*([.\d]+)[%\s]ni,          # nice
@@ -90,40 +98,48 @@ class TopEntry(object):
                         \s*([.\d]+)[%\s]wa,          # wait
                         \s*([.\d]+)[%\s]hi,          # hard int
                         \s*([.\d]+)[%\s]si,          # sw int
-                        \s*([.\d]+)[%\s]st""",      # stolen
-                        re.VERBOSE) 
+                        \s*([.\d]+)[%\s]st""",  # stolen
+        re.VERBOSE,
+    )
 
     # Memory
-    MEM_TOTAL = 'memTotal'
-    MEM_USED = 'memUsed'
-    MEM_FREE = 'memFree'
-    MEM_BUFFERS = 'memBuffers'
-    RE_MEM = re.compile(r"""^(?:[KMG]iB\s)?Mem:
+    MEM_TOTAL = "memTotal"
+    MEM_USED = "memUsed"
+    MEM_FREE = "memFree"
+    MEM_BUFFERS = "memBuffers"
+    RE_MEM = re.compile(
+        r"""^(?:[KMG]iB\s)?Mem:
                         \s+([.\d]+)k?\stotal,
                         \s+([.\d]+)k?\s(used|free),
                         \s+([.\d]+)k?\s(free|used),
                         \s+([.\d]+)k?\s(buffers?|buff/cache)
                         """,
-                        re.VERBOSE) #|re.DEBUG)
+        re.VERBOSE,
+    )  # |re.DEBUG)
 
     # Swap
-    SWAP_TOTAL = 'swapTotal'
-    SWAP_USED = 'swapUsed'
-    SWAP_FREE = 'swapFree'
-    SWAP_CACHED = 'swapCached'
+    SWAP_TOTAL = "swapTotal"
+    SWAP_USED = "swapUsed"
+    SWAP_FREE = "swapFree"
+    SWAP_CACHED = "swapCached"
 
-    RE_SWAP = re.compile(r"""^(?:[KMG]iB\s)?Swap:
+    RE_SWAP = re.compile(
+        r"""^(?:[KMG]iB\s)?Swap:
                         \s+([.\d]+)k?\s+total,
                         \s+([.\d]+)k?\s(free|used),
                         \s+([.\d]+)k?\s(used|free)[.,]
-                        \s+([.\d]+)k?\s(cached|avail Mem)$""", re.VERBOSE) #|re.DEBUG)
+                        \s+([.\d]+)k?\s(cached|avail Mem)$""",
+        re.VERBOSE,
+    )  # |re.DEBUG)
     # Jobs
-    #RE_JOB_HEADER = re.compile(r'^\s+PID\s+USER\s+PR\s+NI\s+VIRT\s+RES\s+SHR\s+S\s+%CPU\s+%MEM\s+TIME\+\s+COMMAND')
-    RE_JOB_HEADER = re.compile(r'^\s+(PPID|PID|P|PR|NI|VIRT|RES|SHR|S|%CPU|%MEM|TIME|COMMAND)')
+    # RE_JOB_HEADER = re.compile(r'^\s+PID\s+USER\s+PR\s+NI\s+VIRT\s+RES\s+SHR\s+S\s+%CPU\s+%MEM\s+TIME\+\s+COMMAND')
+    RE_JOB_HEADER = re.compile(
+        r"^\s+(PPID|PID|P|PR|NI|VIRT|RES|SHR|S|%CPU|%MEM|TIME|COMMAND)"
+    )
 
     def __init__(self, hasDate=None):
         """
-        : hasDate - boolean - True if we should parse a date before parsing the topEntry, false if we shouldn't, 
+        : hasDate - boolean - True if we should parse a date before parsing the topEntry, false if we shouldn't,
                               None if not known.
         """
         self.header = {}
@@ -178,14 +194,14 @@ class TopEntry(object):
         :
         %Cpu111:  0.0 us,  0.0 sy,  0.0 ni,100.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
         MiB Mem : 385320.3 total, 253208.1 free,  17781.7 used, 120940.3 buff/cache
-        MiB Swap:   4096.0 total,   4094.7 free,      1.2 used. 367538.6 avail Mem 
+        MiB Swap:   4096.0 total,   4094.7 free,      1.2 used. 367538.6 avail Mem
 
 
         :return: a TopEntry instance
         :throws: Exception if at EOF
         """
 
-        if self.hasDate == None or self.hasDate:
+        if self.hasDate is None or self.hasDate:
             firstLine = self.parseDate(f, firstLine)
 
         self.parseUptime(firstLine)
@@ -206,7 +222,6 @@ class TopEntry(object):
             self.parseMem(line)
         self.parseSwap(self.readline(f))
 
-
     def parseDate(self, f, line):
         """
         Try to parse the DATE from line.  If we find the DATE, store it in this object,
@@ -217,7 +232,9 @@ class TopEntry(object):
         if match:
             groups = match.groups()
             self.hasDate = True
-            self.header[self.DATE] = datetime.date(TopEntry.YEAR, int(groups[0]), int(groups[1])).toordinal()
+            self.header[self.DATE] = datetime.date(
+                TopEntry.YEAR, int(groups[0]), int(groups[1])
+            ).toordinal()
             line = self.readline(f)
         else:
             self.hasDate = False
@@ -227,7 +244,7 @@ class TopEntry(object):
     def getDateFromUptimeMinutes(self, uptimeMinutes):
         """
         For cases where we don't have a timestamp set, fake a date using the
-        uptime minutes, so we can always plot with a date and time.  Starting day 1 at 1/1/2000 so that 
+        uptime minutes, so we can always plot with a date and time.  Starting day 1 at 1/1/2000 so that
         plotting software won't break
         : uptimeMinutes:  int - The uptime minutes
         : return - int - the ordinal date to use
@@ -247,13 +264,15 @@ class TopEntry(object):
         match = self.RE_UPTIME.match(line)
         if match:
             groups = match.groups()
-            #logger.debug("Got groups: {0}".format(groups))
+            # logger.debug("Got groups: {0}".format(groups))
 
             # Can't recall why I broke this out into components - to plot time as #seconds?
             hours = groups[0]
             minutes = groups[1]
             seconds = groups[2]
-            self.header[self.TIME_OF_DAY] = "{0}:{1}:{2}".format(hours, minutes, seconds)
+            self.header[self.TIME_OF_DAY] = "{0}:{1}:{2}".format(
+                hours, minutes, seconds
+            )
 
             self.header[self.UPTIME_MINUTES] = self.parseUptimeMinutes(groups[3])
             self.header[self.NUM_USERS] = int(groups[4])
@@ -262,9 +281,10 @@ class TopEntry(object):
             self.header[self.LOAD_15_MINUTES] = float(groups[7])
 
             if not self.hasDate:
-                # Set a fake date using uptime, 
-                self.header[self.DATE] = self.getDateFromUptimeMinutes(self.header[self.UPTIME_MINUTES])
-
+                # Set a fake date using uptime,
+                self.header[self.DATE] = self.getDateFromUptimeMinutes(
+                    self.header[self.UPTIME_MINUTES]
+                )
 
     def parseUptimeMinutes(self, line):
         """
@@ -278,28 +298,28 @@ class TopEntry(object):
         match = self.RE_UPTIME_DAYS.match(line)
         if match:
             groups = match.groups()
-            #logger.debug("Parsed groups: {0}".format(groups))
+            # logger.debug("Parsed groups: {0}".format(groups))
             minutes = int(groups[0]) * 24 * 60 + int(groups[1]) * 60 + int(groups[2])
             return minutes
 
         match = self.RE_UPTIME_DAYS_MIN.match(line)
         if match:
             groups = match.groups()
-            #logger.debug("Parsed groups: {0}".format(groups))
+            # logger.debug("Parsed groups: {0}".format(groups))
             minutes = int(groups[0]) * 24 * 60 + int(groups[1])
             return minutes
 
         match = self.RE_UPTIME_HOUR.match(line)
         if match:
             groups = match.groups()
-            #logger.debug("Parsed groups: {0}".format(groups))
+            # logger.debug("Parsed groups: {0}".format(groups))
             minutes = int(groups[0]) * 60 + int(groups[1])
             return minutes
 
         match = self.RE_UPTIME_MIN.match(line)
         if match:
             groups = match.groups()
-            #logger.debug("Parsed groups: {0}".format(groups))
+            # logger.debug("Parsed groups: {0}".format(groups))
             minutes = int(groups[0])
             return minutes
 
@@ -316,7 +336,7 @@ class TopEntry(object):
         match = self.RE_TASKS.match(line)
         if match:
             groups = match.groups()
-            #logger.debug("Got groups: {0}".format(groups))
+            # logger.debug("Got groups: {0}".format(groups))
 
             self.header[self.TASKS_TOTAL] = int(groups[0])
             self.header[self.TASKS_RUNNING] = int(groups[1])
@@ -328,8 +348,16 @@ class TopEntry(object):
         """
         Use the array to traverse the expected keys over the matching groups
         """
-        columns = [self.CPU_UNNICED, self.CPU_SYSTEM, self.CPU_NICED, self.CPU_IDLE,
-                   self.CPU_WAIT, self.CPU_HI, self.CPU_SI, self.CPU_ST]
+        columns = [
+            self.CPU_UNNICED,
+            self.CPU_SYSTEM,
+            self.CPU_NICED,
+            self.CPU_IDLE,
+            self.CPU_WAIT,
+            self.CPU_HI,
+            self.CPU_SI,
+            self.CPU_ST,
+        ]
         cpu_entry = {}
         for col in columns:
             cpu_entry[col] = float(next(groups))
@@ -351,20 +379,19 @@ class TopEntry(object):
         if match:
             groups = match.groups()
             cpu_type = _CpuLineType.get_type(groups[0])
-            #logger.debug(f"Got type: {cpu_type}")
+            # logger.debug(f"Got type: {cpu_type}")
             cpu_line = self.getCpuLine(iter(groups[1:]))
             if cpu_type is not None:
                 if cpu_type == _CpuLineType.SINGLE:
-                    #self.header = { **self.header, **cpu_line }
+                    # self.header = { **self.header, **cpu_line }
                     for k in cpu_line.keys():
                         self.header[k] = cpu_line[k]
-                else: #_CpuLineType.MULTI:
-                   self.cores[groups[0]] = cpu_line 
-                logger.debug(f"Got {cpu_type}: {cpu_line}") # {self.header}
+                else:  # _CpuLineType.MULTI:
+                    self.cores[groups[0]] = cpu_line
+                logger.debug(f"Got {cpu_type}: {cpu_line}")  # {self.header}
                 return cpu_type
         logger.debug(f"Did not match valid CPU line: {line}")
         return None
-
 
     def parseMem(self, line):
         """
@@ -378,7 +405,7 @@ class TopEntry(object):
         match = self.RE_MEM.match(line)
         if match:
             groups = match.groups()
-            #logger.debug("Got groups: {0}".format(groups))
+            # logger.debug("Got groups: {0}".format(groups))
             self.header[self.MEM_TOTAL] = int(groups[0])
             if groups[2] == "free":
                 self.header[self.MEM_FREE] = int(groups[1])
@@ -392,7 +419,6 @@ class TopEntry(object):
         else:
             logger.debug(f"Did not match mem: {line}")
 
-
     def parseSwap(self, line):
         """
         Parse the swap information from line and store it in this object's state
@@ -405,7 +431,7 @@ class TopEntry(object):
         match = self.RE_SWAP.match(line)
         if match:
             groups = match.groups()
-            #logger.debug("Got groups: {0}".format(groups))
+            # logger.debug("Got groups: {0}".format(groups))
             self.header[self.SWAP_TOTAL] = int(groups[0])
             if groups[2] == "free":
                 self.header[self.SWAP_FREE] = int(groups[1])
@@ -417,22 +443,21 @@ class TopEntry(object):
                 self.header[self.SWAP_USED] = int(groups[3])
             self.header[self.SWAP_CACHED] = int(groups[5])
 
-
     def parseBody(self, f):
         """
-        :type f - File of top output. Next line should be the header for the jobs section
-        :return: a TopEntry instance
-        Expected input format:
+          :type f - File of top output. Next line should be the header for the jobs section
+          :return: a TopEntry instance
+          Expected input format:
 
-          PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND
-         1453 dpinkney  20   0 1983544 409608  44200 S  12.5  2.5 480:36.59 cinnamon
-          662 root      20   0  273524  86820  17340 S   6.2  0.5 338:15.30 Xorg
+            PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND
+           1453 dpinkney  20   0 1983544 409608  44200 S  12.5  2.5 480:36.59 cinnamon
+            662 root      20   0  273524  86820  17340 S   6.2  0.5 338:15.30 Xorg
 
-          or (thread view)
-          
-      PPID     PID   P  PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
-      1  170737   1  20   0 2822456   2.0g  34048 R  62.5   0.5   0:18.35 msgr-worker-0
-      1  170738  86  20   0 2822456   2.0g  34048 R  62.5   0.5   0:39.40 msgr-worker-1
+            or (thread view)
+
+        PPID     PID   P  PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+        1  170737   1  20   0 2822456   2.0g  34048 R  62.5   0.5   0:18.35 msgr-worker-0
+        1  170738  86  20   0 2822456   2.0g  34048 R  62.5   0.5   0:39.40 msgr-worker-1
 
         """
         # strip off the header
@@ -440,23 +465,22 @@ class TopEntry(object):
 
         while True:
             line = f.readline()
-            logger.debug('read line: {0}'.format(line))
+            logger.debug("read line: {0}".format(line))
             # Needs an empty line to indicate the end of the jobs section
             if not line or len(line) == 1:
-                break;
+                break
             else:
                 job = Job(self.header_columns)
                 if job.parse(line):
-                    logger.debug('read job: {0}'.format(job))
+                    logger.debug("read job: {0}".format(job))
                     if job.getPid() in self.jobs:
-                        raise Exception ("Duplicate pid: {0}".format(job.getPid()))
+                        raise Exception("Duplicate pid: {0}".format(job.getPid()))
                     else:
                         self.jobs[job.getPid()] = job
                 else:
                     logger.debug("Did not parse job: {0}".format(line))
-                    #raise Exception("Did not parse job: {0}".format(line))
+                    # raise Exception("Did not parse job: {0}".format(line))
                     break
-
 
     def readHeader(self, f):
         """
@@ -469,8 +493,7 @@ class TopEntry(object):
         if not match:
             raise Exception("Did not parse header correctly: '{0}'".format(line))
         else:
-            self.header_columns = list(filter(None, re.split(r'\s+|\n', line)))
-
+            self.header_columns = list(filter(None, re.split(r"\s+|\n", line)))
 
     def eatBlankLine(self, f):
         """
@@ -493,7 +516,7 @@ class TopEntry(object):
         else:
             raise Exception("Encountered unexpected EOF - discarding incomplete entry.")
 
+
 class TopEntryJSONEncoder(JSONEncoder):
     def default(self, obj):
         return obj.__dict__
-

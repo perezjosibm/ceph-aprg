@@ -118,6 +118,9 @@ plot '{opd['dat_name']}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
         Produce the output .plot and .dat for the process group proc_name with metric
         We might refactor it using the above _template() method
         """
+        if metric not in self.proc_groups[proc_name]['sorted']:
+            logger.error(f"Metric {metric} not found in proc group {proc_name}")
+            return
         #out_name = f"{proc_name}_{self.name}"
         basename = os.path.basename(self.name)
         dirname=os.path.dirname(self.name)
@@ -157,11 +160,11 @@ plot '{dat_name}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
 #plot '{dat_name}' using 1:2 title columnheader(2) w lp, for [i=3:{self.NUMCOLS}] '' using 1:i title columnheader(i) w lp
 """
         # generate dat file: order as described by self.proc_groups[pg]['sorted'][metric] 
-        print(f"== Proc grp: {proc_name}:{metric} ==")
+        logger.info(f"== Proc grp: {proc_name}:{metric} ==")
         comm_sorted = self.proc_groups[proc_name]['sorted'][metric]
         #print( comm_sorted , sep=", " )
         header =','.join(comm_sorted)
-        print(header)
+        #print(header)
         ds = {}
         # Either use num_samples or count for each comm
         for comm in comm_sorted:
