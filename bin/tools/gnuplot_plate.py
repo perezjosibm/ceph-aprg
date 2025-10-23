@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 class GnuplotTemplate(object):
     TIMEFORMAT = '"%Y-%m-%d %H:%M:%S"'
     NUMCOLS = 10 # by default, but should be set during construction
+    DEFAULT_TERMINAL = 'png'
     _metric_format = {
         'cpu': '%.2f%%',
         'mem': '%.2f%%',
@@ -20,7 +21,11 @@ class GnuplotTemplate(object):
         'shr': 'MB',
         'res': 'MB',
     }
-    def __init__(self, name:str, proc_groups:dict, num_samples:int, pgs_sorted: dict):
+    _terminal= {
+        'png': "pngcairo size 650,280 enhanced font 'Verdana,10'",
+        'svg': "svg size 650,280 standalone font 'Verdana,10' rounded"
+    }
+    def __init__(self, name:str, proc_groups:dict, num_samples:int, pgs_sorted: dict, opts: dict = {}):
         """
         Constructor: expect a dictionary:
         keys: threads names, 
@@ -43,6 +48,8 @@ class GnuplotTemplate(object):
         self.proc_groups = proc_groups
         self.num_samples = num_samples
         self.pgs_sorted = pgs_sorted
+        #self.NUMCOLS = len( pgs_sorted['cpu'] ) + 1  # +1 for the time column
+        self.terminal = opts.get('terminal', self.DEFAULT_TERMINAL) if opts else self.DEFAULT_TERMINAL 
 
     def __str__(self):
         """Convert to string, for str()."""
@@ -53,8 +60,10 @@ class GnuplotTemplate(object):
         Return the generic template instance for a basic linespoint gnuplot script
         """
         return f"""
-set terminal pngcairo size 650,280 enhanced font 'Verdana,10'
+set terminal {self._terminal[self.terminal]}
 set output '{opd['png_name']}'
+set palette cubehelix start 0.5 cycles -1.5 saturation 1
+set palette gamma 1.5
 set key outside horiz bottom center box noreverse noenhanced autotitle
 set datafile missing '-'
 set datafile separator ","
@@ -112,7 +121,7 @@ plot '{opd['dat_name']}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
         #out_name = re.sub(r"[.]out",f"_{metric}", out_name)
         out_name = os.path.join(dirname, _name)
         dat_name = f"{out_name}.dat"
-        png_name = f"{out_name}.png"
+        png_name = f"{out_name}.{self.terminal}"
         plot_name = f"{out_name}.plot"
         chart_title = re.sub(r"[_]","-",out_name)
         # We assume that the columns of the .dat are the metrics for CPU core util
@@ -149,12 +158,13 @@ plot '{opd['dat_name']}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
         out_name = os.path.join(dirname, _name)
         logger.debug(f"Generating plot for {proc_name} and metric {metric}: {_name} and {out_name}")
         dat_name = f"{out_name}.dat"
-        png_name = f"{out_name}.png"
+        png_name = f"{out_name}.{self.terminal}"
         plot_name = f"{out_name}.plot"
         png_log_name = f"{out_name}-log.png"
         chart_title = re.sub(r"[_]","-",out_name)
         plot_template=f"""
-set terminal pngcairo size 650,280 enhanced font 'Verdana,10'
+set terminal {self._terminal[self.terminal]}
+#set terminal pngcairo size 650,280 enhanced font 'Verdana,10'
 set output '{png_name}'
 set key outside horiz bottom center box noreverse noenhanced autotitle
 set datafile missing '-'
@@ -187,7 +197,7 @@ plot '{dat_name}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
             comm_sorted = self.proc_groups[proc_name]['sorted'][metric]
         else:
             comm_sorted = self.pgs_sorted[metric]
-        # If the metric is any of 'shr', 'mem'and 'res'we need to look at the process section instead of the threads
+        # If the metric is any of 'shr', 'mem'and 'res', we need to look at the process section instead of the threads
         #print( comm_sorted , sep=", " )
         header =','.join(comm_sorted)
         #print(header)

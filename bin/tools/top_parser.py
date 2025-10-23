@@ -27,6 +27,8 @@ pp = pprint.PrettyPrinter(width=61, compact=True)
 
 DEFAULT_NUM_SAMPLES = 30
 
+# Options for Gnuplot might been better placed in the module that uses TopParser
+# BTW, we pass them in the constructor
 
 class TopParser(object):
     def __init__(
@@ -36,6 +38,7 @@ class TopParser(object):
         cpus: str = "",
         procs: str = "",
         num_samples: int = DEFAULT_NUM_SAMPLES,
+        plotter_ops: dict = {},
     ):
         """
         Constructor
@@ -60,6 +63,7 @@ class TopParser(object):
         self.num_samples_per_run = num_samples
         # Ordered list by metric utilisation across process groups
         self.pgs_sorted = {}
+        self.plotter_ops = plotter_ops
 
     def get_cpu_range(self):
         """
@@ -460,7 +464,7 @@ class TopParser(object):
         Generate the gnuplot files
         """
         # Generate the gnuplot files for the process groups
-        plot = GnuplotTemplate(self.fileName, self.proc_groups, self.num_samples, self.pgs_sorted)
+        plot = GnuplotTemplate(self.fileName, self.proc_groups, self.num_samples, self.pgs_sorted, self.plotter_ops)
         for metric in self.metrics:
             for pg in self.proc_groups:
                 plot.genPlot(metric, pg)
@@ -557,7 +561,15 @@ def main(argv):
         help="Number of samples that make a test run",
         default=DEFAULT_NUM_SAMPLES,
     )
-    # Probably a profile to indicate how to process the gnuplot charts
+    parser.add_argument(
+        "-t",
+        "--terminal",
+        type=str,
+        required=False,
+        help="Term type for gnuplot: svg or png",
+        default="png",
+    )
+    # Improvement: a profile to indicate how to process the gnuplot charts
     options = parser.parse_args(argv)
 
     if options.verbose:
@@ -580,6 +592,7 @@ def main(argv):
         options.cpu,
         options.pids,
         options.num_samples,
+            {"terminal": options.terminal},
     )
     topParser.run()
 
