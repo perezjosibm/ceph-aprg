@@ -134,13 +134,13 @@ class Job(object):
     def parseScaledMem(self, resStr: str):
         """
         The memory values may contain a postfix, in which case we should convert it from mb or gb to kb
-        :return: The memory value in KiB
+        :return: The memory value in MiB
         """
-        logger.debug("Parsing res from {0}".format(resStr))
+        logger.debug("Parsing Mem from {0}".format(resStr))
 
         match = self.RE_JOB_RES.match(resStr)
         if match:
-            return int(match.groups()[0])
+            return int(match.groups()[0]) / 1024
         else:
             match = self.RE_JOB_RES_SCALED.match(resStr)
             if match:
@@ -148,11 +148,11 @@ class Job(object):
                 value = float(groups[0])
 
                 if groups[1] == "m":
-                    return int(value * 1024)
+                    return int(value )
                 elif groups[1] == "g":
-                    return int(value * 1024 * 1024)
+                    return int(value * 1024 )
                 elif groups[1] == "t":
-                    return int(value * 1024 * 1024 * 1024)
+                    return int(value * 1024 * 1024 )
                 else:
                     raise Exception("Unknown value in {0}".format(resStr))
             else:

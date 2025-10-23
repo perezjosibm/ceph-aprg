@@ -153,6 +153,7 @@ class TopParser(object):
             }
         if is_parent:
             # For the parent process, we capture mem and res only once
+            # We might need to convert our KB values to MB when needed
             self.proc_groups[pg]["mem"]["_data"][index] = job.getMem()
             self.proc_groups[pg]["res"]["_data"][index] = job.getRes()
             self.proc_groups[pg]["shr"]["_data"][index] = job.getShr()
@@ -459,7 +460,7 @@ class TopParser(object):
         Generate the gnuplot files
         """
         # Generate the gnuplot files for the process groups
-        plot = GnuplotTemplate(self.fileName, self.proc_groups, self.num_samples)
+        plot = GnuplotTemplate(self.fileName, self.proc_groups, self.num_samples, self.pgs_sorted)
         for metric in self.metrics:
             for pg in self.proc_groups:
                 plot.genPlot(metric, pg)

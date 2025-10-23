@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 class _CpuLineType(Enum):
     SINGLE = "single"
     MULTI = "multi"
+    NONE = "none"
 
     @classmethod
     def get_type(cls, line: str) -> "_CpuLineType":
@@ -24,7 +25,7 @@ class _CpuLineType(Enum):
         elif re.match(r"\d+", line):
             return cls.MULTI
         else:
-            return None
+            return cls.NONE
 
 
 class TopEntry(object):

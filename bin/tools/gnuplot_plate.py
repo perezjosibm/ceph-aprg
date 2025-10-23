@@ -8,7 +8,19 @@ logger = logging.getLogger(__name__)
 class GnuplotTemplate(object):
     TIMEFORMAT = '"%Y-%m-%d %H:%M:%S"'
     NUMCOLS = 10 # by default, but should be set during construction
-    def __init__(self, name:str, proc_groups:dict, num_samples:int):
+    _metric_format = {
+        'cpu': '%.2f%%',
+        'mem': '%.2f%%',
+        'shr': '%.2f', #%s %cB',
+        'res': '%.2f', #%s %cB',
+    }
+    _metric_unit = {
+        'cpu': '%',
+        'mem': '%',
+        'shr': 'MB',
+        'res': 'MB',
+    }
+    def __init__(self, name:str, proc_groups:dict, num_samples:int, pgs_sorted: dict):
         """
         Constructor: expect a dictionary:
         keys: threads names, 
@@ -30,6 +42,7 @@ class GnuplotTemplate(object):
         self.name = name
         self.proc_groups = proc_groups
         self.num_samples = num_samples
+        self.pgs_sorted = pgs_sorted
 
     def __str__(self):
         """Convert to string, for str()."""
@@ -48,15 +61,16 @@ set datafile separator ","
 set timefmt {self.TIMEFORMAT}
 #set format x {self.TIMEFORMAT}
 #set format y "%2.3f"
-set format y '%.0s%c'
+#set format y '%.0s%c'
+set format y '{self._metric_format[opd['metric']]}'
 set style data lines
 set xtics border in scale 1,0.5 nomirror rotate by -45  autojustify
 set title "{opd['chart_title']}"
-set ylabel '{opd['ylabel']}(%)'
+set ylabel '{opd['ylabel']} util ({self._metric_unit[opd['metric']]})'
 set grid
 set key autotitle columnheader
 set autoscale
-# Each column is a metric name from CPU util
+# Each column is a metric name from CPU util: usr,sys, etc
 plot '{opd['dat_name']}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
 #plot '{opd['dat_name']}' using 1:1 title columnheader(1) w lp, for [i=3:{self.NUMCOLS}] '' using i:i title columnheader(i) w lp
 """
@@ -103,7 +117,7 @@ plot '{opd['dat_name']}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
         chart_title = re.sub(r"[_]","-",out_name)
         # We assume that the columns of the .dat are the metrics for CPU core util
         opts_dict = { 'out_name': out_name, 'dat_name': dat_name, 'png_name': png_name, 
-                     'chart_title': chart_title, 'ylabel': ylabel }
+                     'chart_title': chart_title, 'ylabel': ylabel , 'metric': 'cpu'}
         plot_template= self._template( opts_dict )
         self.save_dat(data, dat_name, num_samples)
 
@@ -118,9 +132,14 @@ plot '{opd['dat_name']}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
         Produce the output .plot and .dat for the process group proc_name with metric
         We might refactor it using the above _template() method
         """
-        if metric not in self.proc_groups[proc_name]['sorted']:
-            logger.error(f"Metric {metric} not found in proc group {proc_name}")
-            return
+        if metric == 'cpu':
+            if metric not in self.proc_groups[proc_name]['sorted']:
+                logger.error(f"Metric {metric} not found in proc group {proc_name}")
+                return
+        else:
+            if metric not in self.pgs_sorted:
+                logger.error(f"Metric {metric} not found in pgs_sorted for {proc_name}")
+                return
         #out_name = f"{proc_name}_{self.name}"
         basename = os.path.basename(self.name)
         dirname=os.path.dirname(self.name)
@@ -143,11 +162,12 @@ set datafile separator ","
 set timefmt {self.TIMEFORMAT}
 #set format x {self.TIMEFORMAT}
 #set format y "%2.3f"
-set format y '%.0s%c'
+#set format y '%.0s%c'
+set format y '{self._metric_format[metric]}'
 set style data lines
 set xtics border in scale 1,0.5 nomirror rotate by -45  autojustify
 set title "{chart_title}"
-set ylabel '{metric.upper()}%'
+set ylabel '{metric.upper()} util({self._metric_unit[metric]})'
 set grid
 set key autotitle columnheader
 
@@ -161,14 +181,24 @@ plot '{dat_name}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
 """
         # generate dat file: order as described by self.proc_groups[pg]['sorted'][metric] 
         logger.info(f"== Proc grp: {proc_name}:{metric} ==")
-        comm_sorted = self.proc_groups[proc_name]['sorted'][metric]
+        if metric == 'cpu':
+            #logger.info(f"Num CPUs seen: {self.proc_groups[proc_name]['num_cpus']}")
+            #logger.info(f"Num context switches: {self.proc_groups[proc_name]['swctx']}")
+            comm_sorted = self.proc_groups[proc_name]['sorted'][metric]
+        else:
+            comm_sorted = self.pgs_sorted[metric]
+        # If the metric is any of 'shr', 'mem'and 'res'we need to look at the process section instead of the threads
         #print( comm_sorted , sep=", " )
         header =','.join(comm_sorted)
         #print(header)
         ds = {}
         # Either use num_samples or count for each comm
         for comm in comm_sorted:
-            _data = self.proc_groups[proc_name]['threads'][comm][metric]['_data']
+            if metric == 'cpu':
+                _data = self.proc_groups[proc_name]['threads'][comm][metric]['_data']
+            else:
+                #_data = self.proc_groups[proc_name]['process'][comm][metric]['_data']
+                _data = self.proc_groups[proc_name][metric]['_data']
             ds[comm] = iter(_data)
 
         # Saves .dat file
