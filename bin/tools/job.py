@@ -148,11 +148,11 @@ class Job(object):
                 value = float(groups[0])
 
                 if groups[1] == "m":
-                    return int(value )
+                    return int(value)
                 elif groups[1] == "g":
-                    return int(value * 1024 )
+                    return int(value * 1024)
                 elif groups[1] == "t":
-                    return int(value * 1024 * 1024 )
+                    return int(value * 1024 * 1024)
                 else:
                     raise Exception("Unknown value in {0}".format(resStr))
             else:

@@ -12,7 +12,8 @@ import json
 import re
 import tempfile
 import pprint
-#from json import JSONEncoder
+
+# from json import JSONEncoder
 import pandas as pd
 import seaborn as sns
 
@@ -26,9 +27,20 @@ FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
 pp = pprint.PrettyPrinter(width=61, compact=True)
 
 DEFAULT_NUM_SAMPLES = 30
+DEFAULT_CPU_RANGES = range(0, 111)  # Assume 112 cores by default
+
+# The following info would be captured from the test_plan.json, but for now defined as default
+PG_CPU_CORES_INFO = {
+    # "num_cores": 4,
+    # "cpu_mhz": 2400,
+    # "cpu_model": "Intel(R) Xeon(R) CPU E5-2620 v4 @ 2.10GHz",
+    "OSD": "0-27,56-83",
+    "FIO": "28-55,84-111",
+}
 
 # Options for Gnuplot might been better placed in the module that uses TopParser
 # BTW, we pass them in the constructor
+
 
 class TopParser(object):
     def __init__(
@@ -46,17 +58,18 @@ class TopParser(object):
         the size of a data point to be combined with the FIO data
         However, its best to have a command line option to set this for flexibility
         """
-        self.fileName = fileName
+        self.fileName = fileName  # Input _top.out file
         self.entries: list[TopEntry] = []
-        self.jsonName = jsonName
+        self.jsonName = jsonName  # Output .json file _cores.json
         self.cpu_cores: list[dict] = []
         self.procs: list[dict] = []
         self.proc_groups: dict = {}  # This is the working dict
-        self.cpus = cpus
-        self.cpu_ranges = []
-        self.procs_file = procs
+        self.cpus = cpus  # Input range of CPU cores to filter
+        self.cpu_ranges = {}  # indexed by process group
+        self.procs_file = procs  # .json file indexed with process group names and PIDs
         self.num_samples = 0
-        # possible metrics to track per thread - cpu and mem are percentages, res and shr are in KB. Only cpu is per thread, the other are per process
+        # possible metrics to track per thread - cpu and mem are percentages, res and shr are in KB.
+        # Only cpu is per thread, the other are per process
         self.metrics = ["cpu", "mem", "res", "shr"]
         self.core_cpu_metrics = ["user", "sys", "idle", "wait"]
         self.avg_cpus: dict = {}
@@ -68,25 +81,36 @@ class TopParser(object):
     def get_cpu_range(self):
         """
         Parse the string defining the range of CPU of interest -- we might
-        provide this info in the input pids.json instead Remeber it can be a
-        valid taskset string, eg. 0-3,5,7-9 so we need to extend this
+        provide this info in the input pids.json instead.We support a
+        valid taskset string, eg. 0-3,5,7-9
         """
-        regex = re.compile(r"(\d+)([-](\d+))?")
-        if self.cpus:
-            cpu_list_str = self.cpus.split(",")
+
+        def _update_cpu_ranges(cpu_str: str, pg: str):
+            if pg not in self.cpu_ranges:
+                self.cpu_ranges[pg] = []
+            regex = re.compile(r"(\d+)([-](\d+))?")
+            cpu_list_str = cpu_str.split(",")
             for cpu in cpu_list_str:
                 matched = regex.search(cpu)
                 if matched:
                     if matched.group(3):
-                        self.cpu_ranges.append(
+                        self.cpu_ranges[pg].append(
                             range(int(matched.group(1)), int(matched.group(3)))
                         )
                     else:
-                        self.cpu_ranges.append([int(matched.group(1))])
+                        self.cpu_ranges[pg].append([int(matched.group(1))])
+
+        for pg in PG_CPU_CORES_INFO.keys():
+            if self.cpus:
+                _update_cpu_ranges(self.cpus, pg)
+            else:
+                # Use default ranges from PG_CPU_CORES_INFO
+                _update_cpu_ranges(PG_CPU_CORES_INFO[pg], pg)
 
     def get_procs_names(self):
         """
         Get the processes names and pids from the json input file
+        This json will be extended to contain the CPU cores ranges per process group
         """
         if self.procs_file:
             with open(self.procs_file, "r") as f:
@@ -101,6 +125,9 @@ class TopParser(object):
                 # = str(x) for x in d[pg]
                 self.proc_groups[pg] = {
                     "pids": list(pids),
+                    "cpu_core_ranges": self.cpu_ranges[pg]
+                    if pg in self.cpu_ranges
+                    else DEFAULT_CPU_RANGES,
                     "threads": {},
                     "thr_pids": [],  # Add new pids as we find them
                     # Memory measurements are per process, so we need to track them separately
@@ -127,6 +154,8 @@ class TopParser(object):
                     },
                     "num_samples": 0,
                     "sorted": {},
+                    "avg_per_core": {},
+                    "avg_per_run": {},
                 }
             logger.debug(
                 f"Parsing procs_file {self.procs_file} proc_groups: {self.proc_groups}"
@@ -157,8 +186,8 @@ class TopParser(object):
             }
         if is_parent:
             # For the parent process, we capture mem and res only once
-            # We might need to convert our KB values to MB when needed
             self.proc_groups[pg]["mem"]["_data"][index] = job.getMem()
+            # REMEMBER: we now get default values as MB
             self.proc_groups[pg]["res"]["_data"][index] = job.getRes()
             self.proc_groups[pg]["shr"]["_data"][index] = job.getShr()
         else:
@@ -168,7 +197,6 @@ class TopParser(object):
         self.proc_groups[pg]["threads"][job.getCommand()]["cpu"]["_data"][index] += (
             job.getCpu()
         )
-
 
     def get_job_stats(self, pg: str, metric: str):
         """
@@ -216,7 +244,7 @@ class TopParser(object):
         for pg_name, pg in self.proc_groups.items():
             d[pg_name] = pg[metric]["avg"]
         # dsorted = {k: v for k, v in sorted(d.items(), key=lambda item: item[1])}
-        #self.proc_groups["sorted"][metric] = sorted(d, key=d.get, reverse=True)
+        # self.proc_groups["sorted"][metric] = sorted(d, key=d.get, reverse=True)
         self.pgs_sorted[metric] = sorted(d, key=d.get, reverse=True)
         logger.debug(
             f"Sorted pgs by metric:{metric} : {pp.pformat(self.pgs_sorted[metric])}"
@@ -263,7 +291,7 @@ class TopParser(object):
         for i, entry in enumerate(self.entries):
             # logger.debug(f"Got: {pg} - {i} - {entry}")
             for (
-                _jid,
+                _,
                 job,
             ) in entry.jobs.items():  # dict keys jobids=PID, value is a job object
                 for pg, pgroup in self.proc_groups.items():
@@ -292,6 +320,7 @@ class TopParser(object):
         For each test run, get the combined CPU core utilisation, so can be
         embed with FIO .json data from a response curves run.
         """
+
         # for m in self.core_cpu_metrics:
         #     self.avg_cpus[m] = []
         #     for i in range(0, self.num_samples // DEFAULT_NUM_SAMPLES):
@@ -304,31 +333,38 @@ class TopParser(object):
         # avg_per_run = {}
         # for m in self.core_cpu_metrics:
         #     avg_per_run[m] = []
-        avg_per_run = {m: [] for m in self.core_cpu_metrics}
-        aux = {m: 0.0 for m in self.core_cpu_metrics}
-        num_runs = self.num_samples // self.num_samples_per_run
-        if num_runs == 0:
-            num_runs = 1
-        avg_cpus = self.avg_cpus["avg_per_core"]
-        logger.info(
-            f"num_runs: {num_runs}, num_samples_per_run: {self.num_samples_per_run}, avg_cpus keys: {avg_cpus.keys()}"
-        )
-        # Produce avg per test run, that is, combined for all cores at each test run
-        for m in self.core_cpu_metrics:
-            for i in range(0, num_runs):
-                for coreid in avg_cpus.keys():
-                    aux[m] += avg_cpus[coreid][m][i]
-                avg_per_run[m].append(aux[m] / len(avg_cpus.keys()))
-                aux[m] = 0.0
-            # [ avg_per_run[m].append(sum(avg_cpus[coreid][m]) / len(avg_cpus[coreid][m])) for coreid in avg_cpus.keys() ]
-        self.avg_cpus["avg_per_run"] = avg_per_run
-        logger.info(f"avg_per_run: {pp.pformat(avg_per_run)}")
+        def _get_core_util_per_run_per_pg(pg: str):
+            avg_per_run = {m: [] for m in self.core_cpu_metrics}
+            aux = {m: 0.0 for m in self.core_cpu_metrics}
+            num_runs = self.num_samples // self.num_samples_per_run
+            if num_runs == 0:
+                num_runs = 1
+            # avg_cpus = self.avg_cpus["avg_per_core"]
+            avg_cpus = self.proc_groups[pg]["avg_per_core"]
+            logger.info(
+                f"pg:{pg}, num_runs: {num_runs}, num_samples_per_run: {self.num_samples_per_run}, avg_cpus keys: {avg_cpus.keys()}"
+            )
+            # Produce avg per test run, that is, combined for all cores running pg at each test run
+            for m in self.core_cpu_metrics:
+                for i in range(0, num_runs):
+                    for coreid in avg_cpus.keys():
+                        aux[m] += avg_cpus[coreid][m][i]
+                    avg_per_run[m].append(aux[m] / len(avg_cpus.keys()))
+                    aux[m] = 0.0
+                # [ avg_per_run[m].append(sum(avg_cpus[coreid][m]) / len(avg_cpus[coreid][m])) for coreid in avg_cpus.keys() ]
+            # self.avg_cpus["avg_per_run"] = avg_per_run
+            self.proc_groups[pg]["avg_per_run"] = avg_per_run
+            logger.info(f"{pg}: avg_per_run: {pp.pformat(avg_per_run)}")
 
-    def is_core_of_interest(self, coreid: int):
+        for pg in self.proc_groups:
+            _get_core_util_per_run_per_pg(pg)
+
+    def is_core_of_interest(self, coreid: int, pg: str) -> bool:
         """
         Check if the coreid is within the range of interest
+        Alt. self.proc_groups[pg]['cpu_core_ranges']
         """
-        for r in self.cpu_ranges:
+        for r in self.cpu_ranges[pg]:
             if coreid in r:
                 return True
         return False
@@ -338,49 +374,67 @@ class TopParser(object):
         self.cpu_cores traverse the list of CPU cores, each core is a dict with
         metrics, calculate the geometric average Might filter the cores of
         interest: either by the provided range or by the _threads.json file
+
+        def _update_avg_per_cpu(coreid: str, metric: str, value: float):
+            if coreid not in self.avg_cpus:
+                self.avg_cpus[coreid] = {m: 0.0 for m in self.core_cpu_metrics}
+            self.avg_cpus[coreid][metric] += value / self.num_samples
         """
-        avg_cpus = {}
+
+        def _update_avg_per_cpu(
+            _coreid: str, avg_cpus: dict, core: dict, _i: int, acum_per_cpu: dict
+        ):
+            if _coreid not in avg_cpus:
+                avg_cpus[_coreid] = {m: [] for m in self.core_cpu_metrics}
+            if _coreid not in acum_per_cpu:
+                acum_per_cpu[_coreid] = {m: 0.0 for m in self.core_cpu_metrics}
+            # Aggregate the core utilisation: we could use a translation dict
+            acum_per_cpu[_coreid]["user"] += core["cpuUser"]
+            acum_per_cpu[_coreid]["sys"] += core["cpuSystem"]
+            acum_per_cpu[_coreid]["idle"] += core["cpuIdle"]
+            acum_per_cpu[_coreid]["wait"] += core["cpuIoWait"]
+            # Might extend to generic time stamps intervals: update the avg at the end of each run
+            if ((_i + 1) % self.num_samples_per_run) == 0:
+                if _i > 0:
+                    for m in self.core_cpu_metrics:
+                        avg_cpus[_coreid][m].append(
+                            acum_per_cpu[_coreid][m] / self.num_samples_per_run
+                        )
+                        acum_per_cpu[_coreid] = {m: 0.0 for m in self.core_cpu_metrics}
+
         acum_per_cpu = {}
         for _i, entry in enumerate(self.entries):
             for _coreid, core in entry.cores.items():
-                logger.debug(f"Iter:{_i}: got cpu:{_coreid} - {core}")
-                # Filter the cores of interest
-                if self.is_core_of_interest(int(_coreid)):
-                    logger.debug(f"core: {_coreid} of interest")
-                    # Aggregate the core utilisation -- we might do list comprehension
-                    if _coreid not in avg_cpus:
-                        avg_cpus[_coreid] = {m: [] for m in self.core_cpu_metrics}
-                        # avg_cpus[_coreid] = { 'user': [], 'sys': [] , 'idle': [] , 'wait': [] }
-                    if _coreid not in acum_per_cpu:
-                        acum_per_cpu[_coreid] = {m: 0.0 for m in self.core_cpu_metrics}
-                        # acum_per_cpu[_coreid] = { 'user': 0.0, 'sys': 0.0, 'idle': 0.0, 'wait': 0.0 }
-                    # Aggregate the core utilisation: we could use a translation dict
-                    acum_per_cpu[_coreid]["user"] += core["cpuUser"]
-                    acum_per_cpu[_coreid]["sys"] += core["cpuSystem"]
-                    acum_per_cpu[_coreid]["idle"] += core["cpuIdle"]
-                    acum_per_cpu[_coreid]["wait"] += core["cpuIoWait"]
-                    # Might extend to generic time stamps intervals
-                    if ((_i + 1) % self.num_samples_per_run) == 0:
-                        if _i > 0:
-                            for m in self.core_cpu_metrics:
-                                avg_cpus[_coreid][m].append(
-                                    acum_per_cpu[_coreid][m] / self.num_samples_per_run
-                                )
-                            acum_per_cpu[_coreid] = {
-                                m: 0.0 for m in self.core_cpu_metrics
-                            }
+                for pg in self.proc_groups:
+                    logger.debug(f"Iter:{_i}: got cpu:{_coreid} - {core}")
+                    avg_cpus = self.proc_groups[pg].get("avg_per_core", {})
+                    if pg not in acum_per_cpu:
+                        acum_per_cpu[pg] = {}
+                    # Filter the cores of interest
+                    if self.is_core_of_interest(int(_coreid), pg):
+                        logger.debug(f"core: {_coreid} of interest for pg: {pg}")
+                        # Aggregate the core utilisation -- we might do list comprehension
+                        _update_avg_per_cpu(
+                            _coreid, avg_cpus, core, _i, acum_per_cpu[pg]
+                        )
 
-        self.avg_cpus["avg_per_core"] = avg_cpus
+        # logger.info(f"accum_per_cpu:{acum_per_cpu}")
+        # self.avg_cpus["avg_per_core"] = avg_cpus # To be deprecated
+        # self.proc_groups[pg]["avg_per_core"] = avg_cpus
         # Each list should be of the same size: num_samples // self.num_samples_per_run
         self.avg_cpus_size = self.num_samples // self.num_samples_per_run
         for m in self.core_cpu_metrics:
-            for coreid in avg_cpus.keys():
-                if len(avg_cpus[coreid][m]) != self.avg_cpus_size:
-                    logger.error(
-                        f"Error: {m} - {coreid} - {len(avg_cpus[coreid][m])} - {self.avg_cpus_size}"
-                    )
-        # logger.info(f"accum_per_cpu:{acum_per_cpu}")
-        # logger.info(f"avg_per_core:{avg_cpus}")
+            for pg in self.proc_groups:
+                avg_cpus = self.proc_groups[pg].get("avg_per_core", {})
+                for coreid in avg_cpus.keys():
+                    if len(avg_cpus[coreid][m]) != self.avg_cpus_size:
+                        logger.error(
+                            f"Error: {m} - {coreid} - {len(avg_cpus[coreid][m])} - {self.avg_cpus_size}"
+                        )
+        for pg in self.proc_groups:
+            logger.info(
+                f"avg_per_core: {pp.pformat(self.proc_groups[pg]['avg_per_core'])}"
+            )
 
     def _gen_core_plot(self):
         """
@@ -398,23 +452,25 @@ class TopParser(object):
 
         sns.set_theme(style="darkgrid")
         for coreid in self.avg_cpus.keys():
-            data = self.avg_cpus[coreid]
-            to_draw = pd.DataFrame(data)
-            to_draw.columns.name = "Metrics"
-            # sns.lineplot(x="timepoint", y="%CPU utilisation",
-            #  hue="region", style="event",
-            #  data=to_draw)
-            # This is broken, need to understand the data structure
-            g = sns.relplot(
-                data=to_draw,
-                kind="line",
-                markers=True,
-                # x="", y="%CPU", col="Classic", # the x and y are the columns of the dataframe , hue="event",
-            ).set(title=name, ylabel="")
-            g.figure.set_size_inches(15, 6)
-            g.figure.set_dpi(100)
-            _name = os.path.join(directory, f"core_{coreid}_{basename}")
-            g.savefig(_name)
+            for pg in self.proc_groups:
+                # data = self.avg_cpus[coreid]
+                data = self.proc_groups[pg]["avg_per_core"][coreid]
+                to_draw = pd.DataFrame(data)
+                to_draw.columns.name = "Metrics"
+                # sns.lineplot(x="timepoint", y="%CPU utilisation",
+                #  hue="region", style="event",
+                #  data=to_draw)
+                # This is broken, need to understand the data structure
+                g = sns.relplot(
+                    data=to_draw,
+                    kind="line",
+                    markers=True,
+                    # x="", y="%CPU", col="Classic", # the x and y are the columns of the dataframe , hue="event",
+                ).set(title=name, ylabel="")
+                g.figure.set_size_inches(15, 6)
+                g.figure.set_dpi(100)
+                _name = os.path.join(directory, f"core_{coreid}_{basename}")
+                g.savefig(_name)
 
     def parse(self):
         """
@@ -464,7 +520,13 @@ class TopParser(object):
         Generate the gnuplot files
         """
         # Generate the gnuplot files for the process groups
-        plot = GnuplotTemplate(self.fileName, self.proc_groups, self.num_samples, self.pgs_sorted, self.plotter_ops)
+        plot = GnuplotTemplate(
+            self.fileName,
+            self.proc_groups,
+            self.num_samples,
+            self.pgs_sorted,
+            self.plotter_ops,
+        )
         for metric in self.metrics:
             for pg in self.proc_groups:
                 plot.genPlot(metric, pg)
@@ -472,7 +534,8 @@ class TopParser(object):
         # Generate the gnuplot files for the CPU cores
         for pg in self.proc_groups:
             plot.genCorePlot(
-                self.avg_cpus["avg_per_run"],
+                # self.avg_cpus["avg_per_run"],
+                self.proc_groups[pg]["avg_per_run"],
                 pg,
                 f"{pg} CPU core utilisation",
                 self.avg_cpus_size,
@@ -494,9 +557,9 @@ class TopParser(object):
         self.get_core_cpu_util()
         self.get_core_util_per_run()
         logger.info(f"proc_groups is {pp.pformat(self.proc_groups)}")
-        self.save_json( self.jsonName, self.avg_cpus )
+        self.save_json(self.jsonName, self.avg_cpus)
         # self.save_json( self.jsonName, {'avg_cores': self.avg_cpus, 'proc_groups': self.proc_groups} )
-        #self.save_json(self.jsonName, self.avg_cpus["avg_per_core"])
+        # self.save_json(self.jsonName, self.avg_cpus["avg_per_core"])
         self.gen_plot()
         # self._gen_core_plot()
 
@@ -592,7 +655,7 @@ def main(argv):
         options.cpu,
         options.pids,
         options.num_samples,
-            {"terminal": options.terminal},
+        {"terminal": options.terminal},
     )
     topParser.run()
 

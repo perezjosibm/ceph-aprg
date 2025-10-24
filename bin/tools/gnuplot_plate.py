@@ -23,7 +23,7 @@ class GnuplotTemplate(object):
     }
     _terminal= {
         'png': "pngcairo size 650,280 enhanced font 'Verdana,10'",
-        'svg': "svg size 650,280 standalone font 'Verdana,10' rounded"
+        'svg': "svg size 650,280 mouse standalone font 'Verdana,10' rounded"
     }
     def __init__(self, name:str, proc_groups:dict, num_samples:int, pgs_sorted: dict, opts: dict = {}):
         """
