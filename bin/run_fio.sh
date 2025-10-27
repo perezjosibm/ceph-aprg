@@ -65,6 +65,7 @@ declare -A fio_id
 declare -a global_fio_id=()
 
 # Default values that can be changed via arg options
+# Or even betterm via test_plan.json
 FIO_JOBS=/root/bin/rbd_fio_examples/
 FIO_CORES="0-31" # unrestricted
 FIO_JOB_SPEC="rbd_"
@@ -77,7 +78,7 @@ SKIP_OSD_MON=false
 RUN_ALL=false
 SINGLE=false
 MULTI_JOB_VOL=false
-NUM_SAMPLES=30
+# NUM_SAMPLES=30 # for top measurements, moved to test_plan
 OSD_TYPE="crimson"
 RESPONSE_CURVE=false
 LATENCY_TARGET=false
@@ -162,7 +163,7 @@ fun_measure() {
   # CPU core util (global) and CPU thread util for the pid given
   # timeout ${time_period_sec} strace -fp $PID -o ${TEST_NAME}_strace.out -tt -T -e trace=all -c -I 1  &
   # How to ensure it always show the COMMAND column?
-  top -w 512 -b -H -1 -p "${PID}" -n ${NUM_SAMPLES} >> ${TEST_NAME}_top.out
+  top -w 512 -b -H -1 -p "${PID}" -n ${NUM_SAMPLES} -d ${DELAY_SAMPLES} >> ${TEST_NAME}_top.out
   echo "${TEST_NAME}_top.out" >> ${TEST_TOP_OUT_LIST}
 }
 

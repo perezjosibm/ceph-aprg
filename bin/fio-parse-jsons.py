@@ -492,7 +492,7 @@ def aggregate_proc_cpu_avg(avg, table, avg_cpu, proc):
                     'mem' > { similar dict }
                     }
         'OSD' => { similar dict }
-        TOD: need to use the timestamp to match the FIO runs
+        TBC: need to use the timestamp to match the FIO runs
     """
     # Check that the length of avg_cpu is the same as the number of dict_files.keys(), that is, eeach column in table has the same length
     k_lens = [len(table[k]) for k in table.keys()]
@@ -586,6 +586,15 @@ def gen_table(dict_files, config: str, title: str, avg_cpu: dict, multi=False):
     # The following produces a List of dicts, each with keys 'sys', 'us',
     # each sample with list of CPU (eg. 0-3, and 4-7)
     # Aggregate osd_cpu_us and osd_cpu_sys into the main table
+    # TODO: extract the process names from the avg_cpu .json file and check with the .pids file
+    # The layout is different from the previous version of the avg_cpu .json
+    # file (produced by parse-top.pl), so we need to adapt the code accordingly
+    # -- see function aggregate_proc_cpu_avg(), might need to provide an
+    # argument to indicate which type using, or better still, detect it
+    # automatically. But since there existing an option cpu_core_avg, we might
+    # annotate the avg_cpu to be a dict with main key the version, and data
+    # layout type. And a separate function to aggregate the data accordingly.
+
     for pname in ("OSD", "FIO"):
         aggregate_proc_cpu_avg(avg, table, avg_cpu, pname)
 
@@ -733,16 +742,30 @@ def load_avg_cpu_json(json_fname):
     parse-top.pl
     Probably extend this single .json for all the required files
     """
+    cpu_avg_list = []
     try:
-        with open(json_fname, "r") as json_data:
-            cpu_avg_list = []
+        with open(json_fname, "r") as f:
             # check for empty file
-            f_info = os.fstat(json_data.fileno())
+            f_info = os.fstat(f.fileno())
             if f_info.st_size == 0:
                 logger.error(f"JSON input file {json_fname} is empty")
                 return cpu_avg_list
             # parse the JSON:  we might provide which keys to look for
-            cpu_avg_list = json.load(json_data)
+            cpu_avg_data = json.load(f)
+            # Check if it contains as keys the process group names (OSD, FIO, etc)
+            if isinstance(cpu_avg_data, dict):
+                logger.info(
+                    f"Loaded CPU avg JSON file: {json_fname}, keys: {cpu_avg_data.keys()}"
+                )
+                # each tiem is a dictionary with main keys:"avg_per_core" and "avg_per_run"
+                # We only need "avg_per_run" indexed by the process group name
+                for _pg, _avg_cpu in cpu_avg_data.items():
+                    cpu_avg_list.append({_pg: _avg_cpu["avg_per_run"]})
+            elif isinstance(cpu_avg_data, list):
+                cpu_avg_list = cpu_avg_data
+                logger.info(
+                    f"Loaded CPU avg JSON file: {json_fname}, num items: {len(cpu_avg_list)}"
+                )
             return cpu_avg_list
     except IOError as e:
         raise argparse.ArgumentTypeError(str(e))

@@ -515,6 +515,23 @@ class TopParser(object):
                 )
             logger.info(f"Saved JSON data to {self.jsonName}")
 
+    def save_pgs_json(self):
+        """
+        Save each pg proc_group attributes: avg_per_core and avg_per_run to a JSON file
+        
+        jsonName = f"{self.jsonName.rstrip('.json')}_{pg}_cores.json"
+        """
+        # Generate the JSON file: we might provide the key of the dict as argument
+        logger.info(f"proc_groups is {pp.pformat(self.proc_groups)}")
+        d = {}
+        for pg in self.proc_groups:
+            pgd = self.proc_groups[pg]
+            d[pg] = {
+                "avg_per_core": pgd["avg_per_core"],
+                "avg_per_run": pgd["avg_per_run"],  # aggregate this to the final table
+            }
+        self.save_json( self.jsonName, d )
+
     def gen_plot(self):
         """
         Generate the gnuplot files
@@ -556,10 +573,7 @@ class TopParser(object):
         self.get_cpu_range()
         self.get_core_cpu_util()
         self.get_core_util_per_run()
-        logger.info(f"proc_groups is {pp.pformat(self.proc_groups)}")
-        self.save_json(self.jsonName, self.avg_cpus)
-        # self.save_json( self.jsonName, {'avg_cores': self.avg_cpus, 'proc_groups': self.proc_groups} )
-        # self.save_json(self.jsonName, self.avg_cpus["avg_per_core"])
+        self.save_pgs_json()
         self.gen_plot()
         # self._gen_core_plot()
 

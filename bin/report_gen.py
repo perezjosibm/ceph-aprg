@@ -629,7 +629,9 @@ class Reporter(object):
             """
             Run the perf_metrics.py script with the given config and output.
             This is a helper function to run the perf_metrics.py script to generate the metrics.
-            TEMPORARLY DISABLED UNTIL COMPLETED THE EXTENSIONS FOR MULTIPLE ATTRIBUTES METRICS
+
+            TEMPORARLY DISABLED UNTIL COMPLETED THE EXTENSIONS FOR MULTIPLE ATTRIBUTES
+
             command = f"perf_metrics.py -d {dir_path} -i {config} -j -v"
             return run_script(command, dir_path, f"{title}_metrics")
             """
@@ -654,8 +656,42 @@ class Reporter(object):
                 command = f"parse-top.py -d {dir_path} -c {top_json_name} -p {pid_name} -a {cpu_avg_name} -v"
                 proc = subprocess.Popen(command, shell=True)
                 _ = proc.communicate()
-                return proc.returncode == 0
-            return True
+                return (proc.returncode == 0, cpu_avg_name)
+            return (True, cpu_avg_name)
+
+        def recreate_cpu_core_avg(name: str, workload: str, test_run: str, dir_path: str):
+            """
+            Recreate the CPU core average .json file from the given parameters.
+            This is a helper function to recreate the CPU core average .json file if it does not exist.
+            We assume that the CPU average file is named as <test_run>_<workload>_cores.json
+            This involves to run parse-top.py
+            """
+            # This json contains each core_avg per PG
+            cpu_avg_name = f"{test_run}_{workload}_cores.json"
+            top_out_name = f"{test_run}_{workload}_top.out"
+            pid_name = f"{test_run}_{workload}_pid.json"
+            # Check that the pid_name file exists
+            pid_p = os.path.join(dir_path, pid_name)
+            if not os.path.isfile(pid_p):
+                logger.error(
+                    f"PID file {pid_p} does not exist, bailing out"
+                )
+                return (False, "")
+
+            # We assume that the CPU average file is named as <test_run>_<workload>_cores.json
+            dp = os.path.join(dir_path, cpu_avg_name)
+            if not os.path.isfile(dp):
+                logger.error(
+                    f"CPU average file {dp} does not exist, attempting to recreate it"
+                )
+                # Need to ensure the script is in the PATH
+                #command = f"top_parser.py -t svg -d {dir_path} -p {pid_name}  -c {top_out_name} -a {cpu_avg_name} -v"
+                command = f"top_parser.py -t svg -d {dir_path} -p {pid_name} {top_out_name} {cpu_avg_name}"
+                proc = subprocess.Popen(command, shell=True)
+                _ = proc.communicate()
+                return (proc.returncode == 0, cpu_avg_name)
+            return (True, cpu_avg_name)
+
 
         def recreate_bench(
             name: str,
@@ -671,11 +707,41 @@ class Reporter(object):
             This involves to run parse-top.py, fio-parse-jsons.py and perf_metrics.py
             We assume that the benchmark file is named as <test_run>_<workload>.json
             """
-            # We assume that the benchmark file is named as <test_run>_<workload>.json
+            # We assume that the CPU average file is named as <test_run>_<workload>_cpu_avg.json
+            # Create a dict to hold the command to run to recreate the benchmark file inthis case for _cores.json
+            # recreate_cpu_core_avg(name, workload, test_run, dir_path)
+            cpu_filter = {
+                "cpu_avg": {
+                    "function": recreate_cpu_avg,
+                    "args": (name, workload, test_run, dir_path),
+                },
+                "cpu_cores": {
+                    "function": recreate_cpu_core_avg,
+                    "args": (name, workload, test_run, dir_path),
+                }
+            }
+
+            def _recreate_cpu_avg(name: str):
+                """
+                Recreate the CPU average .json file from the given parameters.
+                Use the appropriate function to recreate the CPU average .json file if it does not exist.
+                """
+                if name not in cpu_filter:
+                    logger.error(
+                        f"Invalid {name} -- assuming default 'cpu_cores'"
+                    )
+                    name = "cpu_cores"
+                return cpu_filter[name]["function"](*cpu_filter[name]["args"])
+                #cpu_avg_name = f"{test_run}_{workload}_{cpu_filter[name]}.json"
+                #top_json_name = f"{test_run}_{workload}_top.json"
+                # We assume that the benchmark file is named as <test_run>_<workload>.json
+
             list_name = f"{test_run}_{workload}_list"
-            cpu_avg_name = f"{test_run}_{workload}_cpu_avg.json"
+            # Do we need the original name arg  (that is a key from ds_list)?
+            rc, cpu_avg_name = _recreate_cpu_avg("cpu_cores")
+            # dp = os.path.join(dir_path, cpu_avg_name)
             logger.info(f"Attempting to recreate {dp}")
-            if not recreate_cpu_avg(name, workload, test_run, dir_path):
+            if not rc:
                 logger.error(
                     f"Failed to recreate CPU average file {cpu_avg_name} in {dir_path}"
                 )

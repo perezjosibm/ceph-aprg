@@ -55,7 +55,7 @@ MAX_NUM_HT_CPUS_PER_SOCKET=52
 NUMA_NODES_OUT=/tmp/numa_nodes.json
 
 # Globals:
-export RUNTIME=300
+# export RUNTIME=300 # moved to the test plan
 LATENCY_TARGET=false 
 MULTI_JOB_VOL=false
 PRECOND=false
@@ -117,8 +117,8 @@ fun_save_test_plan() {
 EOF
       #"TEST_TABLE": "${tt}" -- broken in json
     echo -e "${GREEN}== Saving test plan to ${RUN_DIR}/test_plan.json ==${NC}"
-    echo "$json" | jq . > ${RUN_DIR}/test_plan.json
     echo "$tt" | jq . >> ${RUN_DIR}/test_table.json
+    echo "$json" | jq . > ${RUN_DIR}/test_plan.json
     rc=$? 
     if [ $rc -eq 0 ]; then
         echo -e "${GREEN}== Test plan saved to ${RUN_DIR}/test_plan.json ==${NC}"
@@ -207,6 +207,7 @@ fun_show_grid() {
 # Useful when the cluster was created manually:
 fun_run_fio(){
   local TEST_NAME=$1
+  local FIO_OPTS=$2
 
   [ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
   /root/bin/cephlogoff.sh 2>&1 > /dev/null && \
@@ -214,13 +215,18 @@ fun_run_fio(){
   /root/bin/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_test_run.log && \
   #/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
 
-  if [ "$MULTI_JOB_VOL" = true ]; then
-      OPTS="-j "
-  fi
-  if [ "$LATENCY_TARGET" = true ]; then
-      OPTS="${OPTS} -l "
+  if [ ! -z "${FIO_OPTS}" ]; then
+	  OPTS="${FIO_OPTS}"
   else
-      OPTS="${OPTS} -w hockey -r "
+	  if [ "$MULTI_JOB_VOL" = true ]; then
+		  OPTS="-j "
+	  fi
+	  # Need to ensure mutual exclusion between latency target and response latency
+	  if [ "$LATENCY_TARGET" = true ]; then
+		  OPTS="${OPTS} -l "
+	  else
+		  OPTS="${OPTS} -w hockey -r -a "
+	  fi
   fi
   #MULTI_VOL Debug flag in place since recent RBD hangs -- temporarily disabling in favour of prefilling via rbd bench at cephmkrbd.sh
   #RBD_NAME=fio_test_0 fio --debug=io ${FIO_JOBS}rbd_prefill.fio  2>&1 > /dev/null && rbd du fio_test_0 && \
