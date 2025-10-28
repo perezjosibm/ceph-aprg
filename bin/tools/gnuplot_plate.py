@@ -140,6 +140,41 @@ plot '{opd['dat_name']}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
         """
         Produce the output .plot and .dat for the process group proc_name with metric
         We might refactor it using the above _template() method
+
+        We need to produce slightly different plots for cpu (threads) and mem/shr/res (processes):
+
+        proc-name can be "OSD", "MON", "MGR", "RADOS", "RGW", "MDS", "CLIENT", currently we only use OSD and FIO
+        metric can be:
+          - for threads: "cpu", (%)
+          - for processes (pgs): "mem", "shr", "res",
+          - for core util: (%) "user", "sys", "idle", "wait"
+
+        For threads: each .dat file contains as columns the threads names
+        sorted by cpu util. We need to produce one file per PG.
+        
+        For core util: similar to threads, but the columns are the metric names (user, sys, idle, wait).
+
+        For processes:
+        each .dat file contains as columns the process names (pgs) sorted by
+        mem/shr/res util. Each file corresponds to a single metric.
+
+        Best strategy would be to define a dictionary with keys the metric names
+        and values in turn dictionaries with the data arranged as appropriate: 
+        plot_dict = {
+            'cpu': {
+                'header': [thread names sorted by cpu util],
+                'data': {
+                    <thread_name>: [samples]
+                }
+            },
+            'mem': {
+                'header': [process names sorted by mem util],
+                'data': {
+                    <process_name>: [samples]
+                }
+            },
+            ...
+        }
         """
         if metric == 'cpu':
             if metric not in self.proc_groups[proc_name]['sorted']:
@@ -194,8 +229,10 @@ plot '{dat_name}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
         if metric == 'cpu':
             #logger.info(f"Num CPUs seen: {self.proc_groups[proc_name]['num_cpus']}")
             #logger.info(f"Num context switches: {self.proc_groups[proc_name]['swctx']}")
+            # This is for threads based metrics (filter parse-top.py)
             comm_sorted = self.proc_groups[proc_name]['sorted'][metric]
         else:
+            # This is for process based metrics (filter top-parser.py) the columns are pgs_sorted[metric]
             comm_sorted = self.pgs_sorted[metric]
         # If the metric is any of 'shr', 'mem'and 'res', we need to look at the process section instead of the threads
         #print( comm_sorted , sep=", " )
@@ -208,7 +245,7 @@ plot '{dat_name}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
                 _data = self.proc_groups[proc_name]['threads'][comm][metric]['_data']
             else:
                 #_data = self.proc_groups[proc_name]['process'][comm][metric]['_data']
-                _data = self.proc_groups[proc_name][metric]['_data']
+                _data = self.proc_groups[comm][metric]['_data']
             ds[comm] = iter(_data)
 
         # Saves .dat file

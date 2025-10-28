@@ -44,7 +44,7 @@ declare -A mode=([rw]=write [rr]=read [sw]=write [sr]=read
 # Option -w (WORKLOAD) is used as index for these:
 # We need to refine the values for hockey so that each workload has its own list of iodepth/numjobs
 declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="1 2 4 8 16 24 32 40 52 64"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 [rr_norm]=16 [rw_norm]=16 [rr_zipf]=16 [rw_zipf]=16 [rr_zoned]=16 [rw_zoned]=16)
-declare -A m_s_numjobs=( [ex8osd]="1 4 8" [hockey]="1"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 [rr_norm]=16 [rw_norm]=4 [rr_zipf]=16 [rw_zipf]=4 [rr_zoned]=16 [rw_zoned]=4)
+declare -A m_s_numjobs=( [ex8osd]="1 4 8" [hockey]="1"  [rw]=1  [rr]=16 [sw]=1  [sr]=1 [rr_norm]=16 [rw_norm]=4 [rr_zipf]=16 [rw_zipf]=4 [rr_zoned]=16 [rw_zoned]=4)
 #declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
 
 # Multiple FIO instances: results for 8 RBD images/vols
@@ -72,7 +72,7 @@ declare -A perf_options=(
     [context]="context-switches,cpu-migrations,page-faults"
     [instructions]="cycles,instructions"
     [default]="context-switches,cpu-migrations,cpu-clock,task-clock,cache-references,cache-misses,branches,branch-misses,page-faults,cycles,instructions"
-    [core]="--no-aggr -a --per-core --per-thread" # --cpu=<cpu-list>
+    [core]=' -A -a --per-core ' # --cpu=<cpu-list> --no-aggr
 )
 # Default values that can be changed via arg options
 # Or even betterm via test_plan.json
@@ -98,8 +98,14 @@ PACK_DIR="/packages/"
 MAX_LATENCY=20 #in millisecs
 STOP_CLEAN=false
 NUM_ATTEMPTS=3 # number of attempts to run the workload
+
 SUCCESS=0
 FAILURE=1
+
+# Local watchdog: need to generalise this if monitoring multiple processes
+WATCHDOG_PID=0
+WATCHDOG=false
+fio_rc=0
 
 # Consider a better way of setting the top filter:
 TOP_FILTER="cores"
@@ -285,10 +291,30 @@ fun_set_globals() {
     DISK_STAT="${TEST_RESULT}_diskstat.json"
     DISK_OUT="${TEST_RESULT}_diskstat.out"
     # Produce the keymap.json:
-    json="{\"workload\":\"${WORKLOAD}\",\"workload_name\":\"${WORKLOAD_NAME}\",\"test_prefix\":\"${TEST_PREFIX}\",\"osd_type\":\"${OSD_TYPE}\",\"num_procs\":${NUM_PROCS},\"iodepth\":\"${RANGE_IODEPTH}\",\"numjobs\":\"${RANGE_NUMJOBS}\",\"block_size_kb\": \"${BLOCK_SIZE_KB}\",\"latency_target\":${LATENCY_TARGET},\"response_curve\":${RESPONSE_CURVE},\"test_result\":\"${TEST_RESULT}\",\"osd_cpu_avg\":\"${OSD_CPU_AVG}\",\"osd_test_list\":\"${OSD_TEST_LIST}\",\"top_out_list\":\"${TOP_OUT_LIST}\",\"top_pid_list\":\"${TOP_PID_LIST}\",\"top_pid_json\":\"${TOP_PID_JSON}\",\"disk_stat\":\"${DISK_STAT}\",\"disk_out\":\"${DISK_OUT}\"}"
-    echo "$json" | jq . > keymap.json
-
-    #exit 0 # Success
+    read -r -d '' json <<EOF || true
+    {
+        "workload": "${WORKLOAD}",
+        "workload_name": "${WORKLOAD_NAME}",
+        "test_prefix": "${TEST_PREFIX}",
+        "osd_type": "${OSD_TYPE}",
+        "num_procs": "${NUM_PROCS}",
+        "runtime": "${RUNTIME}",
+        "iodepth": "${RANGE_IODEPTH}",
+        "numjobs": "${RANGE_NUMJOBS}",
+        "block_size_kb": "${BLOCK_SIZE_KB}",
+        "latency_target": "${LATENCY_TARGET}",
+        "response_curve": "${RESPONSE_CURVE}",
+        "test_result": "${TEST_RESULT}",
+        "osd_cpu_avg": "${OSD_CPU_AVG}",
+        "osd_test_list": "${OSD_TEST_LIST}",
+        "top_out_list": "${TOP_OUT_LIST}",
+        "top_pid_list": "${TOP_PID_LIST}",
+        "top_pid_json": "${TOP_PID_JSON}",
+        "disk_stat": "${DISK_STAT}",
+        "disk_out": "${DISK_OUT}"
+    }
+EOF
+    echo "$json" | jq . >> ${TEST_PREFIX}_keymap.json
 }
 ##############################################################################################
 fun_run_workload_loop() {
@@ -336,6 +362,39 @@ fun_run_workload_loop() {
 }
         
 #############################################################################################
+# Monitor the FIO proccesses whether they complete successfully
+# TBC. extend to a list of processes, when one of they dies, kill all FIO and notify the parent
+fun_watchdog_proc() {
+    local PROC_NAME=$1
+    local PROC_PID=$2
+    #local PROC_PIDS=$@
+
+    while kill -0 ${PROC_PID} 2> /dev/null && [[ "$WATCHDOG" == "true" ]]; do
+        sleep 5
+    done
+    if [[ "$WATCHDOG" == "true" ]]; then
+        WATCHDOG=false
+
+        echo "== $(date) == Watchdog: Process ${PROC_NAME} (pid: ${PROC_PID}) has exited! =="
+        if wait ${PROC_PID}; then
+            echo "== $(date) == Watchdog: Process ${PROC_NAME} (pid: ${PROC_PID}) completed successfully! =="
+            return 0
+        else
+            echo "== $(date) == Watchdog: Process ${PROC_NAME} (pid: ${PROC_PID}) FAILED! =="
+            echo "== $(date) == Watchdog: Killing all FIO processes! =="
+            for pid in "${global_fio_id[@]}"; do
+                if kill -0 ${pid} 2> /dev/null; then
+                    echo "== $(date) == Watchdog: Killing FIO process (pid: ${pid}) =="
+                    kill -9 ${pid}
+                fi
+            done
+            fun_tidyup ${TEST_RESULT}
+            exit 1 # Failure
+        fi
+    fi
+}
+
+#############################################################################################
 # Run a single workload
 fun_run_workload() {
     local WORKLOAD=$1
@@ -347,7 +406,7 @@ fun_run_workload() {
     local io=$7
 
     # Check if file in place to indicate stop cleanly:
-
+    declare -a fio_pids=()
     # Take diskstats measurements before FIO instances
     # We might want to filter it down to the relevant disk only
     jc --pretty /proc/diskstats > ${DISK_STAT}
@@ -371,10 +430,20 @@ fun_run_workload() {
         lastfio_pid=$!
         fio_id["fio_${i}"]=$lastfio_pid
         global_fio_id+=( $lastfio_pid  )
-        echo "== $(date) == Launched FIO (pid: $lastfio_pid) ${fio_name} with RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} on cores ${FIO_CORES} ==";
+        fio_pids+=( $lastfio_pid  )
+        echo "== $(date) == Launched FIO (pid: $lastfio_pid) ${fio_name} \
+            with RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} on cores ${FIO_CORES} ==";
         # Check return code from FIO
     done # loop NUM_PROCS
-    sleep 30; # ramp up time
+    fun_get_threads_list "${fio_pids[0]}" "${TEST_NAME}_fio_threads.out" # "${fio_pids[@]}"
+    # Launch watchdog to monitor the first FIO process only
+
+    echo "$(date) Starting watchdog over proc ${fio_id["fio_0"]} ..."
+    WATCHDOG=true
+    ( fun_watchdog_proc "FIO" ${fio_id["fio_0"]} ) &
+    #( fun_watchdog_proc "FIO" ${fio_pids[@]} ) &
+    WATCHDOG_PID=$!
+    sleep 30; # ramp up time TBC. should be selectable from test_plan
 
     if [ "$SKIP_OSD_MON" = false ]; then
         # Prepare list of pid to monitor
@@ -411,7 +480,13 @@ fun_run_workload() {
     # We have a watchdog: if the OSD dies and
     # running with --no-restart, then FIO is killed
     # However, we are not protected if FIO takes longer!
-    wait;
+    # # wait < <(jobs -p)
+    wait ${lastfio_pid};
+    fio_rc=$?
+    echo "$(date) == FIO completed with rc: ${fio_rc} =="
+    # Disable the watchdog after FIO completion
+    WATCHDOG=false 
+    
     # Measure the diskstats after the completion of FIO instances
     jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
     # Filter FIO .json: remove any error line not in .json format
@@ -432,6 +507,7 @@ fun_run_workload() {
         #    .${mop}.clat_ns.mean/1000000 < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
         # Simplified less stringent condition:
         #covar=$(jq ".jobs | .[] | .${mop}.clat_ns.mean/1000000 < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
+        echo "$(date) == Checking latency for workload ${WORKLOAD} (${mop}) with job ${job} and io depth ${io} =="
         latency=$(jq ".jobs | .[] | .${mop}.clat_ns.mean/1000000 " fio_${TEST_NAME}.json)
         if (( $(echo $latency $MAX_LATENCY | awk '{if ($1 > $2) print 1;}') )); then
             echo "== Latency: ${latency}(ms) too high, failing this attempt =="
@@ -448,7 +524,7 @@ fun_filter_top() {
 
     if [ "${TOP_FILTER}" == "cores" ]; then
         # We might produce both of threads based CPU util and cores based, but only use core based for now
-        /root/bin/tools/top_parser.py -t svg -p ${TOP_PID_JSON} ${TOP_FILE} ${OSD_CPU_AVG} 2>&1 > /dev/null
+        /root/bin/tools/top_parser.py -t svg -n ${NUM_SAMPLES} -p ${TOP_PID_JSON} ${TOP_FILE} ${OSD_CPU_AVG} 2>&1 > /dev/null
     else
         # Disabling termporarily
         cat ${TOP_FILE} | jc --top --pretty > ${TEST_RESULT}_top.json

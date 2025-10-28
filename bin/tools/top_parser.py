@@ -70,7 +70,7 @@ class TopParser(object):
         self.num_samples = 0
         # possible metrics to track per thread - cpu and mem are percentages, res and shr are in KB.
         # Only cpu is per thread, the other are per process
-        self.metrics = ["cpu", "mem", "res", "shr"]
+        self.metrics = [ "mem", "res", "shr"] # "cpu",
         self.core_cpu_metrics = ["user", "sys", "idle", "wait"]
         self.avg_cpus: dict = {}
         self.num_samples_per_run = num_samples
@@ -116,7 +116,7 @@ class TopParser(object):
             with open(self.procs_file, "r") as f:
                 d = json.load(f)
                 f.close()
-            # the keys of d are the process name group (eg. OSD), whose values are
+            # The keys of d are the process name group (eg. OSD), whose values are
             # a list of PIDs
             for pg in d.keys():
                 pids = map(
@@ -200,11 +200,13 @@ class TopParser(object):
 
     def get_job_stats(self, pg: str, metric: str):
         """
-        Calculate the min, max and median of the cpu% metric  for each thread in the process group
-        The final figure we might need to divide by 100
+        Calculate the min, max and median of the cpu% metric for each thread in the process group
+        (The final figure we might need to divide by 100)
         """
         for comm, job in self.proc_groups[pg]["threads"].items():
             if metric in job:
+                # metric should only be cpu, so this loop is redundant
+                # expecting that _data length is equal to num_samples
                 nentries = len(job[metric]["_data"])
                 sum_metric = sum(job[metric]["_data"])
                 if nentries > 0:
@@ -265,7 +267,7 @@ class TopParser(object):
 
     def get_top_procs_util(self):
         """
-        Sort the list of threads from top (metric) utilisation
+        Sort the list of processes from top (metric) utilisation
         """
         for pg in self.proc_groups:
             for metric in self.metrics:
@@ -284,9 +286,11 @@ class TopParser(object):
         For each process group (keys of proc_groups), get the top 10
         threads utilisation, produce a sorted list, per metric
         - A new thread, its ppid is in the initial list of pids for the group
-        - An existing thread, its pid is not in the initial list of pids for the group, but its ppid is
-        present in the initial list of pids for the group
-        - The parent process for this group is also included, as its pid is in the initial list of pids for the group
+        - An existing thread, its pid is not in the initial list of pids for
+          the group, but its ppid is present in the initial list of pids for
+          the group
+        - The parent process for this group is also included, as its pid is in
+          the initial list of pids for the group
         """
         for i, entry in enumerate(self.entries):
             # logger.debug(f"Got: {pg} - {i} - {entry}")
@@ -319,6 +323,7 @@ class TopParser(object):
         """
         For each test run, get the combined CPU core utilisation, so can be
         embed with FIO .json data from a response curves run.
+        We also need to do this per process group, and memory metrics.
         """
 
         # for m in self.core_cpu_metrics:
@@ -334,8 +339,9 @@ class TopParser(object):
         # for m in self.core_cpu_metrics:
         #     avg_per_run[m] = []
         def _get_core_util_per_run_per_pg(pg: str):
-            avg_per_run = {m: [] for m in self.core_cpu_metrics}
-            aux = {m: 0.0 for m in self.core_cpu_metrics}
+            metrics = self.core_cpu_metrics + self.metrics
+            avg_per_run = {m: [] for m in metrics } # self.core_cpu_metrics
+            aux = {m: 0.0 for m in metrics } #self.core_cpu_metrics
             num_runs = self.num_samples // self.num_samples_per_run
             if num_runs == 0:
                 num_runs = 1
@@ -351,6 +357,17 @@ class TopParser(object):
                         aux[m] += avg_cpus[coreid][m][i]
                     avg_per_run[m].append(aux[m] / len(avg_cpus.keys()))
                     aux[m] = 0.0
+            # Now include the memory metrics per process group
+            avg_pgs = self.proc_groups[pg]
+            for m in self.metrics:
+                if m not in avg_pgs:
+                    continue
+                for i in range(0, self.num_samples):
+                    aux[m] += avg_pgs[m]['_data'][i]
+                    if ((i + 1) % self.num_samples_per_run) == 0:
+                        if i > 0:
+                            avg_per_run[m].append(aux[m] / self.num_samples_per_run)
+                            aux[m] = 0.0
                 # [ avg_per_run[m].append(sum(avg_cpus[coreid][m]) / len(avg_cpus[coreid][m])) for coreid in avg_cpus.keys() ]
             # self.avg_cpus["avg_per_run"] = avg_per_run
             self.proc_groups[pg]["avg_per_run"] = avg_per_run
@@ -435,7 +452,6 @@ class TopParser(object):
             logger.info(
                 f"avg_per_core: {pp.pformat(self.proc_groups[pg]['avg_per_core'])}"
             )
-        # Need to include memory metrics -- this is per proc group only, not per core
 
     def _gen_core_plot(self):
         """
@@ -444,7 +460,7 @@ class TopParser(object):
         Might assume only OSD is being used
         """
         name = self.fileName
-        name += "_core.png"
+        name += "_core.svg" # png
         directory = os.path.dirname(name)
         basename = os.path.basename(name)
         # sns.set_theme(style="whitegrid", rc={'figure.figsize':(650,280)})
@@ -452,6 +468,8 @@ class TopParser(object):
         # instead we want *all* core id plotted together, with one line per coreid
 
         sns.set_theme(style="darkgrid")
+        # sns.objects.Plot.config.display["format"] = "svg"
+
         for coreid in self.avg_cpus.keys():
             for pg in self.proc_groups:
                 # data = self.avg_cpus[coreid]
@@ -566,6 +584,9 @@ class TopParser(object):
     def run(self):
         """
         Main entry point
+        Probably needs to define classes: for threads based metrics (cpu%),
+        cores based (for cpu utilisation, user,sys,idle, wait) and process
+        based (mem, res, shr).
         """
         self.parse()
         self.get_procs_names()
@@ -582,8 +603,12 @@ class TopParser(object):
 def main(argv):
     examples = """
     Examples:
-    # Parse top data from the specified output file, generated via "top -b":
-        %prog topOutput.log
+    # Parse top data from the specified output file, generated via:
+
+    top -w 512 -b -H -1 -p "${PID}" -n ${NUM_SAMPLES} -d ${DELAY_SAMPLES} >> ${TEST_NAME}_top.out
+
+    top_parser.py -v -n ${NUM_SAMPLES} -p "osd_pids.json" -c "0-27,56-83" -d ./test_runs/run1  ${TEST_NAME}_top.out \
+      ${TEST_NAME}_top.json
 
     # Parse top data from an output file containing timestamps, generated with a script run via cron such as:
     #

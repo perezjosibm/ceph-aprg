@@ -42,7 +42,9 @@ from operator import add
 
 __author__ = "Jose J Palacios-Perez"
 
+pp = pprint.PrettyPrinter(width=41, compact=True)
 logger = logging.getLogger(__name__)
+
 # Predefined dictionary of metrics (query paths on the ouput FIO .json) for typical workloads
 # Keys are metric names, vallues are the string path in the .json to seek
 # For MultiFIO JSON files, the jobname no neccessarily matches any of the predef_dict keys,
@@ -88,6 +90,8 @@ predef_dict = {
     },
 }
 
+# Global temporary -- could be replaced by a class attribute
+top_filter_type = "cores" # or "threads"
 
 def filter_json_node(next_branch, jnode_list_in):
     """
@@ -344,14 +348,17 @@ def gen_plot(config: str, data: str, list_subtables, title: str, header_keys: di
             "ylabel": "Latency (ms)",
             "ycolumn": "clat_ms",
             "y2label": "CPU",
-            "y2column": "OSD_cpu",
+            #"y2column": "OSD_cpu", # for cores based top filter, this should be OSD_usr instead
+            "y2column": "OSD_user", 
         }
     }
     # Define a new one for the CPU core utilisation
     pg_y2column = {
-        "OSD_cpu": 8,
+        #"OSD_cpu": 8,
+        "OSD_user": "8",
         #'OSD_mem': 9,
-        "FIO_cpu": 10,
+        "FIO_user": "10",
+        #"FIO_cpu": 10,
         #'FIO_mem': 11,
     }
     # Use the header_keys to ensure we refer to the correct column number
@@ -496,6 +503,64 @@ def aggregate_proc_cpu_avg(avg, table, avg_cpu):
                     }
         'OSD' => { similar dict }
         TBC: need to use the timestamp to match the FIO runs
+
+        The other layout produced by top_parser.py is:
+    
+    {
+    "FIO": {
+        "avg_per_core": {
+            "100": {
+                "idle": [
+                    0.0,
+        :
+        "wait": [
+                0.0,
+                0.0,
+                0.0
+            ]
+        }
+    },
+    "OSD": {
+        "avg_per_core": {
+            "0": {
+            :
+            ],
+                "wait": [
+                    0.0,
+                    0.0,
+                    0.0
+                ]
+            }
+        },
+        "avg_per_run": {
+            "idle": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "sys": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "user": [
+                1.4326543209876543,
+                1.4901851851851857,
+                1.4958641975308646
+            ],
+            "wait": [
+                0.0,
+                0.0,
+                0.0
+            ]
+        }
+    }
+}
+    We only need the 'avg_per_run' section for each process group (eg OSD, FIO)
+    for CPU util, However, we still need the MEM util (RES), which coul dbe a
+    (flat) metric in the avg_per_run section, with the same size as the CPU
+    util lists. We could end with keys like OSD_idle, OSD_sys, OSD_user, and
+    OSD_res, OSD_shr; similar for FIO_ in the main table
     """
     # Check that the length of avg_cpu is the same as the number of dict_files.keys(), 
     # that is, eeach column in table has the same length
@@ -509,16 +574,17 @@ def aggregate_proc_cpu_avg(avg, table, avg_cpu):
         # the type being used when we load it
         for cpu_item in avg_cpu:
             for proc in cpu_item:  # 'OSD', 'FIO' from the avg CPU .json
-                for metric in cpu_item[proc]:  # 'cpu', 'mem' from the OSD: we might
-                    # indicate which keys to use in a dictionary when we recognise the layout
+                for metric in cpu_item[proc]:  # 'cpu', 'mem' for threads based top filter
                     # Aggregate the CPU values in the avg table
                     mt = f"{proc}_{metric}"
-                    # Slice only to the length of the table columns
-                    table[mt] = cpu_item[proc][metric]["data"][: k_lens[0]]
-
-                pp = pprint.PrettyPrinter(width=41, compact=True)
-                logger.info(f"Table (after aggregating {proc} CPU avg data):")
-                logger.info(pp.pprint(table))
+                    if top_filter_type == "threads":
+                        # Slice only to the length of the table columns
+                        table[mt] = cpu_item[proc][metric]["data"][: k_lens[0]]
+                    else:  # cores based top filter
+                        table[mt] = cpu_item[proc][metric]
+                    
+        logger.info("Table (after aggregating top avg data):")
+        logger.info(pp.pprint(table))
 
 
 def _aggregate_proc_cpu_avg_(avg, table, avg_cpu, proc):
@@ -728,7 +794,9 @@ def gen_table(dict_files, config: str, title: str, avg_cpu: dict, multi=False):
         f.write(mdtxt)
         f.close()
 
-    gen_plot(config, gplot, list_subtables, title, header_keys)
+    # We probably only need to plot if the number of rows in the table > 1
+    if len(dict_files.keys()) > 1:
+        gen_plot(config, gplot, list_subtables, title, header_keys)
     logger.info("Done")
 
 
@@ -768,6 +836,7 @@ def load_avg_cpu_json(json_fname):
                 logger.info(
                     f"Loaded CPU avg JSON file: {json_fname}, keys: {cpu_avg_data.keys()}"
                 )
+                #top_filter_type = "cores"
                 # each tiem is a dictionary with main keys:"avg_per_core" and "avg_per_run"
                 # We only need "avg_per_run" indexed by the process group name
                 # Shall we call the function aggregate_proc_cpu_avg() immediately?
@@ -779,6 +848,7 @@ def load_avg_cpu_json(json_fname):
                 logger.info(
                     f"Loaded CPU avg JSON file: {json_fname}, num items: {len(cpu_avg_list)}"
                 )
+                #top_filter_type = "threads"
             return cpu_avg_list
     except IOError as e:
         raise argparse.ArgumentTypeError(str(e))

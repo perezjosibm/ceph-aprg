@@ -46,8 +46,8 @@ fun_get_json_from_dict(){
     local -n dict=$1
 
     for key in "${!dict[@]}"; do
-        echo "\"$i\""
-        echo "${dict[$i]}"
+        echo "\"$key\""
+        echo "\"${dict[$key]}\""
     done | 
         jq -n 'reduce inputs as $i ({}; . + { ($i): input })'
 }
@@ -79,3 +79,15 @@ fun_get_diskstats(){
     fun_get_json_from ${TEST_NAME} "jc --pretty /proc/diskstats" ${OUTFILE}
 }
 
+#########################################
+# Produce a thread list per process id
+# # TBC. extend for a list of pids
+fun_get_threads_list(){
+    local PID=$1
+    local OUTFILE=$2
+    # ps -T -p ${PID} --no-headers | awk '{print $2}' | tr '\n' ' '
+    ps -p ${PID} -L -o pid,tid,comm,psr --no-headers > _threads.out
+    taskset -acp ${PID} > _tasks.out
+    paste _threads.out _tasks.out >> "${OUTFILE}"
+    rm -f  _threads.out _tasks.out
+}

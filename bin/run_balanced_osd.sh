@@ -233,7 +233,7 @@ fun_run_fio(){
 #########################################
   # Oficial FIO command:
   # x: skip response curves stop heuristic, n:no flamegraphs
-  cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -t ${OSD_TYPE}"
+  cmd="/root/bin/run_fio.sh -s ${OPTS} -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -t ${OSD_TYPE}"
 #########################################
   # Experimental: -w for single, and -k for skipping OSD monitoring
   #cmd="/root/bin/run_fio.sh -s ${OPTS} -w sr -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR}"
