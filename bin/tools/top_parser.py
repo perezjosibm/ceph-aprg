@@ -435,6 +435,7 @@ class TopParser(object):
             logger.info(
                 f"avg_per_core: {pp.pformat(self.proc_groups[pg]['avg_per_core'])}"
             )
+        # Need to include memory metrics -- this is per proc group only, not per core
 
     def _gen_core_plot(self):
         """
@@ -557,7 +558,7 @@ class TopParser(object):
                 f"{pg} CPU core utilisation",
                 self.avg_cpus_size,
             )
-        # Need to transverse the dict of avg_per_core
+        # Need to transverse the dict of navg_per_core
         # for coreid in self.avg_cpus['avg_per_core'].keys(): # one row per CPU core -- prob need one chart per metric
         #     apc_dict = { m:  self.avg_cpus['avg_per_core'][coreid][m] for m in self.core_cpu_metrics }
         # plot.genCorePlot(self.avg_cpus['avg_per_core'][coreid], f"core_{coreid}", "CPU core utilisation", self.avg_cpus_size)

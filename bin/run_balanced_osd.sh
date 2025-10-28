@@ -332,8 +332,8 @@ fun_run_fixed_bal_tests() {
           echo "$(date) Starting FIO..."
           #( fun_run_fio $test_name ) & 
           #fio_pid=$!
-          fun_run_fio $test_name 
-          echo "$(date) FIO ${fio_pid} started"
+          fun_run_fio "$test_name" "${test_row[fio_workload]}"
+          echo "$(date) FIO ${fio_pid} started: $test_name ${test_row[fio_workload]}"
           # Start watchdog: modified to run as a background job (subsell) since the pid returned was the 
           # same as this running script , so it killed itself!
           echo "$(date) Starting watchdog..."

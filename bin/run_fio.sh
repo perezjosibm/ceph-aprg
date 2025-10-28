@@ -64,6 +64,16 @@ declare -A osd_id
 declare -A fio_id
 declare -a global_fio_id=()
 
+# TBC. select which perf options to use via test_plan.json
+declare -A perf_options=(
+    [freq]="cpu-clock"
+    [cache]="cache-references,cache-misses"
+    [branch]="branches,branch-misses"
+    [context]="context-switches,cpu-migrations,page-faults"
+    [instructions]="cycles,instructions"
+    [default]="context-switches,cpu-migrations,cpu-clock,task-clock,cache-references,cache-misses,branches,branch-misses,page-faults,cycles,instructions"
+    [core]="--no-aggr -a --per-core --per-thread" # --cpu=<cpu-list>
+)
 # Default values that can be changed via arg options
 # Or even betterm via test_plan.json
 FIO_JOBS=/root/bin/rbd_fio_examples/
@@ -90,6 +100,9 @@ STOP_CLEAN=false
 NUM_ATTEMPTS=3 # number of attempts to run the workload
 SUCCESS=0
 FAILURE=1
+
+# Consider a better way of setting the top filter:
+TOP_FILTER="cores"
 
 source /root/bin/common.sh
 
@@ -150,7 +163,10 @@ fun_perf() {
   # We might add --cpu <cpu> option for the OSD cores
   #local ts=${TEST_NAME}_$(date +%Y%m%d_%H%M%S)_perf_stat.json
   local ts=${TEST_NAME}_perf_stat.json
-  perf stat -i -p ${PID} -j -o ${ts} -- sleep ${RUNTIME} 2>&1 >/dev/null
+  #perf stat -i -p ${PID} -j -o ${ts} -- sleep ${RUNTIME} 2>&1 >/dev/null
+  perf stat -e "${perf_options[default]}" -i -p ${PID} -j -o ${ts} -- sleep ${RUNTIME} 2>&1 >/dev/null & 
+  ts=${TEST_NAME}_perf_core.json
+  perf stat "${perf_options[core]}" -j -o ${ts} -- sleep ${RUNTIME} 2>&1 >/dev/null &
 }
 
 #############################################################################################
@@ -261,7 +277,11 @@ fun_set_globals() {
     TOP_OUT_LIST="${TEST_RESULT}_top_list"
     TOP_PID_LIST="${TEST_RESULT}_pid_list"
     TOP_PID_JSON="${TEST_RESULT}_pid.json"
-    OSD_CPU_AVG="${TEST_RESULT}_cpu_avg.json"
+    if [ "${TOP_FILTER}" == "cores" ]; then
+        OSD_CPU_AVG="${TEST_RESULT}_cores.json"
+    else
+        OSD_CPU_AVG="${TEST_RESULT}_cpu_avg.json"
+    fi
     DISK_STAT="${TEST_RESULT}_diskstat.json"
     DISK_OUT="${TEST_RESULT}_diskstat.out"
     # Produce the keymap.json:
@@ -422,6 +442,24 @@ fun_run_workload() {
 } # end of fun_run_workload
 
 #############################################################################################
+# TBC. use a dict/hash to select the top filter: cores or threads based
+fun_filter_top() {
+    local TOP_FILE=$1 
+
+    if [ "${TOP_FILTER}" == "cores" ]; then
+        # We might produce both of threads based CPU util and cores based, but only use core based for now
+        /root/bin/tools/top_parser.py -t svg -p ${TOP_PID_JSON} ${TOP_FILE} ${OSD_CPU_AVG} 2>&1 > /dev/null
+    else
+        # Disabling termporarily
+        cat ${TOP_FILE} | jc --top --pretty > ${TEST_RESULT}_top.json
+        python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
+            --pids=${TOP_PID_JSON} 2>&1 > /dev/null
+        # Remove the top.json file to save space
+        rm -f ${TEST_RESULT}_top.json
+    fi
+}
+
+#############################################################################################
 fun_post_process() {
     # local TEST_PREFIX=$1
     # local TEST_RESULT=$2
@@ -435,25 +473,19 @@ fun_post_process() {
         fio_pids=$( fun_join_by ',' ${global_fio_id[@]} )
         echo "FIO: $fio_pids" >> ${TOP_PID_LIST}
         printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
-        # CPU avg, so we might add a condttion (or option) to select which
         # When collecting data for response curves, produce charts for the cummulative pid list
-        cat ${TEST_RESULT}_top.out | jc --top --pretty > ${TEST_RESULT}_top.json
-        python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
-            --pids=${TOP_PID_JSON} 2>&1 > /dev/null
+        fun_filter_top ${TEST_RESULT}_top.out 
     else
         #  single top out file with OSD and FIO CPU util
         for x in $(cat ${TOP_OUT_LIST}); do
             # CPU avg, so we might add a condttion (or option) to select which
             # When collecting data for response curves, produce charts for the cummulative pid list
             if [ -f "$x" ]; then
-                cat $x | jc --top --pretty > ${TEST_RESULT}_top.json
-                python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${OSD_CPU_AVG} \
-                    --pids=${TOP_PID_JSON} 2>&1 > /dev/null
-                # We always calculate the arithmetic avg, the perl script has got a new flag
-                # to indicate whether we skip producing individual charts
+                fun_filter_top ${x}
             fi
         done
     fi
+
     # Post processing: FIO .json
     if [ -f  ${OSD_TEST_LIST} ] && [ -f  ${OSD_CPU_AVG} ]; then
         # Filter out any FIO high latency error from the .json, otherwise the Python script bails out
@@ -462,6 +494,7 @@ fun_post_process() {
         done
         python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
     fi
+
     # Post processing: OSD dump_metrics .json -- disabling this since we are no longer using it
     # for x in $(ls osd*_dump_*.json); do
     #   cat $x | jq '[paths(values) as $path | {"key": $path    | join("."), "value": getpath($path)}] | from_entries' > /tmp/temposd.json

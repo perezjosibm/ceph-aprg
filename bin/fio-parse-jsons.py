@@ -15,6 +15,9 @@
 # -a <file_name> - a JSON filename with the CPU average list, normally
 # produced by the parse-top.py script.
 #
+# -u <file_name> - a JSON filename with the CPU core average per proc group (eg, OSD, FIO), normally
+# produced by the top_parser.py script.
+#
 # -d <dir> - work directory
 #
 # -m - flag to indicate whether the run is for MultiFIO
@@ -479,7 +482,7 @@ def aggregate_cpu_avg(avg, table, avg_cpu):
         logger.info(pp.pprint(table))
 
 
-def aggregate_proc_cpu_avg(avg, table, avg_cpu, proc):
+def aggregate_proc_cpu_avg(avg, table, avg_cpu):
     """
     This function assumes that the avg .JSON file contains the following fields:
     avg$VAR1 = {
@@ -494,24 +497,28 @@ def aggregate_proc_cpu_avg(avg, table, avg_cpu, proc):
         'OSD' => { similar dict }
         TBC: need to use the timestamp to match the FIO runs
     """
-    # Check that the length of avg_cpu is the same as the number of dict_files.keys(), that is, eeach column in table has the same length
+    # Check that the length of avg_cpu is the same as the number of dict_files.keys(), 
+    # that is, eeach column in table has the same length
     k_lens = [len(table[k]) for k in table.keys()]
     if len(set(k_lens)) != 1:
         logger.error(f"Table columns have different lengths: {k_lens}")
         return
     if len(avg_cpu):
         logger.info(f" avg_cpu list has: {len(avg_cpu)} items")
+        # This depends on the layout of the avg_cpu .json file: we might define
+        # the type being used when we load it
         for cpu_item in avg_cpu:
-            if proc in cpu_item:
-                for metric in cpu_item[proc]:  # 'cpu', 'mem' from the OSD
+            for proc in cpu_item:  # 'OSD', 'FIO' from the avg CPU .json
+                for metric in cpu_item[proc]:  # 'cpu', 'mem' from the OSD: we might
+                    # indicate which keys to use in a dictionary when we recognise the layout
                     # Aggregate the CPU values in the avg table
                     mt = f"{proc}_{metric}"
                     # Slice only to the length of the table columns
                     table[mt] = cpu_item[proc][metric]["data"][: k_lens[0]]
 
-        pp = pprint.PrettyPrinter(width=41, compact=True)
-        logger.info(f"Table (after aggregating {proc} CPU avg data):")
-        logger.info(pp.pprint(table))
+                pp = pprint.PrettyPrinter(width=41, compact=True)
+                logger.info(f"Table (after aggregating {proc} CPU avg data):")
+                logger.info(pp.pprint(table))
 
 
 def _aggregate_proc_cpu_avg_(avg, table, avg_cpu, proc):
@@ -567,9 +574,11 @@ def gen_table(dict_files, config: str, title: str, avg_cpu: dict, multi=False):
     fio_[d+]cores_[d+]img_[d+]job_[d+]io_[4k|64k|128k|256k]_[rw|rr|sw|sr].json
     Each row of the table is the results from a run in a single .json
 
-    The avg_cpu is a list of dict each with keys 'sys' and 'us', containing values per cpu core
-    This list of dicts now also has an entry for the process groups (eg OSD, FIO) which the
-    response curves use.
+    The avg_cpu is a list of dict, which can be of two different types:
+    - thread-based: generated from parse-top.py for each proc group (eg. OSD, FIO)
+    each with keys 'sys' and 'us', containing values per cpu core
+    - core-based: generated from top_parser.py for each proc group (eg. OSD, FIO)
+    each with keys 'cpu' and 'mem', containing values per cpu core
 
     The optional multi option (would be deprecated) is used to differentiate between multiple FIO instances,
     which involve several .json files all from a concurrent execution (within the same timespan),
@@ -595,8 +604,9 @@ def gen_table(dict_files, config: str, title: str, avg_cpu: dict, multi=False):
     # annotate the avg_cpu to be a dict with main key the version, and data
     # layout type. And a separate function to aggregate the data accordingly.
 
-    for pname in ("OSD", "FIO"):
-        aggregate_proc_cpu_avg(avg, table, avg_cpu, pname)
+    #for pname in ("OSD", "FIO"):
+    # Move this loop inside aggregate_proc_cpu_avg() since the keys (proc group names) are in the avg_cpu .json file
+    aggregate_proc_cpu_avg(avg, table, avg_cpu)
 
     save_table_json(table, config.replace("_list", ".json"))
     # Note: in general the CPU measurements are global across the test time
@@ -754,14 +764,17 @@ def load_avg_cpu_json(json_fname):
             cpu_avg_data = json.load(f)
             # Check if it contains as keys the process group names (OSD, FIO, etc)
             if isinstance(cpu_avg_data, dict):
+                # Cores based CPU avg samples -- produced by top_parser.pl
                 logger.info(
                     f"Loaded CPU avg JSON file: {json_fname}, keys: {cpu_avg_data.keys()}"
                 )
                 # each tiem is a dictionary with main keys:"avg_per_core" and "avg_per_run"
                 # We only need "avg_per_run" indexed by the process group name
+                # Shall we call the function aggregate_proc_cpu_avg() immediately?
                 for _pg, _avg_cpu in cpu_avg_data.items():
                     cpu_avg_list.append({_pg: _avg_cpu["avg_per_run"]})
             elif isinstance(cpu_avg_data, list):
+                # threads based CPU avg samples -- produced by parse-top.pl
                 cpu_avg_list = cpu_avg_data
                 logger.info(
                     f"Loaded CPU avg JSON file: {json_fname}, num items: {len(cpu_avg_list)}"
