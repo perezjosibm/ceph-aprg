@@ -19,48 +19,16 @@
   "metric-value": "3.495550",
   "metric-unit": "CPUs utilized"
 }
-{
-  "counter-value": "3512138111291.000000",
-  "unit": "",
-  "event": "cycles",
-  "event-runtime": 1263725592538,
-  "pcnt-running": 100.00,
-  "metric-value": "2.779194",
-  "metric-unit": "GHz"
-}
-{
-  "counter-value": "2172342000034.000000",
-  "unit": "",
-  "event": "instructions",
-  "event-runtime": 1263725592538,
-  "pcnt-running": 100.00,
-  "metric-value": "0.618524",
-  "metric-unit": "insn per cycle"
-}
-{
-  "counter-value": "67580275195.000000",
-  "unit": "",
-  "event": "cache-references",
-  "event-runtime": 1263725592538,
-  "pcnt-running": 100.00,
-  "metric-value": "53.477017",
-  "metric-unit": "M/sec"
-}
-{
-  "counter-value": "37969877886.000000",
-  "unit": "",
-  "event": "cache-misses",
-  "event-runtime": 1263725592538,
-  "pcnt-running": 100.00,
-  "metric-value": "56.184852",
-  "metric-unit": "of all cache refs"
-}
+:
+Since eachg file the data is not properly a .json the whole file, we need to parse it as a sequence of dictionaries ( ie. parse each line as a valid json dict).
+
 
     In which case, the parsing would be the same:
+
     For each dictionary, extract the "event" as the metric name,
-    the "metric-value" as the value, and we chart those, the x-axis is the sample item
+    the "metric-value" as the (normally numeric) value, and we chart those, the x-axis is the sample item
     (labelled by the timestamp and .json filename from which it was extracted).
-    The y-axis is the metric value, with the unit from "metric-unit".
+    The y-axis is the metric value, with the unit from "metric-unit". We might require one chart per metric.
 """
 
 import argparse
@@ -95,6 +63,7 @@ FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
 # logging.getLogger("pandas").setLevel(logging.WARNING)
 pp = pprint.PrettyPrinter(width=61, compact=True)
 
+DEFAULT_PLOT_EXT="png"
 
 class PerfStatMetric(object):
     """
@@ -102,35 +71,61 @@ class PerfStatMetric(object):
     perf stat, normally from  the OSD process.
     """
     DEFAULT_EXT="_perf_stat.json"
+    DEFAULT_REGEX=r'^.*job_(\d+)io_.*perf_stat\.json$'
 
     def __init__(self, options: argparse.Namespace):
         self.options = options
         self.df = {}
         self.data = {}
         self.metric_units = {}
-        self.workload = "unknown_workload"
+        self.workload = self.options.workload #"unknown_workload" or self.options.workload
+        self.plot_ext = self.options.plot_ext
 
     def __str__(self):
         return f"PerfStatMetric: {self.df} "
 
+    def load_perf_json_file(self, filepath: str) -> List[Dict[str, Any]]:
+        """
+        Loads a single perf_stat.json file and returns the list of dictionaries
+        representing the metrics.
+        Need to read each line, convert as json, then append to a list.
+        """
+        #file_data = load_json(filepath)
+        file_data = []
+        with open(filepath, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        entry = json.loads(line)
+                        file_data.append(entry)
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Error decoding JSON line in {filepath}: {line}\n{e}")
+        return file_data
+
     def load_files(self) -> Dict[str, Any]:
         """
-        Loads all the .json files in the given directory
+        Loads all the perf_stat.json files in the given directory.
         Returns a list of dictionaries with the parsed data
         """
-        data = { 'samples': [] }
-        #file_list = glob.glob('*' + self.DEFAULT_EXT)
-        for filename in os.listdir(self.options.directory):
-            if filename.endswith(self.DEFAULT_EXT):
-                # Extract the workload from the filename
-                match = re.match(r'^(.*?)_perf_stat\.json$', filename)
-                if match:
-                    self.workload = match.group(1)
-                if filename not in data['samples']:
-                    data['samples'].append(filename)
+        samples = self.options.samples
+        data = { samples: [] }
+        file_list = glob.glob('*' + self.DEFAULT_EXT)
+        #for filename in os.listdir(self.options.directory):
+        # Sort the files according to the iodepth extracted from the filename using DEFAULT_REGEX:
+        file_list.sort(key=lambda x: int(re.match(self.DEFAULT_REGEX, x).group(1)) if re.match(self.DEFAULT_REGEX, x) else 0)
+        logger.debug(f"file_list: {pp.pformat(file_list)}")
+
+        for filename in file_list:
+            # Extract the iodepth of the sample from the filename:
+            match = re.match(self.DEFAULT_REGEX, filename)
+            if match:
+                iodepth = match.group(1)
+                if iodepth not in data[samples]:
+                    data[samples].append(int(iodepth))
                 filepath = os.path.join(self.options.directory, filename)
                 logger.debug(f"Loading file: {filepath}")
-                file_data = load_json(filepath)
+                file_data = self.load_perf_json_file(filepath)
                 if file_data:
                     #timestamp = self.extract_timestamp_from_filename(filename)
                     for entry in file_data:
@@ -146,7 +141,7 @@ class PerfStatMetric(object):
                             self.metric_units[metric_name] = metric_unit
                         #key = f"{filename}:{entry['event']}"
         return data
-        
+
     def _plot_data(self):
         """
         Plots the data using polars
@@ -199,7 +194,7 @@ class PerfStatMetric(object):
 
         chart =  (
             metric_df.plot.point(
-                x="samples",
+                x=self.options.samples, #"samples",
                 y=metric_name,
                 #color="species",
             )
@@ -207,9 +202,9 @@ class PerfStatMetric(object):
             .configure_scale(zero=False)
             .configure_axisX(tickMinStep=1)
         )
-        chart.encoding.x.title = "Samples"
+        chart.encoding.x.title = self.options.samples
         chart.encoding.y.title = metric_unit
-        chart.save(f"{self.workload}_{metric_name}.svg")
+        chart.save(f"{self.workload}_{metric_name}.{self.plot_ext}")
         #chart.save(f"{self.workload}_{metric_name}.png")
 
     def plot_data(self):
@@ -232,6 +227,9 @@ class PerfStatMetric(object):
         """
         os.chdir(self.options.directory)
         self.data = self.load_files()
+        logger.info(f"Data is: {pp.pprint(self.data)}")
+        save_json(os.path.join(self.options.directory, f"{self.workload}_perf_stat_metrics.json"),self.data, sort_keys=True)
+        self.plot_data()
 
 def main(argv):
     examples = """
@@ -254,6 +252,21 @@ def main(argv):
     parser.add_argument(
         "-d", "--directory", type=str, help="Directory to examine", default="./"
     )
+    parser.add_argument(
+        "-w", "--workload", 
+        type=str,
+        help="workload name (soon to be deprecated by extracting from test_plan.json)", default="WORKLOAD"
+    )
+    parser.add_argument(
+        "-s", "--samples", 
+        type=str,
+        help="samples name (i.e 'íodepth')", default="iodepth"
+    )
+    parser.add_argument(
+    "-t", "--plot_ext", 
+    type=str,
+    help="Either .png or .svg", default=DEFAULT_PLOT_EXT
+    ) 
     parser.add_argument(
         "-v",
         "--verbose",

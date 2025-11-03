@@ -357,7 +357,10 @@ def gen_plot(config: str, data: str, list_subtables, title: str, header_keys: di
         #"OSD_cpu": 8,
         "OSD_user": "8",
         #'OSD_mem': 9,
-        "FIO_user": "10",
+        "OSD_sys": "10",
+        "OSD_wait": "11",
+        "OSD_idle": "12",
+        #"FIO_user": "10",
         #"FIO_cpu": 10,
         #'FIO_mem': 11,
     }
