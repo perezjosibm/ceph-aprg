@@ -20,15 +20,18 @@
   "metric-unit": "CPUs utilized"
 }
 :
-Since eachg file the data is not properly a .json the whole file, we need to parse it as a sequence of dictionaries ( ie. parse each line as a valid json dict).
+Since eachg file the data is not properly a .json the whole file, we need to
+parse it as a sequence of dictionaries ( ie. parse each line as a valid json
+dict).
 
 
     In which case, the parsing would be the same:
 
-    For each dictionary, extract the "event" as the metric name,
-    the "metric-value" as the (normally numeric) value, and we chart those, the x-axis is the sample item
-    (labelled by the timestamp and .json filename from which it was extracted).
-    The y-axis is the metric value, with the unit from "metric-unit". We might require one chart per metric.
+    For each dictionary, extract the "event" as the metric name, the
+    "metric-value" as the (normally numeric) value, and we chart those, the
+    x-axis is the sample item (labelled by the timestamp and .json filename
+    from which it was extracted). The y-axis is the metric value, with the unit
+    from "metric-unit". We might require one chart per metric.
 """
 
 import argparse
@@ -136,7 +139,7 @@ class PerfStatMetric(object):
                         if metric_value is not None:
                             if metric_name not in data:
                                 data[metric_name] = [] 
-                        data[metric_name].append( metric_value )
+                        data[metric_name].append( float(metric_value) )
                         if metric_name not in self.metric_units:
                             self.metric_units[metric_name] = metric_unit
                         #key = f"{filename}:{entry['event']}"
