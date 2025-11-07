@@ -667,9 +667,9 @@ class PerfMetricEntry(object):
             accum: Dict[str, Any], metric: Dict[str, Any]
         ) -> Dict[str, Any]:
             """
-            Aggregate the metric into the accum dict.
-            Get the aggregated metric as a dataframe, this is a dict with the keys the attributes of the metric, and values
-            as lists to which we append the new values
+            Aggregate the metric into the accum dict. Get the aggregated metric
+            as a dataframe, this is a dict with the keys the attributes of the
+            metric, and values as lists to which we append the new values
             return pd.DataFrame(metric)
             """
             for k, v in metric.items():
@@ -689,15 +689,15 @@ class PerfMetricEntry(object):
             return False 
 
         def _update_shard_value_only(
-            metric_name: str, item: Dict[str, Any], result: Dict[str, Any]
+            metric_name: str, item: Dict[str, Any], result: Dict[int, Any]
         ) -> None:
             """
-            Update the result dict with the shard and value only, this is a simplified version
+            Update the result dict with the scalar metric: the one that only has shard and value. 
             This is a dict with keys the shard names, values dicts with keys the metric names,
             and values the list of measurements
             """
             try:
-                _shard = item[metric_name]["shard"]
+                _shard = int(item[metric_name]["shard"])
                 if _shard not in result:
                     result.update({_shard: {}})
                 if metric_name not in result[_shard]:
@@ -1162,13 +1162,10 @@ class PerfMetricEntry(object):
         for d in self.perf_dump:
             ts = d.get("timestamp", "")
             self.perf_data[ts] = self.filter_metrics(d.get("data", []))
-             
         #self.ds_list = [self.filter_metrics(d) for d in self.perf_dump.get("data", [])]
         #logger.info(f"ds_list: {pp.pformat(self.perf_data)}")
         #logger.info( f"families: {pp.pformat(self.m_families)}" )  # Reduce them to dataframes
         # Traverse the families to produce a dataframe per family 
-
-
 
     def load_config(self):
         """

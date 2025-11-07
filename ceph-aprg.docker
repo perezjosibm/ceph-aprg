@@ -36,6 +36,7 @@ yum install clang-19.1.7-1.el9
 # Extra packages needed to run cbt
 RUN yum install python3-lxml -y
 RUN yum install python3-yaml -y
+RUN yum install python3-debug.x86_64 -y
 RUN yum install gnuplot -y
 RUN yum install vim -y
 # The following two might no longer be needed, check

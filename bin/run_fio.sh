@@ -41,9 +41,17 @@ declare -A mode=([rw]=write [rr]=read [sw]=write [sr]=read
 # Typical values as observed during discovery sprint:
 # Single FIO instances: for sequential workloads, bs=64k fixed
 # Need to be valid ranges
+RAND_IODEPTH_RANGE="1 2 4 8 16 24 32 40 52 64"
+SEQ_IODEPTH_RANGE="1 2 3 4 6 8 10 12 14 16"
 # Option -w (WORKLOAD) is used as index for these:
 # We need to refine the values for hockey so that each workload has its own list of iodepth/numjobs
-declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="1 2 4 8 16 24 32 40 52 64"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 [rr_norm]=16 [rw_norm]=16 [rr_zipf]=16 [rw_zipf]=16 [rr_zoned]=16 [rw_zoned]=16)
+#declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="${RAND_IODEPTH_RANGE}"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 [rr_norm]=16 [rw_norm]=16 [rr_zipf]=16 [rw_zipf]=16 [rr_zoned]=16 [rw_zoned]=16) # Original
+#declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="1 2 4 8 16 24 32 40 52 64"  [rw]="1 2 4 8 16 24 32 40 52 64" [rr]=16 [sw]=14 [sr]=16 [rr_norm]=16 [rw_norm]=16 [rr_zipf]=16 [rw_zipf]=16 [rr_zoned]=16 [rw_zoned]=16) # 400GB_1hr_rw_rc
+
+declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="${RAND_IODEPTH_RANGE}" 
+[rw]="${RAND_IODEPTH_RANGE}" [rr]="${RAND_IODEPTH_RANGE}" [sw]="${SEQ_IODEPTH_RANGE}" [sr]="${SEQ_IODEPTH_RANGE}" 
+[rr_norm]=16 [rw_norm]=16 [rr_zipf]=16 [rw_zipf]=16 [rr_zoned]=16 [rw_zoned]=16) # 400GB_1hr_all_rc
+
 declare -A m_s_numjobs=( [ex8osd]="1 4 8" [hockey]="1"  [rw]=1  [rr]=16 [sw]=1  [sr]=1 [rr_norm]=16 [rw_norm]=4 [rr_zipf]=16 [rw_zipf]=4 [rr_zoned]=16 [rw_zoned]=4)
 #declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
 
@@ -376,7 +384,9 @@ fun_watchdog_proc() {
         WATCHDOG=false
 
         echo "== $(date) == Watchdog: Process ${PROC_NAME} (pid: ${PROC_PID}) has exited! =="
-        if wait ${PROC_PID}; then
+	wait ${PROC_PID}
+	rc=$?
+        if [[ $rc -eq  0 ]] || [[ $fio_rc -eq 0 ]]; then
             echo "== $(date) == Watchdog: Process ${PROC_NAME} (pid: ${PROC_PID}) completed successfully! =="
             return 0
         else

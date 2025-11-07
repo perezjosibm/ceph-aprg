@@ -6,11 +6,14 @@
 STORE_DEVS='/dev/nvme9n1p2' # dual OSD
 #STORE_DEVS='/dev/nvme9n1p2' # single OSD
 #STORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2,/dev/nvme2n1p2,/dev/nvme6n1p2,/dev/nvme3n1p2,/dev/nvme5n1p2,/dev/nvme0n1p2,/dev/nvme4n1p2'
-export NUM_RBD_IMAGES=32
-export RBD_SIZE=2GB #500GB
-export RUNTIME=43200 # (60 * 60 * 12) , default 300sec
-export NUM_SAMPLES=72 # 30
-export DELAY_SAMPLES=600 # 5sec default
+export NUM_RBD_IMAGES=4
+export RBD_SIZE=400GB #500GB
+# These timings are in seconds
+#export RUNTIME=600 # (10 mins) -- response curves
+export RUNTIME=3600 # (1 hr)
+export DELAY_SAMPLES=300 # 5 min delay between samples
+# This is just the ration RUNTIME div by DELAY_SAMPLES:
+export NUM_SAMPLES=$(( RUNTIME / DELAY_SAMPLES ))
 
 # Test plan: to be extended to a .json file
 # For Classic OSD, we can only vary the number of OSDs, since there is no reactor model

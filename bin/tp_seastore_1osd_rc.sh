@@ -8,9 +8,10 @@ STORE_DEVS='/dev/nvme9n1p2' # dual OSD
 #STORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2,/dev/nvme2n1p2,/dev/nvme6n1p2,/dev/nvme3n1p2,/dev/nvme5n1p2,/dev/nvme0n1p2,/dev/nvme4n1p2'
 export NUM_RBD_IMAGES=32
 export RBD_SIZE=2GB #500GB
-export RUNTIME=43200 # (60 * 60 * 12) , default 300sec
-export NUM_SAMPLES=72 # 30
-export DELAY_SAMPLES=600 # 5sec default
+#export RUNTIME=43200 # (60 * 60 * 12) , default 300sec
+export RUNTIME=180 # (60 * 3 )
+export DELAY_SAMPLES=5 # delay between samples in secs
+export NUM_SAMPLES=$(( RUNTIME / DELAY_SAMPLES ))
 
 # Test plan: to be extended to a .json file
 # For Classic OSD, we can only vary the number of OSDs, since there is no reactor model
@@ -21,7 +22,7 @@ test_row['osd']="1"
 test_row['reactor_range']="56" #14 28 56 # Number of reactors, can be a range
 #test_row['nat']="$NUM_ALIEN_THREADS" ## do not apply for Seastore
 test_row['fio']="$FIO_CPU_CORES"
-test_row['fio_workload']="-j -w rw -r"
+test_row['fio_workload']="-j -w hockey -r -a "
 test_row['store_devs']="${STORE_DEVS}"
 test_row['classic_cpu']="${OSD_CPU}"
 string=$(declare -p test_row)
