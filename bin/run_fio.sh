@@ -215,35 +215,57 @@ fun_diskstats() {
 
 #############################################################################################
 # Probably best to refactor this to use shift and $@ instead of the fixed number of args 
+fun_osd_dump_start() {
+  local OUTFILE=$1
+  echo "[" > ${OUTFILE}
+}
+
+fun_osd_dump_end() {
+  local OUTFILE=$1
+  echo "]" >> ${OUTFILE}
+}
+
+#for oid in ${!osd_id[@]}; do
+#timestamp=$(date +'%Y-%m-%dT%H:%M:%S') 
+#echo "{ \"timestamp\": \"$timestamp\" }," >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
+#eval "$cmd" >> ${TEST_NAME}_${LABEL}.json
+#$cmd >> ${TEST_NAME}_${LABEL}.json
+#local start=$(! [ $i -eq 0 ]; echo $? )
+#local end=$(! [ $i -eq $((NUM_SAMPLES-1)) ]; echo $? )
+#done
+
 fun_osd_dump() {
-  local TEST_NAME=$1
-  local NUM_SAMPLES=$2
-  local SLEEP_SECS=$3
-  #local osd_type=$4
-  local OUTFILE=$4
-  local METRICS=$5 #"reactor_utilization"
+    local TEST_NAME=$1
+    local NUM_SAMPLES=$2
+    local SLEEP_SECS=$3
+    #local osd_type=$4
+    local OUTFILE=$4
+    local METRICS=$5 #"reactor_utilization" 
+    local end=$6 #|| "end"
 
-  if [ "${OSD_TYPE}" == "classic" ]; then
-      cmd="/ceph/build/bin/ceph tell osd.0 perf dump"
-  else
-      cmd="/ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS}"
-      # ceph tell osd.0 heap stats
-      # ceph daemon osd.0 perf histogram dump
-      # ceph daemon osd.0 perf dump
-  fi
+    if [ "${OSD_TYPE}" == "classic" ]; then
+        cmd="/ceph/build/bin/ceph tell osd.0 perf dump"
+    else
+        cmd="/ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS}"
+    fi
 
-  echo -e "${GREEN}== OSD type: ${OSD_TYPE}: num_samples: ${NUM_SAMPLES}: cmd:${cmd} ==${NC}"
-  for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
-    #for oid in ${!osd_id[@]}; do
-    # Use only osd.0 always
-     #timestamp=$(date +'%Y-%m-%dT%H:%M:%S') 
-     #echo "{ \"timestamp\": \"$timestamp\" }," >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
-      #eval "$cmd" >> ${TEST_NAME}_${LABEL}.json
-      #$cmd >> ${TEST_NAME}_${LABEL}.json
-      fun_get_json_from "${TEST_NAME}" "${cmd}" ${OUTFILE}
-    #done
-    sleep ${SLEEP_SECS};
-  done
+    echo -e "${GREEN}== OSD type: ${OSD_TYPE}: num_samples: ${NUM_SAMPLES}: cmd:${cmd} ==${NC}"
+    for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
+        # Use only osd.0 always
+        # If $end is not given, determine it here
+        if [ -z "${end}" ]; then
+            end=$( [ $i -eq $((NUM_SAMPLES-1)) ] && echo "end" || echo "" )
+        fi
+        fun_get_json_from "${TEST_NAME}" "${cmd}" ${OUTFILE} $end
+        if [ "${OSD_TYPE}" != "classic" ]; then
+            for dmp_stats in "dump_tcmalloc_stats" "dump_seastar_stats"; do
+                local lcmd="/ceph/build/bin/ceph tell osd.0 ${dmp_stats}"
+                local outfile=${TEST_NAME/_dump.json}_${dmp_stats}.json
+                fun_get_json_from "${TEST_NAME}" "${lcmd}" ${outfile} $end
+            done
+        fi
+        sleep ${SLEEP_SECS};
+    done
 }
 
 #############################################################################################
@@ -335,7 +357,8 @@ fun_run_workload_loop() {
     fun_set_globals $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD_NAME
 
     if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump "dump_before" 1 1 ${TEST_RESULT}_dump.json  # ${OSD_TYPE}
+        fun_osd_dump_start ${TEST_RESULT}_dump.json
+        fun_osd_dump "dump_before" 1 1 ${TEST_RESULT}_dump.json "" "dummy" # ${OSD_TYPE}
     fi
 
     for job in $RANGE_NUMJOBS; do
@@ -354,7 +377,8 @@ fun_run_workload_loop() {
                     echo -e "${GREEN}== Attempt $((num_attempts+1)) succeeded ==${NC}"
                     if [ "$SKIP_OSD_MON" = false ]; then
                         #timestamp=$(date +%Y%m%d_%H%M%S)
-                        fun_osd_dump "${TEST_NAME}" 1 1 ${TEST_RESULT}_dump.json  # ${OSD_TYPE}
+                        lcoal end=$( [ $io -eq $((RANGE_IODEPTH-1)) ] && echo "end" || echo "" )
+                        fun_osd_dump "${TEST_NAME}" 1 1 ${TEST_RESULT}_dump.json  "" $end # ${OSD_TYPE}
                     fi
                 fi
             done
@@ -365,6 +389,9 @@ fun_run_workload_loop() {
             fi
         done # loop IO_DEPTH
     done # loop num_jobs
+    if [ "$SKIP_OSD_MON" = false ]; then
+        fun_osd_dump_end ${TEST_RESULT}_dump.json
+    fi
     # Post processing:
     fun_post_process   
 }
@@ -402,6 +429,19 @@ fun_watchdog_proc() {
             exit 1 # Failure
         fi
     fi
+}
+
+#############################################################################################
+# Get reactor utilisation
+fun_get_reactor_util() {
+    local TEST_NAME=$1
+    local TEST_RESULT=$2
+    #local OUTFILE=$2
+
+    #fun_get_json_from "${TEST_NAME}" "/ceph/build/bin/ceph tell osd.0 dump_metrics reactor_utilization" ${OUTFILE}
+    fun_osd_dump_start ${TEST_RESULT}_rutil.json
+    fun_osd_dump ${TEST_NAME} 10 10  ${TEST_RESULT}_rutil.json "reactor_utilization"
+    fun_osd_dump_end ${TEST_RESULT}_rutil.json 
 }
 
 #############################################################################################
@@ -482,7 +522,7 @@ fun_run_workload() {
     if [ "$SKIP_OSD_MON" = false ]; then
         if  [ "${OSD_TYPE}" != "classic" ]; then
           #timestamp=$(date +%Y%m%d_%H%M%S)
-          ( fun_osd_dump ${TEST_NAME} 10 10  ${TEST_RESULT}_rutil.json "reactor_utilization" ) & # ${OSD_TYPE}
+          ( fun_get_reactor_util ${TEST_NAME} ${TEST_RESULT} ) & # ${OSD_TYPE}
         fi 
         fun_get_diskstats ${TEST_NAME} ${TEST_RESULT}_diskstats.json
     fi

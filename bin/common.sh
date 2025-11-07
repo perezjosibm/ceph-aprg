@@ -54,10 +54,14 @@ fun_get_json_from_dict(){
 
 #########################################
 # Get a json contents from the given cmd, always append to the outfile
+# the new arguments start and end the json object, to indicate when to use a separator ',' or not
+# Possible values could be 'start', 'end', 'single'
 fun_get_json_from(){
     local label=$1
     local cmd=$2
     local outfile=$3
+    local end=$4 # indicates whether this is the last json object to be added
+
     local ts=$(date +%Y%m%d_%H%M%S)
     local data=$( $cmd | jq . )
 
@@ -68,7 +72,9 @@ fun_get_json_from(){
         "data": ${data}
     }
 EOF
-    echo "$json" | jq . >> $outfile
+    local sep=""
+    [ "$end" != "end" ] && sep=","
+    echo "${json}${sep}" | jq . >> $outfile
 }
 
 #########################################
