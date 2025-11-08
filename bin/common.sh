@@ -56,7 +56,7 @@ fun_get_json_from_dict(){
 # Get a json contents from the given cmd, always append to the outfile
 # the new arguments start and end the json object, to indicate when to use a separator ',' or not
 # Possible values could be 'start', 'end', 'single'
-fun_get_json_from(){
+fun_get_json_from_cmd(){
     local label=$1
     local cmd=$2
     local outfile=$3
@@ -72,9 +72,10 @@ fun_get_json_from(){
         "data": ${data}
     }
 EOF
-    local sep=""
-    [ "$end" != "end" ] && sep=","
-    echo "${json}${sep}" | jq . >> $outfile
+    local sep=","
+    [ "$end" == "end" ] && sep=""
+    #echo "${json}${sep}" | jq . >> $outfile
+    echo "${json}${sep}" >> $outfile
 }
 
 #########################################
@@ -82,12 +83,12 @@ fun_get_diskstats(){
     # Get the diskstats before starting the test, should provide full path
     local TEST_NAME=$1
     local OUTFILE=$2
-    fun_get_json_from ${TEST_NAME} "jc --pretty /proc/diskstats" ${OUTFILE}
+    fun_get_json_from_cmd ${TEST_NAME} "jc --pretty /proc/diskstats" ${OUTFILE}
 }
 
 #########################################
 # Produce a thread list per process id
-# # TBC. extend for a list of pids
+# # TBC. extend for a list of pids and output to json
 fun_get_threads_list(){
     local PID=$1
     local OUTFILE=$2

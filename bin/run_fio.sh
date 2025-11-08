@@ -216,15 +216,34 @@ fun_diskstats() {
 #############################################################################################
 # Probably best to refactor this to use shift and $@ instead of the fixed number of args 
 fun_osd_dump_start() {
-  local OUTFILE=$1
-  echo "[" > ${OUTFILE}
+    local OUTFILE=$1
+    echo "[" > ${OUTFILE}
+}
+
+fun_osd_dump_stats_start() {
+    local OUTFILE=$1
+    if [ "${OSD_TYPE}" != "classic" ]; then
+        for dmp_stats in "dump_tcmalloc_stats" "dump_seastar_stats"; do
+            local outfile=${OUTFILE/_dump.json}_${dmp_stats}.json
+            echo "[" > ${outfile}
+        done
+    fi
 }
 
 fun_osd_dump_end() {
-  local OUTFILE=$1
-  echo "]" >> ${OUTFILE}
+    local OUTFILE=$1
+    echo "]" >> ${OUTFILE}
 }
 
+fun_osd_dump_stats_end() {
+    local OUTFILE=$1
+    if [ "${OSD_TYPE}" != "classic" ]; then
+        for dmp_stats in "dump_tcmalloc_stats" "dump_seastar_stats"; do
+            local outfile=${OUTFILE/_dump.json}_${dmp_stats}.json
+            echo "]" >> ${outfile}
+        done
+    fi
+}
 #for oid in ${!osd_id[@]}; do
 #timestamp=$(date +'%Y-%m-%dT%H:%M:%S') 
 #echo "{ \"timestamp\": \"$timestamp\" }," >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
@@ -234,7 +253,7 @@ fun_osd_dump_end() {
 #local end=$(! [ $i -eq $((NUM_SAMPLES-1)) ]; echo $? )
 #done
 
-fun_osd_dump() {
+fun_osd_dump_generic() {
     local TEST_NAME=$1
     local NUM_SAMPLES=$2
     local SLEEP_SECS=$3
@@ -243,6 +262,7 @@ fun_osd_dump() {
     local METRICS=$5 #"reactor_utilization" 
     local end=$6 #|| "end"
 
+    [ "$METRICS" == "none" ] && METRICS=""
     if [ "${OSD_TYPE}" == "classic" ]; then
         cmd="/ceph/build/bin/ceph tell osd.0 perf dump"
     else
@@ -254,19 +274,42 @@ fun_osd_dump() {
         # Use only osd.0 always
         # If $end is not given, determine it here
         if [ -z "${end}" ]; then
-            end=$( [ $i -eq $((NUM_SAMPLES-1)) ] && echo "end" || echo "" )
+            #end=$( [ $i -eq $((NUM_SAMPLES-1)) ] && echo "end" || echo "" )
+            [ $i -eq $(( NUM_SAMPLES-1 )) ] && end="end" || end="notyet"
         fi
-        fun_get_json_from "${TEST_NAME}" "${cmd}" ${OUTFILE} $end
-        if [ "${OSD_TYPE}" != "classic" ]; then
+        fun_get_json_from_cmd "${TEST_NAME}" "${cmd}" ${OUTFILE} $end
+
+        if [ "${OSD_TYPE}" != "classic" ] && [ -z "${METRICS}" ]; then
             for dmp_stats in "dump_tcmalloc_stats" "dump_seastar_stats"; do
                 local lcmd="/ceph/build/bin/ceph tell osd.0 ${dmp_stats}"
-                local outfile=${TEST_NAME/_dump.json}_${dmp_stats}.json
-                fun_get_json_from "${TEST_NAME}" "${lcmd}" ${outfile} $end
+                local outfile=${OUTFILE/_dump.json}_${dmp_stats}.json
+                fun_get_json_from_cmd "${TEST_NAME}" "${lcmd}" ${outfile} $end
             done
         fi
         sleep ${SLEEP_SECS};
     done
 }
+
+fun_osd_dump() {
+    local TEST_NAME=$1
+    local NUM_SAMPLES=$2
+    local SLEEP_SECS=$3
+    local OUTFILE=$4
+    local end=$5 
+
+    fun_osd_dump_generic ${TEST_NAME} ${NUM_SAMPLES} ${SLEEP_SECS} ${OUTFILE} "none" ${end}
+}
+
+fun_osd_dump_metrics() {
+    local TEST_NAME=$1
+    local NUM_SAMPLES=$2
+    local SLEEP_SECS=$3
+    local OUTFILE=$4
+    local METRICS=$5 #"reactor_utilization" 
+
+    fun_osd_dump_generic ${TEST_NAME} ${NUM_SAMPLES} ${SLEEP_SECS} ${OUTFILE} ${METRICS}
+}
+
 
 #############################################################################################
 # Decide wether use a simple profile, or latency_target, or a multijob (job per volume)
@@ -358,8 +401,15 @@ fun_run_workload_loop() {
 
     if [ "$SKIP_OSD_MON" = false ]; then
         fun_osd_dump_start ${TEST_RESULT}_dump.json
-        fun_osd_dump "dump_before" 1 1 ${TEST_RESULT}_dump.json "" "dummy" # ${OSD_TYPE}
+        fun_osd_dump_stats_start ${TEST_RESULT}_dump.json
+        fun_osd_dump "dump_before" 1 1 ${TEST_RESULT}_dump.json  "start" # ${OSD_TYPE}
     fi
+
+    declare -a list_io_depth=()
+    IFS=', ' read -r -a list_io_depth <<< "$RANGE_IODEPTH"
+    # for io in "${array[@]}"; do
+    #     list_io_depth+=( $io )
+    # done
 
     for job in $RANGE_NUMJOBS; do
         for io in $RANGE_IODEPTH; do
@@ -377,8 +427,8 @@ fun_run_workload_loop() {
                     echo -e "${GREEN}== Attempt $((num_attempts+1)) succeeded ==${NC}"
                     if [ "$SKIP_OSD_MON" = false ]; then
                         #timestamp=$(date +%Y%m%d_%H%M%S)
-                        lcoal end=$( [ $io -eq $((RANGE_IODEPTH-1)) ] && echo "end" || echo "" )
-                        fun_osd_dump "${TEST_NAME}" 1 1 ${TEST_RESULT}_dump.json  "" $end # ${OSD_TYPE}
+                        local end=$( [ "$io" == "${list_io_depth[-1]}" ] && echo "end" || echo "notyet" )
+                        fun_osd_dump "${TEST_NAME}" 1 1 ${TEST_RESULT}_dump.json $end # ${OSD_TYPE}
                     fi
                 fi
             done
@@ -391,6 +441,7 @@ fun_run_workload_loop() {
     done # loop num_jobs
     if [ "$SKIP_OSD_MON" = false ]; then
         fun_osd_dump_end ${TEST_RESULT}_dump.json
+        fun_osd_dump_stats_end ${TEST_RESULT}_dump.json
     fi
     # Post processing:
     fun_post_process   
@@ -411,8 +462,8 @@ fun_watchdog_proc() {
         WATCHDOG=false
 
         echo "== $(date) == Watchdog: Process ${PROC_NAME} (pid: ${PROC_PID}) has exited! =="
-	wait ${PROC_PID}
-	rc=$?
+        wait ${PROC_PID}
+        rc=$?
         if [[ $rc -eq  0 ]] || [[ $fio_rc -eq 0 ]]; then
             echo "== $(date) == Watchdog: Process ${PROC_NAME} (pid: ${PROC_PID}) completed successfully! =="
             return 0
@@ -432,15 +483,14 @@ fun_watchdog_proc() {
 }
 
 #############################################################################################
-# Get reactor utilisation
+# Get reactor utilisation: fixed to ten samples each 10 secs apart
 fun_get_reactor_util() {
     local TEST_NAME=$1
     local TEST_RESULT=$2
     #local OUTFILE=$2
-
     #fun_get_json_from "${TEST_NAME}" "/ceph/build/bin/ceph tell osd.0 dump_metrics reactor_utilization" ${OUTFILE}
     fun_osd_dump_start ${TEST_RESULT}_rutil.json
-    fun_osd_dump ${TEST_NAME} 10 10  ${TEST_RESULT}_rutil.json "reactor_utilization"
+    fun_osd_dump_metrics ${TEST_NAME} 10 10  ${TEST_RESULT}_rutil.json "reactor_utilization"
     fun_osd_dump_end ${TEST_RESULT}_rutil.json 
 }
 
@@ -485,15 +535,15 @@ fun_run_workload() {
             with RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} on cores ${FIO_CORES} ==";
         # Check return code from FIO
     done # loop NUM_PROCS
-    fun_get_threads_list "${fio_pids[0]}" "${TEST_NAME}_fio_threads.out" # "${fio_pids[@]}"
-    # Launch watchdog to monitor the first FIO process only
 
+    # Launch watchdog to monitor the first FIO process only
     echo "$(date) Starting watchdog over proc ${fio_id["fio_0"]} ..."
     WATCHDOG=true
     ( fun_watchdog_proc "FIO" ${fio_id["fio_0"]} ) &
     #( fun_watchdog_proc "FIO" ${fio_pids[@]} ) &
     WATCHDOG_PID=$!
     sleep 30; # ramp up time TBC. should be selectable from test_plan
+    #fun_get_threads_list "${fio_pids[0]}" "${TEST_RESULT}_fio_threads.out" # "${fio_pids[@]}"
 
     if [ "$SKIP_OSD_MON" = false ]; then
         # Prepare list of pid to monitor
