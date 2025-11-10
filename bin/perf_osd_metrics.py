@@ -22,17 +22,21 @@ import os
 import sys
 import re
 import json
+import glob
 import tempfile
 import pprint
 from datetime import datetime
-#from functools import reduce
+
+# from functools import reduce
+from abc import ABC, abstractmethod
 
 # import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-#import polars as pl
-#import datetime as dt
+
+# import polars as pl
+# import datetime as dt
 from typing import List, Dict, Any
 from common import load_json, save_json
 
@@ -47,7 +51,8 @@ logging.getLogger("matplotlib").setLevel(logging.WARNING)
 # logging.getLogger("pandas").setLevel(logging.WARNING)
 pp = pprint.PrettyPrinter(width=61, compact=True)
 
-DEFAULT_PLOT_EXT="png"
+DEFAULT_PLOT_EXT = "png"
+
 
 def _znormalisation(df):  # df: pd.DataFrame
     """
@@ -145,6 +150,74 @@ def get_max(a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
     return a_data
 
 
+class PerfMetric(ABC):
+    """
+    Abstract base class for performance metrics
+    The constructor expects a .json file with the performance metrics
+    the structure is as follows:
+    {
+        "timestamp": "20251031_135642",
+        "label": "dump_before",
+        "data": {
+            this varies according to subclass or type of metric, for example this is for dump_metrics:
+            "metrics": [
+                {
+                "LBA_alloc_extents": {
+                "shard": "0",
+                "value": 26781192192
+                },
+            :
+            ]
+    }
+    """
+
+    @abstractmethod
+    def parse(self, data: Dict[str, Any]) -> None:
+        """
+        Parse the input data
+        """
+        pass
+
+    @abstractmethod
+    def reduce(self, other: "PerfMetric") -> "PerfMetric":
+        """
+        Reduce the metric with another metric
+        """
+        pass
+
+    def __str__(self) -> str:
+        """
+        String representation of the metric
+        """
+        return json.dumps(self.__dict__, indent=4)
+
+    def to_df(self) -> pd.DataFrame:
+        """
+        Convert the metric to a pandas dataframe
+        """
+        return pd.DataFrame(self.__dict__)
+
+    @property
+    @abstractmethod
+    def species_info(self) -> Dict[str, Any]:
+        """
+        Return the species information as a dictionary
+        """
+        return self.__dict__
+
+    def __init__(self, options):
+        """
+        This constructor is a concrete method used by all subclasses. Expects the inpoout .json file
+        """
+        self.options = options
+        # REGEX according to class
+        # self.metric_name_re = self.DEFAULT_METRIC_REGEX
+        # Check that the input option regex is a valid regex
+        self.directory = options.directory
+        # We might no longer need this, unless info as type of OSD, etc would be required later on
+        self.config = {}
+
+
 class PerfMetricEntry(object):
     """
     Parses the .json from the output of:
@@ -167,11 +240,11 @@ class PerfMetricEntry(object):
 
     # Minimum set of metrics to consider, can be provided by tge config .json
     DEFAULT_METRIC_REGEX = [
+        re.compile(r"^(reactor_|memory_|cache_).*"),
         re.compile(
-            r"^(reactor_|memory_|cache_).*"
+            r"(io_queue_|segment_manager_|network_bytes_|scheduler_|journal_).*"
         ),
-        re.compile(r"(io_queue_|segment_manager_|network_bytes_|scheduler_|journal_).*") 
-    ] # , re.DEBUG)
+    ]  # , re.DEBUG)
     # Subfamilies: these are regexes to filter the metrics we are interested in
     # The following are the metrics we are interested in
     # These are the default if not specified in in the config file
@@ -194,23 +267,25 @@ class PerfMetricEntry(object):
             "reduce": "difference",
         },
         "reactor_time": {
-            "regex": re.compile(r"^(reactor_awake_time_ms_total|reactor_sleep_time_ms_total|reactor_cpu_.*_ms)"),
+            "regex": re.compile(
+                r"^(reactor_awake_time_ms_total|reactor_sleep_time_ms_total|reactor_cpu_.*_ms)"
+            ),
             "normalisation": "minmax",
             "unit": "ms",
             "reduce": "difference",
         },
         "scheduler_time": {
             "regex": re.compile(r"^(scheduler_.*_ms)"),
-                "normalisation": "minmax",
-                "unit": "ms",
-                "reduce": "difference",
-            },
+            "normalisation": "minmax",
+            "unit": "ms",
+            "reduce": "difference",
+        },
         "scheduler_tasks_processed": {
             "regex": re.compile(r"^(scheduler_tasks_processed)"),
-                "normalisation": "minmax",
-                "unit": "tasks",
-                "reduce": "difference",
-            },
+            "normalisation": "minmax",
+            "unit": "tasks",
+            "reduce": "difference",
+        },
         "memory_ops": {
             "regex": re.compile(r"^(memory_.*_operations)"),
             "normalisation": "minmax",
@@ -219,10 +294,10 @@ class PerfMetricEntry(object):
         },
         "memory": {
             # "regex": re.compile(r"^(memory_.*_memory)"),
-            # Capute all other metrics, like cross_cpu_free_operations
+            # Capture all other metrics, like cross_cpu_free_operations
             "regex": re.compile(r"^(memory_.*)"),
             "normalisation": "minmax",
-            "unit": "MBs",
+            "unit": "bytes", # TBC convert to "MBs",
             "reduce": "difference",
         },
         "cache_2q": {
@@ -295,7 +370,7 @@ class PerfMetricEntry(object):
         """
         # Main key : "metrics"
         self.options = options
-        #self.input = options.input  # input .json file
+        # self.input = options.input  # input .json file
         self.metric_name_re = self.DEFAULT_METRIC_REGEX
         # Check that the input option regex is a valid regex
         if options.regex:
@@ -305,13 +380,18 @@ class PerfMetricEntry(object):
         self.directory = options.directory
         # We might no longer need this, unless info as type of OSD, etc would be required later on
         self.config = {}
+        self.generated_files = []  # list of files generated
+        self.sample_size = 0  # number of samples processed
+
+        self.stats_dump = {}  # dict of dumps stats: tcmalloc, seastar
+        # Specific for this classs:
         self.perf_dump = {}
         # self.time_re = re.compile(r"_time_ms$")
         # Prefixes (or define Regexes) for the metrics we are interested in, we implicitly skip anything else
 
         # The reduced dataframe will have the metrics as columns, and the shards as rows:
         self.m_families = {}  # Metric families, to group metrics with similar attributes
-        self.reduced_df = {} # Resulting df of applying the operator pairwise
+        self.reduced_df = {}  # Resulting df of applying the operator pairwise
         self.df = None  # Pandas dataframe
         self.ds_list = []  # List of dataframes, reduced to a single one for (before/after) sample set
 
@@ -323,7 +403,6 @@ class PerfMetricEntry(object):
         self.reactor_utilization_df = (
             None  # Reactor utilization, we need to calculate this
         )
-        self.generated_files = []  # list of files generated
 
     def _check_metric_regex(self, old_re, new_re) -> List[re.Pattern]:
         try:
@@ -365,7 +444,8 @@ class PerfMetricEntry(object):
         )
         f.tight_layout()
         plt.show()
-        plt.savefig(self.config["output"].replace(".json", "_reactor_plot.png"))
+        _ext = self.options.plot_ext
+        plt.savefig(self.config["output"].replace(".json", f"_reactor_plot.{_ext}"))
 
     def plot_heatmap(self, df, outname, slice_name):
         """
@@ -377,9 +457,10 @@ class PerfMetricEntry(object):
         ax.set_title(f"{slice_name} heatmap")
         sns.heatmap(df, annot=False, fmt=".1f", linewidths=0.5, ax=ax)
         plt.show()
-        plt.savefig(outname.replace(".json", "f{slice_name}.png"))
+        _ext = self.options.plot_ext
+        plt.savefig(outname.replace(".json", "f{slice_name}.{_ext}"))
         self.generated_files.append(
-            "f{slice_name}.png"
+            "f{slice_name}.{_ext}"
         )  # implictly know\ = [f"{name}.tex", f"{name}.md", f"{name}.json"]
 
     def save_table(self, name, df):
@@ -473,7 +554,8 @@ class PerfMetricEntry(object):
                 ylabel=f"{units[slice_name]}",
                 fontsize=7,
             )
-            chart_name = outname.replace(".json", f"_{slice_name}_{cb_name}.png")
+            _ext = self.options.plot_ext
+            chart_name = outname.replace(".json", f"_{slice_name}_{cb_name}.{_ext}")
             plt.savefig(
                 chart_name,
                 # dpi=300,
@@ -547,7 +629,6 @@ class PerfMetricEntry(object):
                 return k
         return None
 
-
     def reduce(
         self, a_data: Dict[str, Any], b_data: Dict[str, Any], cb_name=None
     ) -> Dict[str, Any]:
@@ -557,6 +638,7 @@ class PerfMetricEntry(object):
         otherwise use the default operator indicated in the METRICS dictionary.
                 return callbacks[self.config["operator"]](a_data, b_data)
         """
+
         def _get_diff(a_data: List[float], b_data: List[float]) -> List[float]:
             return [a - b for a, b in zip(a_data, b_data)]
 
@@ -686,13 +768,13 @@ class PerfMetricEntry(object):
             for regex in self.metric_name_re:
                 if regex.search(metric_name):
                     return True
-            return False 
+            return False
 
         def _update_shard_value_only(
             metric_name: str, item: Dict[str, Any], result: Dict[int, Any]
         ) -> None:
             """
-            Update the result dict with the scalar metric: the one that only has shard and value. 
+            Update the result dict with the scalar metric: the one that only has shard and value.
             This is a dict with keys the shard names, values dicts with keys the metric names,
             and values the list of measurements
             """
@@ -722,8 +804,10 @@ class PerfMetricEntry(object):
             in one phase will be to update the dataframe with each new sample, potentially reducing it
             """
             if family not in self.m_families:
-                self.m_families.update( { family: {metric_name: _get_initial_metric(metric)}} )
-                #self.m_families[family] = {metric_name: _get_initial_metric(metric)}
+                self.m_families.update(
+                    {family: {metric_name: _get_initial_metric(metric)}}
+                )
+                # self.m_families[family] = {metric_name: _get_initial_metric(metric)}
             else:
                 if metric_name not in self.m_families[family]:
                     self.m_families[family].update(
@@ -731,7 +815,9 @@ class PerfMetricEntry(object):
                     )
                 else:
                     try:
-                        _get_aggregated_metric(self.m_families[family][metric_name], metric)
+                        _get_aggregated_metric(
+                            self.m_families[family][metric_name], metric
+                        )
                     except Exception as e:
                         logger.error(
                             f"Exception {e} updating family {family} with metric {metric_name}"
@@ -741,7 +827,6 @@ class PerfMetricEntry(object):
         if isinstance(ds_list, dict):
             ds_list = [ds_list]
         result = {}  # This is for the shard_value family (simple metric)
-            
 
         for _i, ds in enumerate(ds_list):
             # ds (data set) is a dict with the key "metrics" and the values are in turn dicts,
@@ -758,7 +843,7 @@ class PerfMetricEntry(object):
                         # The following only deals with shard and value
                         # attributes, we later expand to any other if possible
                         if family == "shard_value":
-                            _update_shard_value_only( _metric, item, result )
+                            _update_shard_value_only(_metric, item, result)
         return result
 
         # We might also need the full sequence of the reactor_utilization to
@@ -806,7 +891,7 @@ class PerfMetricEntry(object):
         """
         Save the families as a json file
         """
-        #_fname = self.config["output"].replace(".json", "_m_families.json")
+        # _fname = self.config["output"].replace(".json", "_m_families.json")
         _fname = self.options.input.replace(".json", "_m_families.json")
         save_json(_fname, self.m_families)
         self.generated_files.append(_fname)
@@ -823,9 +908,9 @@ class PerfMetricEntry(object):
         df = pd.concat(dfs, axis=1, join='inner')
         """
         for group, df_ls in groups.items():
-            #result_df = df_ls[0].join(df_ls[1:], how="outer", lsuffix='_left', rsuffix='_right')
-            # ValueError: Indexes have overlapping values: Index(['shard'], dtype='object') 
-            #df = df_ls[0].join(df_ls[1:]) 
+            # result_df = df_ls[0].join(df_ls[1:], how="outer", lsuffix='_left', rsuffix='_right')
+            # ValueError: Indexes have overlapping values: Index(['shard'], dtype='object')
+            # df = df_ls[0].join(df_ls[1:])
             try:
                 df_ls = [df.set_index("shard") for df in df_ls]
             except Exception as e:
@@ -839,41 +924,52 @@ class PerfMetricEntry(object):
                 # This duplicates vvalues:
                 # df = reduce(lambda df1,df2: pd.merge(df1,df2, on='shard'), df_ls)
             except Exception as e:
-                logger.error(f"Exception {e} concatenating dataframes for group {group}... skipping")
+                logger.error(
+                    f"Exception {e} concatenating dataframes for group {group}... skipping"
+                )
                 continue
-            #df = df.rename_axis("samples")
+            # df = df.rename_axis("samples")
             try:
                 _units = self.METRICS[group]["unit"]
             except KeyError:
                 _units = "metric"
 
             _fname = self.options.input.replace(".json", f"_{group}.json")
-            #_fname = self.config["output"].replace(".json", f"_{group}.json")
+            # _fname = self.config["output"].replace(".json", f"_{group}.json")
             with open(_fname, "w", encoding="utf-8") as f:
                 print(df.to_json(f, orient="split"), file=f)
                 f.close()
+            self.generated_files.append(_fname)
 
             # Try using seaborn instead
-            self.generated_files.append(_fname)
             try:
                 df.plot(
                     kind="line",
                     title=f"{group} ({_units})",
                     figsize=(8, 4),
                     grid=True,
-                    #xlabel="samples",
-                    #ylabel="metric",
+                    # xlabel="samples",
+                    # ylabel="metric",
+                    # We need a range of styles to differentiate the lines better
+                    style=['+-','o-','.--','s:', 'x--','d-.'],
+                    #markevevery=self.sample_size,
                     fontsize=8,
                 )
             except Exception as e:
                 logger.error(f"Exception {e} plotting group {group}")
             logging.info(f"Attempting to plot group {group}:\n{pp.pformat(df)}")
-            chart_name = self.options.input.replace(".json", f"_{group}.png")
+
+            _ext = self.options.plot_ext
+            chart_name = self.options.input.replace(".json", f"_{group}.{_ext}")
             plt.savefig(
                 chart_name,
                 # dpi=300,
                 bbox_inches="tight",
             )
+            if self.options.gen_only:
+                logger.info(f"Generated only mode, skipping showing plot for {group}")
+                plt.clf()
+                continue
             plt.show()
 
     def _plot_families(self):
@@ -881,7 +977,7 @@ class PerfMetricEntry(object):
         Plot the families, each family is a dict with keys the metric names,
         values the dataframes with the attributes as columns.
         ax = df1.plot()
-        df2.plot(ax=ax) 
+        df2.plot(ax=ax)
         """
         for family in self.m_families:
             groups = {}
@@ -892,7 +988,9 @@ class PerfMetricEntry(object):
                     # Need to rename the "value" column into the metric name
                     df = pd.DataFrame(self.m_families[family][metric_name])
                     df.rename(columns={"value": metric_name}, inplace=True)
-                    logger.info(f"Family {family} metric {metric_name}:\n{pp.pformat(df)}")
+                    logger.info(
+                        f"Family {family} metric {metric_name}:\n{pp.pformat(df)}"
+                    )
                     if group is not None and group not in groups:
                         groups[group] = [df]
                     else:
@@ -1147,25 +1245,143 @@ class PerfMetricEntry(object):
 
         logger.info(f"Using metric_name_re {self.metric_name_re}")
 
-
+    # These are intended for a small sub class, and probably povisional
     def load_perf_dump(self):
         """
         Load the perf_dump .json input file
         """
         try:
-            # Lsit of dicts
-            self.perf_dump = load_json(self.options.input) 
+            # List of dicts
+            self.perf_dump = load_json(self.options.input)
         except IOError as e:
             raise argparse.ArgumentTypeError(str(e))
-        #json_files = self.perf_dump.get("input", [])
+        # json_files = self.perf_dump.get("input", [])
         self.perf_data = {}
         for d in self.perf_dump:
             ts = d.get("timestamp", "")
             self.perf_data[ts] = self.filter_metrics(d.get("data", []))
-        #self.ds_list = [self.filter_metrics(d) for d in self.perf_dump.get("data", [])]
-        #logger.info(f"ds_list: {pp.pformat(self.perf_data)}")
-        #logger.info( f"families: {pp.pformat(self.m_families)}" )  # Reduce them to dataframes
-        # Traverse the families to produce a dataframe per family 
+        # self.ds_list = [self.filter_metrics(d) for d in self.perf_dump.get("data", [])]
+        # logger.info(f"ds_list: {pp.pformat(self.perf_data)}")
+        # Get the number of shards per sample
+        for ts in self.perf_data:
+            logger.info(f"Timestamp {ts} has {len(self.perf_data[ts])} shards")
+            if self.sample_size == 0:
+                self.sample_size = len(self.perf_data[ts])
+
+        # logger.info( f"families: {pp.pformat(self.m_families)}" )  # Reduce them to dataframes
+        # Traverse the families to produce a dataframe per family
+
+    def _load_generic_stats(self, schema: str, data_list: List[Dict[str, Any]]) -> None:
+        """
+        Load the  stats from the data dict
+        This is :
+        [
+          {
+          "timestamp": "2023-10-01T12:00:00Z",
+          "label": "before_test",
+          "data": {
+            <keys> : <values
+          }
+        ]
+        We will transform it into a dict with index the timestamps, and values the data dicts, one column per key
+        """
+
+        if "timestamp" not in self.stats_dump[schema]:
+            self.stats_dump[schema]["timestamp"] = []
+        for sample in data_list:
+            ts = sample.get("timestamp", "")
+            # label = sample.get("label", "")
+            data = sample.get("data", {})
+            # Aggregate the data per timestamp
+            # into a dataframe, so we can plot each key as a line chart
+            # over time
+
+            self.stats_dump[schema]["timestamp"].append(ts)
+            for key in data:
+                if key not in self.stats_dump[schema]:
+                    self.stats_dump[schema][key] = []
+                self.stats_dump[schema][key].append(data[key])
+            # self.stats_dump[schema][ts] = data
+
+    def _load_seastar_stats(self, data: List[Dict[str, Any]]) -> None:
+        """
+        Load the seastar stats from the data dict
+        """
+        self._load_generic_stats("seastar", data)
+
+    def _load_tcmalloc_stats(self, data: List[Dict[str, Any]]) -> None:
+        """
+        Load the tcmalloc stats from the data dict
+        """
+        self._load_generic_stats("tcmalloc", data)
+
+    def load_stats_dump(self):
+        """
+        Load the stats_dump .json input file according to their schema:
+        """
+        schemas = {
+            "seastar": {
+                # "ext": re.compile(r"_dump_seastar_stats\.json$"),
+                "ext": "_dump_seastar_stats.json",
+                "cb": self._load_seastar_stats,
+            },
+            "tcmalloc": {
+                # "ext": re.compile(r"_dump_tcmalloc_stats\.json$"),
+                "ext": "_dump_tcmalloc_stats.json",
+                "cb": self._load_tcmalloc_stats,
+            },
+        }
+        # Traverse the schemnas to find the matching files, load them accordingly
+        for schema in schemas:
+            file_list = glob.glob("*" + schemas[schema]["ext"])
+            # Sort the files according to
+            # file_list.sort(key=lambda x: int(re.match(self.DEFAULT_REGEX, x).group(1)) if re.match(self.DEFAULT_REGEX, x) else 0)
+            self.stats_dump[schema] = {}
+            logger.debug(f"file_list: {pp.pformat(file_list)}")
+            for filename in file_list:
+                logger.info(f"Loading {schema} stats from {filename}")
+                try:
+                    # self.stats_dump[schema].append(schemas[schema]["cb"]( load_json(filename) ))
+                    schemas[schema]["cb"](load_json(filename))
+                except IOError as e:
+                    raise argparse.ArgumentTypeError(str(e))
+
+    def _plot_stats(self):
+        """
+        Plot the stats loaded from the _dump_*_stats.json files
+        Additionally we might save the corresponmding dataframes in .json files
+        to quickly load them and produce plots (say, with a different terminal
+        instead of default matplotlib, png or .svg)
+        TBC: use cycler to have different line styles/colors
+        plt.rc('axes', prop_cycle=(cycler('color', list('rbgk')) +
+                           cycler('linestyle', ['-', '--', ':', '-.'])))
+        """
+        for schema in self.stats_dump:
+            try:
+                df = pd.DataFrame(self.stats_dump[schema])
+                logger.info(f"Stats dataframe for {schema}:\n{df}")
+                df = df.set_index("timestamp")
+                df.plot(
+                    kind="line",
+                    title=f"{schema} stats over time",
+                    figsize=(8, 4),
+                    grid=True,
+                    fontsize=8,
+                    # We need a range of styles to differentiate the lines better
+                    style=['+-','o-','.--','s:', 'x--','d-.'],
+                    rot=45,
+                )
+                _ext = self.options.plot_ext
+                chart_name = self.options.input.replace("dump.json", f"{schema}_stats_over_time.{_ext}")
+                plt.savefig(
+                    chart_name,
+                    # dpi=300,
+                    bbox_inches="tight",
+                )
+                plt.show()
+                self.generated_files.append(chart_name)
+            except Exception as e:
+                logger.error(f"Exception {e} plotting stats for schema {schema}")
 
     def load_config(self):
         """
@@ -1200,9 +1416,9 @@ class PerfMetricEntry(object):
             else:
                 self.load_files(self.config["input"])
                 # Temporarly disabling the reduction until we corner down checking items
-                # are valid scalars in the list comprehension (perhaps a simple auxiliary 
+                # are valid scalars in the list comprehension (perhaps a simple auxiliary
                 # function to call instead of the '-'operator)
-                #self.apply_reduction(self.ds_list)
+                # self.apply_reduction(self.ds_list)
         else:
             logger.error("KeyError: self.config has no 'input' key")
 
@@ -1231,12 +1447,14 @@ class PerfMetricEntry(object):
             )
             # self.make_chart(pd.DataFrame(load_json(options.plot)).T)
             return
-        #self.load_config()
+        # self.load_config()
         self.load_perf_dump()
         # Probably families deserve to be a class of their own
         self._save_families()
         self._plot_families()
-
+        # Call the new code for the stats dump: seastar and tcmalloc
+        self.load_stats_dump()
+        self._plot_stats()
 
     def _finalize(self):
         """
@@ -1368,6 +1586,7 @@ class PerfMetricEntry(object):
         def _plot_ln(self, df, name):
             """
             Plot the time sequence using lineplot
+            How to add points on the line?
             """
             sns.set_theme()
             f, ax = plt.subplots(figsize=(9, 6))
@@ -1380,9 +1599,11 @@ class PerfMetricEntry(object):
             #     xlabel="Shards",
             #     ylabel="reactor_utilization",
             #     fontsize=7,
+            #     markers=True,
             # )
             plt.show()
-            # plt.savefig(self.config["output"].replace(".json", f"_ts_{name}.png"))
+            # _ext = self.options.plot_ext
+            # plt.savefig(self.config["output"].replace(".json", f"_ts_{name}.{_ext}"))
 
         def _plot_bar(self, df, name):
             """
@@ -1401,7 +1622,8 @@ class PerfMetricEntry(object):
             #     fontsize=7,
             # )
             plt.show()
-            # plt.savefig(self.config["output"].replace(".json", f"_ts_{name}.png"))
+            # _ext = self.options.plot_ext
+            # plt.savefig(self.config["output"].replace(".json", f"_ts_{name}.{_ext}"))
 
         def display(self):
             """
@@ -1414,6 +1636,7 @@ class PerfMetricEntry(object):
             ##self.plot_reactor_utilization()
             # self._plot_ln(self.full_sequence, "full_sequence") # FIXME
             # self._plot(self.avg_per_timestamp, "avg_per_timestamp")
+
 
 def main(argv):
     examples = """
@@ -1428,7 +1651,7 @@ def main(argv):
     python3 /root/bin/perf_metrics.py -d ${RUN_DIR} -i ${TEST_NAME}_conf.json 
     """
     parser = argparse.ArgumentParser(
-        description="""This tool is used to reduce the OSD metric measurements""",
+        description="""This tool is used to plot and reduce the OSD metric measurements""",
         epilog=examples,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -1442,7 +1665,8 @@ def main(argv):
         Input config .json describing the custom schema described above
         type of metrics (classic, crimson) and output .json file, etc. If this
         argument is not given, the tool assumes that the input .json files are
-        *_dump.json given at the --directory option, and processes them all.
+        *_dump.json (as well as *_dump_{tcmalloc|seastar}_stats.json) given at
+        the --directory option, and processes them all.
         """,
         default=None,
     )
@@ -1454,21 +1678,20 @@ def main(argv):
         required=False,
         default=None,
         help="""
-Just plot the chart of the given .json file, normally specified by the 'output'
-field in the config file
-        """
+        Just plot the chart of the known .json files: scan whether the
+        generated files exists, if so, generate its plot
+        """,
     )
 
-    # Probably want this to be defined in the input config file
+    # Probably want this to be defined in a (report plan) config file
     parser.add_argument(
         "-r",
         "--regex",
         type=str,
         required=False,
         help="Regex to describe the metrics to be considered",
-        default="" #r"memory_*",
+        default="",  # r"memory_*",
     )
-
     parser.add_argument(
         "-d", "--directory", type=str, help="Directory to examine", default="./"
     )
@@ -1480,10 +1703,16 @@ field in the config file
         default=False,
     )
     parser.add_argument(
-        "-j",
-        "--json",
+        "-t", "--plot_ext", 
+        type=str,
+        help="Either .png or .svg", default=DEFAULT_PLOT_EXT
+    ) 
+    # To be deprecated since we always generate a .json output with the list of generated files
+    parser.add_argument(
+        "-s",
+        "--gen_only",
         action="store_true",
-        help="True to enable output in json format",
+        help="True to generated only but do not show the plots interactively",
         default=False,
     )
     options = parser.parse_args(argv)

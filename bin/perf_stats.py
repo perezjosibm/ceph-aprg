@@ -147,7 +147,20 @@ class PerfStatMetric(object):
 
     def _plot_data(self):
         """
-        Plots the data using polars
+        Plots the data using pandas
+        # Convert to pandas for plotting
+        pdf = metric_df.to_pandas()
+        fig = pdf.boxplot(column='value', by='metric_unit')
+        plt.title(f"Metric: {metric_name} ({metric_unit})")
+        plt.suptitle('')
+        plt.xlabel('Metric Unit')
+        plt.ylabel('Value')
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plot_filename = f"{metric_name}_boxplot.png"
+        plt.savefig(plot_filename)
+        logger.info(f"Saved plot: {plot_filename}")
+        plt.clf()
         """
         # Convert the data into a polars DataFrame
         records = []
@@ -177,29 +190,37 @@ class PerfStatMetric(object):
             logger.info(f"Saved plot: {plot_filename}")
             plt.clf()
 
+    def _plot_metric_alt(self, metric_df: pl.DataFrame, metric_name: str, metric_unit: str):
+        """
+        Plots a single metric using polars DataFrame -- untested
+        """
+        fig, ax = plt.subplots()
+        ax.plot(
+            metric_df[self.options.samples], # 'samples'],
+            metric_df[metric_name],
+            marker='o',
+            linestyle='-'
+        )
+        ax.set_title(f"{self.workload}_{metric_name}")
+        ax.set_xlabel(self.options.samples)
+        ax.set_ylabel(metric_unit)
+        plt.grid(True)
+        plt.savefig(f"{self.workload}_{metric_name}.{self.plot_ext}")
+        plt.clf()
+
+
     def _plot_metric(self, metric_df: pl.DataFrame, metric_name: str, metric_unit: str):
         """
-        Plots a single metric using polars DataFrame
-        # Convert to pandas for plotting
-        pdf = metric_df.to_pandas()
-        fig = pdf.boxplot(column='value', by='metric_unit')
-        plt.title(f"Metric: {metric_name} ({metric_unit})")
-        plt.suptitle('')
-        plt.xlabel('Metric Unit')
-        plt.ylabel('Value')
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        plot_filename = f"{metric_name}_boxplot.png"
-        plt.savefig(plot_filename)
-        logger.info(f"Saved plot: {plot_filename}")
-        plt.clf()
+        Plots a single metric using polars DataFrame -- tested and works
         """
 
         chart =  (
-            metric_df.plot.point(
+            metric_df.plot.line( # new
+            #metric_df.plot.point( # ok
                 x=self.options.samples, #"samples",
                 y=metric_name,
                 #color="species",
+                markers=True, # point=True,
             )
             .properties(width=500, title=f"{self.workload}_{metric_name}")
             .configure_scale(zero=False)
@@ -218,10 +239,14 @@ class PerfStatMetric(object):
         df = pl.DataFrame(self.data)
         logger.debug(f"DataFrame:\n{df}")
         # Need to produce a single chart per metric
+        # Try using same idea as in perf_osd_metrics.py to group the metrics according to their units
         for m in self.metric_units.keys():
             #metric_df = df.select( pl.col('metric_unit'), pl.col(m).alias('value') )
+            # Calculate growth rate as percentage change:
+            #df[f"Growth_Rate_{m}"] = df[m].pct_change(periods=1) * 100
             logger.debug(f"Metric DataFrame for {m}:")
-            self._plot_metric(df, m, self.metric_units[m])
+            #self._plot_metric(df, m, self.metric_units[m])
+            self._plot_metric_alt(df, m, self.metric_units[m])
 
     def run(self):
         """
