@@ -33,6 +33,9 @@ RUN yum install lnav -y
 RUN yum install perf -y
 # Clag, wouldit not clash with gcc?
 yum install clang-19.1.7-1.el9
+yum install llvm -y 
+yum install llvm-devel -y 
+yum install python3-debug.x86_64 -y
 # Extra packages needed to run cbt
 RUN yum install python3-lxml -y
 RUN yum install python3-yaml -y
@@ -67,7 +70,7 @@ RUN bash -exc '[ ! -d /packages ] && mkdir /packages'; cd /packages && git clone
   && cd tinytex/tools/ && make all; exit 0 \
   && cd /packages && git clone https://github.com/sharkcz/collectl \
   && cd collectl && ./INSTALL \
-  && rm -rf /packages/collectl
+  #&& rm -rf /packages/collectl
 VOLUME /packages
 # Add config files
 ADD toprc /root/.config/procps/toprc

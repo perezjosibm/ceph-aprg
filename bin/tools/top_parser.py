@@ -30,6 +30,7 @@ DEFAULT_NUM_SAMPLES = 30
 DEFAULT_CPU_RANGES = range(0, 111)  # Assume 112 cores by default
 
 # The following info would be captured from the test_plan.json, but for now defined as default
+# Work needed to make this dynamic since we need it for the messenger tests as well
 PG_CPU_CORES_INFO = {
     # "num_cores": 4,
     # "cpu_mhz": 2400,
@@ -64,7 +65,7 @@ class TopParser(object):
         self.cpu_cores: list[dict] = []
         self.procs: list[dict] = []
         self.proc_groups: dict = {}  # This is the working dict
-        self.cpus = cpus  # Input range of CPU cores to filter
+        self.cpus = cpus  # Input json describing range of CPU cores to filter, and pids, per process group
         self.cpu_ranges = {}  # indexed by process group
         self.procs_file = procs  # .json file indexed with process group names and PIDs
         self.num_samples = 0
@@ -78,6 +79,45 @@ class TopParser(object):
         self.pgs_sorted = {}
         self.plotter_ops = plotter_ops
 
+    def _init_pg(self, pg, pids):
+        """
+        Initialize the process group entry in proc_groups
+        """
+        self.proc_groups[pg] = {
+            "pids": list(pids),
+            "cpu_core_ranges": self.cpu_ranges[pg]
+            if pg in self.cpu_ranges
+            else DEFAULT_CPU_RANGES,
+            "threads": {},
+            "thr_pids": [],  # Add new pids as we find them
+            # Memory measurements are per process, so we need to track them separately
+            # This is RSS in KB
+            "res": {
+                "_data": [0.0] * self.num_samples,
+                "avg": 0.0,  # job.getCpu(),
+                "min": 0.0,
+                "max": 0.0,
+            },
+            # This is % of MEM in the system
+            "mem": {
+                "_data": [0.0] * self.num_samples,
+                "avg": 0.0,  # job.getMem(),
+                "min": 0.0,
+                "max": 0.0,
+            },
+            # This is SHR in KB
+            "shr": {
+                "_data": [0.0] * self.num_samples,
+                "avg": 0.0,  # job.getCpu(),
+                "min": 0.0,
+                "max": 0.0,
+            },
+            "num_samples": 0,
+            "sorted": {},
+            "avg_per_core": {},
+            "avg_per_run": {},
+        }
+ 
     def get_cpu_range(self):
         """
         Parse the string defining the range of CPU of interest -- we might
@@ -100,10 +140,17 @@ class TopParser(object):
                     else:
                         self.cpu_ranges[pg].append([int(matched.group(1))])
 
-        for pg in PG_CPU_CORES_INFO.keys():
-            if self.cpus:
-                _update_cpu_ranges(self.cpus, pg)
-            else:
+        if self.cpus:
+            # Load the provided cpu ranges from the input JSON file 
+            with open(self.cpus, "r") as f:
+                d = json.load(f)
+                f.close()
+            for pg in d.keys():
+                _update_cpu_ranges(d[pg]["cores"], pg)
+                self._init_pg(pg, d[pg]["pids"])
+        else:
+            # This is the default behaviour, use the hardcoded ranges atm, for OSD and FIO
+            for pg in PG_CPU_CORES_INFO.keys():
                 # Use default ranges from PG_CPU_CORES_INFO
                 _update_cpu_ranges(PG_CPU_CORES_INFO[pg], pg)
 
@@ -123,40 +170,7 @@ class TopParser(object):
                     str, d[pg]
                 )  # Input PIDs are integers, but job.getPid() returns strip
                 # = str(x) for x in d[pg]
-                self.proc_groups[pg] = {
-                    "pids": list(pids),
-                    "cpu_core_ranges": self.cpu_ranges[pg]
-                    if pg in self.cpu_ranges
-                    else DEFAULT_CPU_RANGES,
-                    "threads": {},
-                    "thr_pids": [],  # Add new pids as we find them
-                    # Memory measurements are per process, so we need to track them separately
-                    # This is RSS in KB
-                    "res": {
-                        "_data": [0.0] * self.num_samples,
-                        "avg": 0.0,  # job.getCpu(),
-                        "min": 0.0,
-                        "max": 0.0,
-                    },
-                    # This is % of MEM in the system
-                    "mem": {
-                        "_data": [0.0] * self.num_samples,
-                        "avg": 0.0,  # job.getMem(),
-                        "min": 0.0,
-                        "max": 0.0,
-                    },
-                    # This is SHR in KB
-                    "shr": {
-                        "_data": [0.0] * self.num_samples,
-                        "avg": 0.0,  # job.getCpu(),
-                        "min": 0.0,
-                        "max": 0.0,
-                    },
-                    "num_samples": 0,
-                    "sorted": {},
-                    "avg_per_core": {},
-                    "avg_per_run": {},
-                }
+                self._init_pg(pg, pids)
             logger.debug(
                 f"Parsing procs_file {self.procs_file} proc_groups: {self.proc_groups}"
             )
@@ -589,10 +603,10 @@ class TopParser(object):
         based (mem, res, shr).
         """
         self.parse()
+        self.get_cpu_range()
         self.get_procs_names()
         self.get_procs_groups()
         self.get_top_procs_util()
-        self.get_cpu_range()
         self.get_core_cpu_util()
         self.get_core_util_per_run()
         self.save_pgs_json()
@@ -643,7 +657,7 @@ def main(argv):
         "--cpu",
         type=str,
         required=False,
-        help="Range of CPUs to filter",
+        help="JSON file containing  CPUs and pids to filter per process group",
         default="",
     )
     parser.add_argument(

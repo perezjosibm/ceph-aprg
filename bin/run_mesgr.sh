@@ -10,13 +10,10 @@
 # exec 3>&1 4>&2
 # trap 'exec 2>&4 1>&3' 0 1 2 3
 # exec 1>/tmp/run_balanced_osd.log 2>&1
-#
-# Might need double check for consistency in the use of the RUN_DIR
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m' # No Color
-export PS4='+(${BASH_SOURCE}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
-    
+source /root/bin/common.sh 
+source /root/bin/monitoring.sh
+
+# Define the CPU core sets for server and client for each type of balanced vs separated
 declare -A mesgr_cpu_table
 declare -A mesgr_cpu_row
 declare -A pids
@@ -178,22 +175,11 @@ NUMA_NODES_OUT=/tmp/numa_nodes.json
 # Globals:
 LATENCY_TARGET=false 
 NUM_SAMPLES=10
+DELAY_SAMPLES=6 # in secs
 POST_PROC=""
 FLAME=false
 # Single option to set a max of 2x14 cores per server, 2x14 cores per client, this needs to define two sockets
 MAX=false
-
-#############################################################################################
-usage() {
-    cat $0 | grep ^"# !" | cut -d"!" -f2-
-}
-
-fun_join_by() {
-  local d=${1-} f=${2-}
-  if shift 2; then
-    printf %s "$f" "${@/#/$d}"
-  fi
-}
 
 #############################################################################################
 # Original lscpu: o05
@@ -223,6 +209,7 @@ fun_set_mesgr_pids() {
     #cat ${OUTNAME}
     rm -f  ${TEST_PREFIX}_thrs.out ${TEST_PREFIX}_tasks.out
     echo ${OUTNAME} >> "${TEST_PREFIX}_threads_list"
+    # construct a json file with the thread list per pid 
 }
 
 #############################################################################################
@@ -234,28 +221,19 @@ fun_set_mesgr_pids() {
   #   "server": { "pids": [368474], "color": "orange" },
   #   "client": { "pids": [368475,368476], "color": "yellow" },
   # }
+  # This sub should also be moved to the common.sh
 fun_validate_set() {
   local TEST_NAME=$1
   # On multiple instances, this could be a race hazard
   [ ! -f "${NUMA_NODES_OUT}" ] && lscpu --json > ${NUMA_NODES_OUT}
   # Needs extending to support multiple msgrs type client vs server, and lscpu -e --json layout as well
+  # Also needs to produce a .json file with the thread list per pid
   python3 /root/bin/tasksetcpu.py -c $TEST_NAME -u ${NUMA_NODES_OUT} -d ${RUN_DIR}
 }
 
-#############################################################################################
-fun_perf() {
-  local PID=$1 # , separate string of pid
-  local TEST_NAME=$2
-  if [ "${FLAME}" == "true" ]; then
-      perf record -e cycles:u --call-graph dwarf -i -p ${PID} -o ${TEST_NAME}.perf.out sleep 10 2>&1 >/dev/null &
-      # perf script -i ${TEST_NAME}.perf.out | c++filt | stackcollapse-perf.pl > ${TEST_NAME}.flamegraph.out
-      # flamegraph.pl ${TEST_NAME}.flamegraph.out > ${TEST_NAME}.flamegraph.svg
-  fi
-}
-
 
 #############################################################################################
-fun_measure() {
+_old_measure() {
   local TEST_OUT=$1
   local TEST_TOP_OUT_LIST=$2
   local PID=$3 #comma sep list of pids
@@ -265,6 +243,7 @@ fun_measure() {
   top -b -H -1 -p "${PID}" -n ${NUM_SAMPLES} >> ${TEST_OUT} &
   echo "${TEST_OUT}" >> ${TEST_TOP_OUT_LIST}
 }
+
 #############################################################################################
 #Scans and prints the grids, useful for manual tests
 fun_show_grid() {
@@ -298,8 +277,10 @@ fun_monitor() {
     local pid=$2
     local TOP_OUT_LIST="${test_name}_top_list"
     local test_top_out="${test_name}_top.out"
-    fun_perf  ${pid} ${test_name}
-    fun_measure ${test_top_out} ${TOP_OUT_LIST} ${pid}
+
+    mon_perf  ${pid} ${test_name} ${FLAME}
+    ( mon_measure ${pid} ${test_top_out} ${TOP_OUT_LIST} ) &
+    #mon_measure ${test_top_out} ${TOP_OUT_LIST} ${pid}
     fun_show_grid ${test_name} ${pid}
 }
 
@@ -315,6 +296,7 @@ fun_set_globals() {
     test_top_json="${test_name}_top.json"
     TOP_OUT_LIST="${test_name}_top_list"
     TOP_PID_JSON="${test_name}_pid.json"
+    CPU_PID_JSON="${test_name}_cpu_pid.json"
     CPU_AVG="${test_name}_cpu_avg.json"
     test_zip="${test_name}.zip"
 }
@@ -326,6 +308,7 @@ fun_monitor_pair() {
     local SMP=$2
     local BAL_TYPE=$3
     local list_clients=""
+    local list_servers=""
     
     for key in "${!pids[@]}"; do
         test_name="${key}_msgr_${MESG_TYPE}_${SMP}smp_${num_clients}clients_${BAL_TYPE}"
@@ -334,9 +317,11 @@ fun_monitor_pair() {
         fun_monitor ${test_name} ${pids[${key}]}
         if [[ $key == *"client"* ]]; then
             list_clients="${list_clients} ${pids[${key}]}"
+        else
+            list_servers="${list_servers} ${pids[${key}]}"
         fi
     done
-    echo -e "${GREEN}== Waiiting clients ${list_clients} ==${NC}"
+    echo -e "${GREEN}== Waiting clients ${list_clients} ==${NC}"
     wait ${list_clients}
     # Kill all the server msgr process only
     for key in "${!pids[@]}"; do
@@ -357,19 +342,45 @@ fun_monitor_pair() {
     fun_set_globals ${test_name}
     # Produce charts from top output, for the whole set
     msgr_pids=$( fun_join_by ',' "${pids[@]}" )
-    printf '{ "MSGR": [%s] }\n' "$msgr_pids" > ${TOP_PID_JSON}
+    printf '{ "MSGR": [%s] }\n' "$msgr_pids" > ${test_name}_all.pid.json #${TOP_PID_JSON}
+    # Produce a .json with the list of pids to monitor 
+    svr_pids=$( fun_join_by ',' "${list_servers}" )
+    cli_pids=$( fun_join_by ',' "${list_clients}" )
+    # json=$(printf '{ "server": [%s], "client": [%s] }\n' "$svr_pids" "$cli_pids")
+    # echo "${json}" > ${TOP_PID_JSON}
+        # "label": "msgr_${MESG_TYPE}_${SMP}smp_${num_clients}clients_${BAL_TYPE}",
+        # "server_pids": [${svr_pids}],
+        # "client_pids": [${cli_pids}]
+    read -r -d '' json <<EOF || true
+    {
+        "MSG_SERVER": {
+            "cores": "${mesgr_cpu_row[server]}",
+            "pids": [${svr_pids}]
+        },
+        "MSG_CLIENT": {
+            "cores": "${mesgr_cpu_row[client]}",
+            "pids": [${cli_pids}]
+        }
+    }
+EOF
+    echo "$json" | jq . >> ${CPU_PID_JSON}
+    # We could use the existing -c option of top_parser.py to specify the cpu cores to monitor via this new json file
+
+    mon_filter_top_cpu "${test_name}_top.out" ${CPU_AVG} ${CPU_PID_JSON} #${TOP_PID_JSON}
+    run_gnuplot
     #for p in server client; do
-    for key in "${!pids[@]}"; do
-        test_name="${key}_msgr_${MESG_TYPE}_${SMP}smp_${num_clients}clients_${BAL_TYPE}"
-        if [[ $key == *"server"* ]]; then
-            cpu_cores=${mesgr_cpu_row["server"]}
-        else
-            cpu_cores=${mesgr_cpu_row["client"]}
-        fi
-             
-        fun_pp_top "${test_name}_top.out" "${cpu_cores}" ${CPU_AVG} ${TOP_PID_JSON}
-    done
-    fun_pp_flamegraphs
+    # for key in "${!pids[@]}"; do
+    #     test_name="${key}_msgr_${MESG_TYPE}_${SMP}smp_${num_clients}clients_${BAL_TYPE}"
+    #     if [[ $key == *"server"* ]]; then
+    #         cpu_cores=${mesgr_cpu_row["server"]}
+    #     else
+    #         cpu_cores=${mesgr_cpu_row["client"]}
+    #     fi
+    #     mon_filter_top "${test_name}_top.out" ${CPU_AVG} ${TOP_PID_JSON}
+    #     run_gnuplot
+    #     #fun_pp_top "${test_name}_top.out" "${cpu_cores}" ${CPU_AVG} ${TOP_PID_JSON}
+    # done
+    # fun_pp_flamegraphs
     # Ugly, I know, refactoring needed
     test_name="msgr_${MESG_TYPE}_${SMP}smp_${num_clients}clients_${BAL_TYPE}"
     fun_set_globals ${test_name}
@@ -463,7 +474,7 @@ fun_pp_flamegraphs() {
 
 #############################################################################################
 # Post-process data into charts
-fun_pp_top() {
+_old_pp_top() {
     local TEST_OUT=$1
     local CORES=$2
     local CPU_AVG=$3
@@ -473,7 +484,10 @@ fun_pp_top() {
     cat ${TEST_OUT} | jc --top --pretty > ${test_top_json}
     python3 /root/bin/parse-top.py -d ${RUN_DIR} --config=${test_top_json} --cpu="${CORES}" --avg=${CPU_AVG} \
         --pids=${TOP_PID_JSON} 2>&1 > /dev/null
-            
+}
+
+#########################################
+run_gnuplot() {
     for x in *.plot; do
         gnuplot $x 2>&1 > /dev/null
     done
@@ -494,7 +508,9 @@ fun_post_process_cold() {
       y=${x/_top.out/_cpu_avg.json}
       z=${x/_top.out/_pid.json}
 
-      fun_pp_top $x "0-111" ${CPU_AVG} ${TOP_PID_JSON}
+      mon_filter_top $x ${y} ${z}
+      run_gnuplot
+      #fun_pp_top $x "0-111" ${CPU_AVG} ${TOP_PID_JSON}
   done
 }
 

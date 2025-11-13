@@ -951,7 +951,7 @@ class PerfMetricEntry(object):
                     # xlabel="samples",
                     # ylabel="metric",
                     # We need a range of styles to differentiate the lines better
-                    style=['+-','o-','.--','s:', 'x--','d-.'],
+                    #style=['+-','o-','.--','s:', 'x--','d-.'],
                     #markevevery=self.sample_size,
                     fontsize=8,
                 )

@@ -1,0 +1,12 @@
+# Patterns to search on a osd.log:
+ceph_assert 
+Aborting  
+#slow requests
+##Backtrace
+# 70501: 
+In function 'PeeringState::Recovered::Recovered.*!ps->needs_recovery$
+# 72778
+OSD::get_health_metrics: slow request
+#  73790
+crimson::os::seastore::TransactionManager::pin_to_extent.*abort(abort() called)$
+ceph::__ceph_abort

@@ -164,6 +164,7 @@ fun_set_osd_pids() {
 }
 
 #############################################################################################
+  # This sub should also be moved to the common.sh
 fun_validate_set() {
   local TEST_NAME=$1
   # From the _threads.out files: parse them into .json (might be as part of the prev step?)
