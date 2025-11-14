@@ -1,0 +1,45 @@
+{
+  "osd":
+  [
+    {
+      "tracker": "70501",
+      "pattern": [ "In function 'PeeringState::Recovered::Recovered.*!ps->needs_recovery$"],
+      "description": "",
+      "status": "open"
+    },
+    {
+      "tracker": "73790",
+      "pattern": [ "crimson::os::seastore::TransactionManager::pin_to_extent.*abort(abort() called)$",
+        "ceph::__ceph_abort" ],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "72778",
+      "pattern": [ "OSD::get_health_metrics: slow request"],
+      "description": "",
+      "status": "open"
+    }
+  ],
+  "teuthology":
+  [
+    {
+      "tracker": "73169",
+      "pattern": [ "wait_for_recovery" ],
+      "description": "",
+      "status": "open"
+    },
+    {
+      "tracker": "71478",
+      "pattern": [ "Assertion 'get() != pointer()' failed" ],
+      "description": "",
+      "status": "open"
+    },
+    {
+      "tracker": "72778",
+      "pattern": [ "SLOW_OPS", "osd.*get_health_metrics: slow request" ],
+      "description": "",
+      "status": "open"
+    }
+  ]
+}

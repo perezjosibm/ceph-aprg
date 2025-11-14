@@ -9,6 +9,7 @@ class GnuplotTemplate(object):
     TIMEFORMAT = '"%Y-%m-%d %H:%M:%S"'
     NUMCOLS = 10 # by default, but should be set during construction
     DEFAULT_TERMINAL = 'png'
+    # These are for top metrics
     _metric_format = {
         'cpu': '%.2f%%',
         'mem': '%.2f%%',
@@ -25,10 +26,11 @@ class GnuplotTemplate(object):
         'png': "pngcairo size 650,280 enhanced font 'Verdana,10'",
         'svg': "svg size 650,280 mouse standalone font 'Verdana,10' rounded"
     }
+
     def __init__(self, name:str, proc_groups:dict, num_samples:int, pgs_sorted: dict, opts: dict = {}):
         """
         Constructor: expect a dictionary:
-        keys: threads names, 
+        keys: columns (eg. threads) names, 
         values: each a list of metrics (dictionary)
 
         <thread_id>:
@@ -91,6 +93,9 @@ plot '{opd['dat_name']}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
     def save_dat(self, data:dict, dat_name:str, num_samples:int):
         """
         Save the data in a .dat file
+        data just needs to be a simple dictionary with columns names as keys, values arrays of samples
+        If using a csv created from a dataframe, we might need to use 
+        set datafile separator ',' in the .plot script
         """
         header = ','.join(data.keys())
         with open(dat_name,'w') as f:

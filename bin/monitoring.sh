@@ -64,7 +64,7 @@ mon_filter_top() {
 
     if [ "${TOP_FILTER}" == "cores" ]; then
         # We might produce both of threads based CPU util and cores based, but only use core based for now
-        /root/bin/tools/top_parser.py -t svg -n ${NUM_SAMPLES} -p ${TOP_PID_JSON} ${TOP_FILE} ${CPU_AVG_FILE} 2>&1 > /dev/null
+        /root/bin/tools/top_parser.py -t svg -n ${NUM_SAMPLES} -p ${TOP_PID_JSON} -o ${CPU_AVG_FILE} ${TOP_FILE}  2>&1 > /dev/null
     else
         # Disabling termporarily
         cat ${TOP_FILE} | jc --top --pretty > ${TEST_RESULT}_top.json
@@ -80,7 +80,7 @@ mon_filter_top_cpu() {
     local CPU_AVG_FILE=$2 
     local CPU_PID_JSON=$3
 
-    /root/bin/tools/top_parser.py -t svg -n ${NUM_SAMPLES} -c ${CPU_PID_JSON} ${TOP_FILE} ${CPU_AVG_FILE} 2>&1 > /dev/null
+    /root/bin/tools/top_parser.py -t svg -n ${NUM_SAMPLES} -c ${CPU_PID_JSON} -o ${CPU_AVG_FILE} ${TOP_FILE} 2>&1 > /dev/null
 }
 
 

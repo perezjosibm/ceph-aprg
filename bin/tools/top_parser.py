@@ -27,7 +27,7 @@ FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
 pp = pprint.PrettyPrinter(width=61, compact=True)
 
 DEFAULT_NUM_SAMPLES = 30
-DEFAULT_CPU_RANGES = range(0, 111)  # Assume 112 cores by default
+DEFAULT_CPU_RANGES = range(0, 111)  # Assume 112 cores by default (o05 machine)
 
 # The following info would be captured from the test_plan.json, but for now defined as default
 # Work needed to make this dynamic since we need it for the messenger tests as well
@@ -56,7 +56,7 @@ class TopParser(object):
         """
         Constructor
         We might need to extend the idea of using a fixed DEFAULT_NUM_SAMPLES to indicate
-        the size of a data point to be combined with the FIO data
+        the size of a data point to be combined with the Benchmark (eg FIO) data
         However, its best to have a command line option to set this for flexibility
         """
         self.fileName = fileName  # Input _top.out file
@@ -71,7 +71,7 @@ class TopParser(object):
         self.num_samples = 0
         # possible metrics to track per thread - cpu and mem are percentages, res and shr are in KB.
         # Only cpu is per thread, the other are per process
-        self.metrics = [ "mem", "res", "shr"] # "cpu",
+        self.metrics = ["mem", "res", "shr"]  # "cpu",
         self.core_cpu_metrics = ["user", "sys", "idle", "wait"]
         self.avg_cpus: dict = {}
         self.num_samples_per_run = num_samples
@@ -117,7 +117,7 @@ class TopParser(object):
             "avg_per_core": {},
             "avg_per_run": {},
         }
- 
+
     def get_cpu_range(self):
         """
         Parse the string defining the range of CPU of interest -- we might
@@ -141,7 +141,7 @@ class TopParser(object):
                         self.cpu_ranges[pg].append([int(matched.group(1))])
 
         if self.cpus:
-            # Load the provided cpu ranges from the input JSON file 
+            # Load the provided cpu ranges from the input JSON file
             with open(self.cpus, "r") as f:
                 d = json.load(f)
                 f.close()
@@ -354,8 +354,8 @@ class TopParser(object):
         #     avg_per_run[m] = []
         def _get_core_util_per_run_per_pg(pg: str):
             metrics = self.core_cpu_metrics + self.metrics
-            avg_per_run = {m: [] for m in metrics } # self.core_cpu_metrics
-            aux = {m: 0.0 for m in metrics } #self.core_cpu_metrics
+            avg_per_run = {m: [] for m in metrics}  # self.core_cpu_metrics
+            aux = {m: 0.0 for m in metrics}  # self.core_cpu_metrics
             num_runs = self.num_samples // self.num_samples_per_run
             if num_runs == 0:
                 num_runs = 1
@@ -377,7 +377,7 @@ class TopParser(object):
                 if m not in avg_pgs:
                     continue
                 for i in range(0, self.num_samples):
-                    aux[m] += avg_pgs[m]['_data'][i]
+                    aux[m] += avg_pgs[m]["_data"][i]
                     if ((i + 1) % self.num_samples_per_run) == 0:
                         if i > 0:
                             avg_per_run[m].append(aux[m] / self.num_samples_per_run)
@@ -474,7 +474,7 @@ class TopParser(object):
         Might assume only OSD is being used
         """
         name = self.fileName
-        name += "_core.svg" # png
+        name += "_core.svg"  # png
         directory = os.path.dirname(name)
         basename = os.path.basename(name)
         # sns.set_theme(style="whitegrid", rc={'figure.figsize':(650,280)})
@@ -551,7 +551,7 @@ class TopParser(object):
     def save_pgs_json(self):
         """
         Save each pg proc_group attributes: avg_per_core and avg_per_run to a JSON file
-        
+
         jsonName = f"{self.jsonName.rstrip('.json')}_{pg}_cores.json"
         """
         # Generate the JSON file: we might provide the key of the dict as argument
@@ -563,7 +563,7 @@ class TopParser(object):
                 "avg_per_core": pgd["avg_per_core"],
                 "avg_per_run": pgd["avg_per_run"],  # aggregate this to the final table
             }
-        self.save_json( self.jsonName, d )
+        self.save_json(self.jsonName, d)
 
     def gen_plot(self):
         """
@@ -621,8 +621,12 @@ def main(argv):
 
     top -w 512 -b -H -1 -p "${PID}" -n ${NUM_SAMPLES} -d ${DELAY_SAMPLES} >> ${TEST_NAME}_top.out
 
+    # Old style -- to be deprecated:
     top_parser.py -v -n ${NUM_SAMPLES} -p "osd_pids.json" -c "0-27,56-83" -d ./test_runs/run1  ${TEST_NAME}_top.out \
       ${TEST_NAME}_top.json
+
+    # New style:
+    top_parser.py -v -n ${NUM_SAMPLES} -t svg -c "cpu_pid.json" -d ./test_runs/run1  -o ${CPU_AVG}.json ${TEST_NAME}_top.out
 
     # Parse top data from an output file containing timestamps, generated with a script run via cron such as:
     #
@@ -639,7 +643,8 @@ def main(argv):
 
     parser.add_argument("fileName", type=str, default=None, help="File to parse")
     parser.add_argument(
-        "jsonName",
+        "-o",
+        "--json",
         type=str,
         default=None,
         nargs="?",
@@ -705,7 +710,7 @@ def main(argv):
     os.chdir(options.directory)
     topParser = TopParser(
         options.fileName,
-        options.jsonName,
+        options.json,
         options.cpu,
         options.pids,
         options.num_samples,

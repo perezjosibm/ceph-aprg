@@ -10,8 +10,6 @@
 # exec 3>&1 4>&2
 # trap 'exec 2>&4 1>&3' 0 1 2 3
 # exec 1>/tmp/run_balanced_osd.log 2>&1
-source /root/bin/common.sh 
-source /root/bin/monitoring.sh
 
 # Define the CPU core sets for server and client for each type of balanced vs separated
 declare -A mesgr_cpu_table
@@ -180,6 +178,10 @@ POST_PROC=""
 FLAME=false
 # Single option to set a max of 2x14 cores per server, 2x14 cores per client, this needs to define two sockets
 MAX=false
+
+RUNTIME=60 # seconds
+source /root/bin/common.sh 
+source /root/bin/monitoring.sh
 
 #############################################################################################
 # Original lscpu: o05
@@ -363,7 +365,8 @@ fun_monitor_pair() {
         }
     }
 EOF
-    echo "$json" | jq . >> ${CPU_PID_JSON}
+    #echo "$json" | jq . >> ${CPU_PID_JSON}
+    echo "$json" >> ${CPU_PID_JSON}
     # We could use the existing -c option of top_parser.py to specify the cpu cores to monitor via this new json file
 
     mon_filter_top_cpu "${test_name}_top.out" ${CPU_AVG} ${CPU_PID_JSON} #${TOP_PID_JSON}
@@ -588,6 +591,8 @@ while getopts 'b:d:t:sg:fx' option; do
   esac
  done
 
+ # Create the run directory if it does not exist
+ [ ! -d "${RUN_DIR}" ] && mkdir -p ${RUN_DIR}
  cd ${RUN_DIR} 
  if [ ! -z "$POST_PROC" ]; then
     echo -e "${GREEN}== Post-processing ${POST_PROC} ==${NC}"

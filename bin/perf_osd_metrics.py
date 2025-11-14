@@ -936,6 +936,10 @@ class PerfMetricEntry(object):
 
             _fname = self.options.input.replace(".json", f"_{group}.json")
             # _fname = self.config["output"].replace(".json", f"_{group}.json")
+            logging.info(f"Saving df {_fname} for group {group}:\n{pp.pformat(df)}")
+            # Can save the df as csv too if needed:
+            df.to_csv(_fname.replace(".json", ".csv"), index=True)
+
             with open(_fname, "w", encoding="utf-8") as f:
                 print(df.to_json(f, orient="split"), file=f)
                 f.close()
@@ -1245,7 +1249,7 @@ class PerfMetricEntry(object):
 
         logger.info(f"Using metric_name_re {self.metric_name_re}")
 
-    # These are intended for a small sub class, and probably povisional
+    # These are intended for a small sub class, and probably provisional
     def load_perf_dump(self):
         """
         Load the perf_dump .json input file
