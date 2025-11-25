@@ -97,6 +97,7 @@ STOP_CLEAN=false
 NUM_ATTEMPTS=3 # number of attempts to run the workload
 
 WITH_FLAMEGRAPHS=true
+WITH_MEM_PROFILE=false
 SUCCESS=0
 FAILURE=1
 
@@ -108,7 +109,7 @@ fio_rc=0
 source /root/bin/common.sh
 source /root/bin/monitoring.sh
 
-while getopts 'ac:d:f:jklrsrw:p:nt:gxz' option; do
+while getopts 'ac:d:f:jklrsrw:p:nmt:gxz' option; do
   case "$option" in
     a) RUN_ALL=true
         ;;
@@ -121,6 +122,8 @@ while getopts 'ac:d:f:jklrsrw:p:nt:gxz' option; do
     w) WORKLOAD=$OPTARG
         ;;
     n) WITH_FLAMEGRAPHS=false # no flamegraphs by default
+        ;;
+    m) WITH_MEM_PROFILE=true # no mem profiile by default
         ;;
     s) SINGLE=true
         ;;
@@ -183,6 +186,25 @@ fun_osd_dump_stats_end() {
             local outfile=${OUTFILE/_dump.json}_${dmp_stats}.json
             echo "]" >> ${outfile}
         done
+    fi
+}
+
+fun_osd_mem_profile() {
+    local OUTFILE=$1
+    if [ "${OSD_TYPE}" != "classic" ]; then
+        # Attach to osd.0 only with gdb and get the mem profile 
+        # Assuming osd.0 is the one we monitor 
+        # --ex 'attach \"${osdpid}\"' \
+        #--ex 'call ceph::OSD::SeastarMemProfiler::write_profile_to_file(\"${OUTFILE}\")' \
+        # --ex 'detach' --ex 'quit'"
+        local osdpid=$(pidof crimson-osd | awk '{print $1}')
+        local timestamp=$(date +'%Y-%m-%dT%H:%M:%S')
+        echo "{ \"timestamp\": \"$timestamp\" ," >> ${OUTFILE}
+        echo " \"mem_profile\": " >> ${OUTFILE}
+        local cmd="gdb -p ${osdpid} --batch \
+            -d /root/bin/tools -x run_scylla"
+        $cmd 2>&1 >> ${OUTFILE}
+        echo "}" >> ${OUTFILE}
     fi
 }
 #for oid in ${!osd_id[@]}; do
@@ -383,6 +405,9 @@ fun_run_workload_loop() {
     if [ "$SKIP_OSD_MON" = false ]; then
         fun_osd_dump_end ${TEST_RESULT}_dump.json
         fun_osd_dump_stats_end ${TEST_RESULT}_dump.json
+        if [ "$WITH_MEM_PROFILE" = true ]; then
+            fun_osd_mem_profile ${TEST_RESULT}_memprofile.out
+        fi
     fi
     # Post processing:
     fun_post_process   

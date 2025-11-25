@@ -1,0 +1,5 @@
+# The path to the script should've given as -d arg
+source scylla-gdb.py
+scylla memory
+scylla heapprof --flame
+
