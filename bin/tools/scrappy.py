@@ -16,6 +16,7 @@ import glob
 import re
 import tempfile
 import pprint
+import gzip
 
 __author__ = "Jose J Palacios-Perez"
 
@@ -118,6 +119,173 @@ def _cb_get_osd_logs_path(logdir, job):
     pattern = os.path.join(logdir, job, "remote", "*", "log", "ceph-osd.*.log.gz")
     return [n for n in glob.glob(pattern) if os.path.isfile(n)]
 
+
+def get_backtraces_from_coredumps(coredump_path, dump_path, dump_program, dump):
+    """
+    Get backtraces from coredumps found in path
+    On a future iteration, we can expand this to inject gdb commands from the test plan yaml
+    """
+    # Need to check whether the coredump is compressed, try uncompressing it first with gzip
+    # In which case, we might need the f_out produced in fetch_binaries_for_coredumps
+    #if dump.endswith('.gz'):
+
+    gdb_output_path = os.path.join(coredump_path,
+                                   dump + '.gdb.txt')
+    logger.info(f'Getting backtrace from core {dump} ...')
+    with open(gdb_output_path, 'w') as gdb_out:
+        gdb_proc = subprocess.Popen(
+            ['gdb', '--batch', '-ex', 'set pagination 0',
+             '-ex', 'thread apply all bt full',
+             dump_program, dump_path],
+            stdout=gdb_out,
+            stderr=subprocess.STDOUT
+        )
+        gdb_proc.wait()
+        logger.info(f"core {dump} backtrace saved to {gdb_output_path}")
+
+
+class CoreDump:
+    """
+    Class to compare core dumps against known issues.
+    The files might been compressed, so we need to recognise the type of compression first.
+    This can be done by checking the file magic number: gzip and zstd
+    1f 8b 08 - gzip
+    28 b5 2f fd - zstd
+    42 5a 68 - bzip2
+    50 4b 03 04 - zip 
+    7f 45 4c 46 - elf
+    We uncopmpress the code, then run gdb to get the backtrace and compare against known issues.
+    """
+    class GzipCoreDump:
+        """
+        Subclass to handle gzip compressed core dumps.
+        """
+        uncompress = [ 'gzip',  '-d ']
+        # We might need to import mimetypes to check for gzip files
+        def check(self, dump_path):
+            with open(dump_path, 'rb') as f:
+                magic = f.read(2)
+                if magic == b'\x1f\x8b':
+                    return True
+            return False
+
+    class ZstdCoreDump:
+        """
+        Subclass to handle zstd compressed core dumps.
+        """
+        uncompress = [ 'zstd',  '-d ']
+        # centos 9 coredumps are zstded
+        def check(self, dump_path):
+            with open(dump_path, 'rb') as f:
+                magic = f.read(4)
+                if magic == b'\x28\xb5\x2f\xfd':
+                    return True
+            return False
+
+    csdict = {
+        'gzip': {
+            'regex': r'.*gzip compressed data.*',
+            'class': GzipCoreDump(),
+        },
+        'zstd': {
+            'regex': r'.*Zstandard compressed data.*',
+            'class':  ZstdCoreDump(),
+        },
+    }
+
+    def _get_compressed_type(self, dump_path):
+        for cs in self.csdict.values():
+            obj = cs['class']()
+            if obj.check(dump_path):
+                return obj
+        return None
+
+    def _looks_compressed(self,dump_out):
+        for cs in self.csdict.values():
+            if re.match(cs['regex'], dump_out):
+                return True 
+        return False
+
+    def _get_file_info(self, dump_path):
+        dump_info = subprocess.Popen(['file', dump_path],
+                                     stdout=subprocess.PIPE)
+        dump_out = dump_info.communicate()[0].decode()
+        return dump_out
+
+    def _uncompress_file(self, dump_path, cs_type):
+        if cs_type is None:
+            return None
+        # Construct a bash cmd to uncompress the file based on its type 
+        try:
+            cmd = cs_type.uncompress + [dump_path]
+            unc = subprocess.Popen( cmd )
+            unc.wait()
+            # After uncompressing, the new file path is the original path without the compression suffix
+            uncompressed_path = dump_path.rsplit('.', 1)[0]
+            return uncompressed_path
+        except Exception as e:
+            logger.info('Something went wrong while attempting to uncompress the file')
+            logger.error(e)
+            return None
+
+    def __init__(self, core_file):
+        self.core_file = core_file # path to the core dump file 
+        self.compression_type = None
+        dump_info = self._get_file_info(core_file)
+        if self._looks_compressed(dump_info):
+            self.compression_type = self._get_compressed_type(core_file)
+            self.core_file = self._uncompress_file(core_file, self.compression_type)
+
+    """
+    # Auxiliar function to uncompress zstded core files 
+    def _decompress_zstd(self, dump_path):
+        try:
+            import compression.zstd as zstd
+        except ImportError:
+            log.error("zstandard module not found, cannot decompress zstded core files")
+            return None
+        dctx = zstd.ZstdDecompressor()
+        with open(dump_path, 'rb') as compressed:
+            with tempfile.NamedTemporaryFile(mode='w+b') as decompressed:
+                dctx.copy_stream(compressed, decompressed)
+                decompressed.flush()
+                decompressed.seek(0)
+                return decompressed.name
+        return None
+
+    # We need two subclassed for each of these types of compression
+    csdict = {
+        'gzip': {
+            'check': _is_core_gziped,
+             'uncompress': [ 'gzip',  '-d ']
+            'regex': r'.*gzip compressed data.*'
+            #'ELF.*core file from \'([^\']+)\''
+        },
+        'zstd': {
+            'check': _is_core_zstded,
+            'uncompress': [ 'zstd',  '-d '],
+            'regex': r'.*Zstandard compressed data.*'
+        }
+    }
+
+    def _uncompress_file_(self, dump_path, cs_type):
+        if cs_type is None:
+            return None
+        if cs_type == self.csdict['zstd']:
+            return self._decompress_zstd(dump_path)
+        else:
+            # gzip case
+            try:
+                with gzip.open(dump_path, 'rb') as f_in, \
+                     tempfile.NamedTemporaryFile(mode='w+b') as f_out:
+                     shutil.copyfileobj(f_in, f_out)
+                     return f_out.name
+            except Exception as e:
+                log.info('Something went wrong while opening the compressed file')
+                log.error(e)
+                return None
+    """
+    
 class Scrappy:
     """
     Main class to scan log files for known issues.
