@@ -1,6 +1,7 @@
 # Patterns to search on a osd.log:
 ceph_assert 
 Aborting  
+Assertion.*failed
 #slow requests
 ##Backtrace
 # 70501: 

@@ -231,6 +231,36 @@ class PerfStatMetric(object):
         chart.save(f"{self.workload}_{metric_name}.{self.plot_ext}")
         #chart.save(f"{self.workload}_{metric_name}.png")
 
+    def _min_max_scale(self, df:pl.DataFrame) -> pl.DataFrame:
+        """
+        Normalizes the dataframe columns using min-max scaling
+        scaled_pl_df = pl_df.select((pl.all()-pl.all().min()) / (pl.all().max()-pl.all().min()))
+        """
+        normalized_df = df.clone()
+        for col in df.columns:
+            if col != self.options.samples:
+                min_val = df[col].min()
+                max_val = df[col].max()
+                normalized_df = normalized_df.with_column(
+                    ((pl.col(col) - min_val) / (max_val - min_val)).alias(col)
+                )
+        return normalized_df
+
+    def _normalize(self, df:pl.DataFrame) -> pl.DataFrame:
+        """
+        Normalizes the dataframe columns
+        normalized_pl_df = pl_df.select((pl.all()-pl.all().mean()) / pl.all().std())
+        """
+        normalized_df = df.clone()
+        for col in df.columns:
+            if col != self.options.samples:
+                mean_val = df[col].mean()
+                std_val = df[col].std()
+                normalized_df = normalized_df.with_column(
+                    ((pl.col(col) - mean_val) / std_val).alias(col)
+                )
+        return normalized_df
+
     def plot_data(self):
         """
         Plots the data using polars
