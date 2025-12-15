@@ -597,14 +597,14 @@ fun_post_process() {
         echo "FIO: $fio_pids" >> ${TOP_PID_LIST}
         printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
         # When collecting data for response curves, produce charts for the cummulative pid list
-        mon_filter_top ${TEST_RESULT}_top.out ${OSD_CPU_AVG}
+        mon_filter_top ${TEST_RESULT}_top.out ${OSD_CPU_AVG} ${TOP_PID_JSON}
     else
         #  single top out file with OSD and FIO CPU util
         for x in $(cat ${TOP_OUT_LIST}); do
             # CPU avg, so we might add a condttion (or option) to select which
             # When collecting data for response curves, produce charts for the cummulative pid list
             if [ -f "$x" ]; then
-                mon_filter_top ${x} ${OSD_CPU_AVG}
+                mon_filter_top ${x} ${OSD_CPU_AVG} ${TOP_PID_JSON}
             fi
         done
     fi

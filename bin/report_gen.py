@@ -29,6 +29,7 @@ import glob
 import re
 import tempfile
 import pprint
+import shutil
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -504,10 +505,9 @@ class Reporter(object):
 
         # print('Success' if proc.returncode == 0 else 'Error')
 
-        def load_bench_json(dp: str):
+        def load_any_json(dp: str):
             """
             Load the benchmark .json file from the given path.
-            TODO: might need renaming since we can use this function to load any .json file
             """
             # Load .json files in the directory as indicated by the benchmark field in the config
             # glob.glob(dir_path + "/*_bench_df.json")
@@ -572,19 +572,22 @@ class Reporter(object):
                 # Need to ensure the path of the file is correct
                 # base_name = os.path.basename(file_name)
                 # chart_name = f"{base_name}.png"
-                if file_name.endswith(".png"):
+                sufixes = (".png", ".svg" )
+                if file_name.endswith(sufixes):
                     # Create a symlink to the original file in the figures/ directory
+                    # github does not support symlinks, so we need to copy the file instead
                     src = os.path.join(dir_path, file_name)
                     dst = os.path.join(
                         self.config["output"]["path"], "figures/", file_name
                     )
                     logger.info(f"{file_name}: linking {src} to {dst}")
 
-                    if not os.path.isfile(dst) and not os.path.islink(dst):
+                    if not os.path.isfile(dst): # and not os.path.islink(dst):
                         try:
-                            os.symlink(src, dst)
+                            #os.symlink(src, dst)
+                            shutil.copy2(src, dst)
                         except FileExistsError:
-                            logger.warning(f"Symlink {dst} already exists")
+                            logger.warning(f"{dst} already exists")
 
                     gen_tex_figure_md_entry(
                         key=key, title=title, file_name=file_name, dir_path="figures"
@@ -627,15 +630,17 @@ class Reporter(object):
 
         def run_perf_metrics(config: str, dir_path: str, title: str) -> bool:
             """
-            Run the perf_metrics.py script with the given config and output.
-            This is a helper function to run the perf_metrics.py script to generate the metrics.
-
-            TEMPORARLY DISABLED UNTIL COMPLETED THE EXTENSIONS FOR MULTIPLE ATTRIBUTES
-
-            command = f"perf_metrics.py -d {dir_path} -i {config} -j -v"
-            return run_script(command, dir_path, f"{title}_metrics")
+            Run the perf_osd_metrics.py script with the given config and output.
             """
-            pass
+            command = f"perf_osd_metrics.py -d {dir_path} -i {config} -t svg -v"
+            return run_script(command, dir_path, f"{title}_metrics")
+
+        def run_perf_stats(dir_path: str, workload: str) -> bool:
+            """
+            Run the perf_osd_metrics.py script with the given config and output.
+            """
+            command = f"perf_stats.py -d {dir_path} -w {workload} -t svg -v"
+            return run_script(command, dir_path, f"{workload}_stats")
 
         def recreate_cpu_avg(name: str, workload: str, test_run: str, dir_path: str):
             """
@@ -686,7 +691,7 @@ class Reporter(object):
                 )
                 # Need to ensure the script is in the PATH
                 #command = f"top_parser.py -t svg -d {dir_path} -p {pid_name}  -c {top_out_name} -a {cpu_avg_name} -v"
-                command = f"top_parser.py -t svg -d {dir_path} -p {pid_name} {top_out_name} {cpu_avg_name}"
+                command = f"top_parser.py -t svg -d {dir_path} -p {pid_name} -o {cpu_avg_name} {top_out_name}"
                 proc = subprocess.Popen(command, shell=True)
                 _ = proc.communicate()
                 return (proc.returncode == 0, cpu_avg_name)
@@ -759,13 +764,13 @@ class Reporter(object):
             _ = proc.communicate()
             return proc.returncode == 0
 
-        def check_bench_run(name: str, workload: str, test_run: str, dir_path: str):
+        def check_bench_run(name: str, workload: str, test_run: str, dir_path: str) -> bool:
             """
             Check if the benchmark run exists for the given name.
-            This is a helper function to check if the benchmark run exists, so the benchmark result .json file can be loaded.
+            Returns true if the benchmark run exists or was recreated, false otherwise.
             """
             # As a minimum, the keymap.json file must exist
-            _keymap = load_bench_json(os.path.join(dir_path, "keymap.json"))
+            _keymap = load_any_json(os.path.join(dir_path, "keymap.json"))
             logger.info(f"Keymap is {pp.pformat(_keymap)}")
             # if _keymap is None or not os.path.isfile(_keymap):
             #     logger.error(f"Keymap file {dir_path}/keymap.json does not exist")
@@ -780,7 +785,7 @@ class Reporter(object):
             )
             dp = os.path.join(dir_path, bench_name)
             logger.info(f"{name}: checking for {dp}")
-            _json = load_bench_json(dp)
+            _json = load_any_json(dp)
             if _json is None:
                 logger.error(
                     f"Attempting to recreate {bench_name}"  # does not exist in {dir_path}, attempting to recrete it"
@@ -792,22 +797,13 @@ class Reporter(object):
                         f"Failed to recreate benchmark run {bench_name}"  # in {dir_path}"
                     )
                     return False
-                # Then run perf_metrics.py to generate the metrics
-                # perf_metrics_name = f"{test_run}_{workload}_perf_metrics.json"
-                # run_perf_metrics(self.config["input"]["perf_metrics"], dir_path)
-                perf_metrics_name = f"{test_run}_{workload}_rutil_conf.json"
-                run_perf_metrics(
-                    config=perf_metrics_name,
-                    dir_path=dir_path,
-                    title=f"{name}_{test_run}_{workload}",
-                )
-                _json = load_bench_json(dp)
+                _json = load_any_json(dp)
             self.ds_list[name][workload]["json"] = _json
             try:
                 self.ds_list[name][workload]["frame"] = pd.DataFrame(_json)
             except ValueError as e:
                 logger.error(f"Failed to create DataFrame from {dp}: {e}")
-                logger.debug(f"JSON content: {_json}")
+                logger.debug(f"JSON content: {pp.pformat(_json)}")
                 return False
             return True
 
@@ -828,9 +824,32 @@ class Reporter(object):
                     "keymap": None,
                 }
             )
-            check_bench_run(name, workload, test_run, dir_path)
+            if check_bench_run(name, workload, test_run, dir_path):
+                logger.info(
+                    f"Loaded benchmark run for {name} workload {workload} from {dir_path}"
+                )
             # self.ds_list[name][workload]["framep"] = pd.DataFrame.from_dict(
             #     self.ds_list[name][workload]["json"], orient="tight"
+            # Then run perf_metrics.py to generate the metrics
+            # perf_metrics_name = f"{test_run}_{workload}_perf_metrics.json"
+            # run_perf_metrics(self.config["input"]["perf_metrics"], dir_path)
+            perf_metrics_name = f"{test_run}_{workload}_rutil_conf.json"
+            run_perf_metrics(
+                config=perf_metrics_name,
+                dir_path=dir_path,
+                title=f"{name}_{test_run}_{workload}",
+            )
+            run_perf_stats(
+                dir_path=dir_path,
+                workload=f"{name}_{test_run}_{workload}",
+            )
+            # Execute gnuplot to generate the charts from the .dat files 
+            command = f"gnuplot {dir_path}/*.plot"
+            proc = subprocess.Popen(command, shell=True)
+            _ = proc.communicate()
+            if proc.returncode == 0:
+                logger.info(f"Generated gnuplot charts for {dir_path}")
+
 
         for name, test_d in input_dirs.items():
             # Check if the directory exists,should be abetter Pythonic way to do this
@@ -868,7 +887,7 @@ class Reporter(object):
                         continue
                     update_ds_list(name, workload, test_run, dir_path)
                     # We might want to structure this list via name and workload, so we can generate
-                    # the contenst of hte document once the compariison charts are generated
+                    # the contents of the document once the comparison charts are generated
 
                     list_files = self.traverse_dir(dir_path)
                     if list_files is None:

@@ -156,7 +156,7 @@ class TopParser(object):
 
     def get_procs_names(self):
         """
-        Get the processes names and pids from the json input file
+        Get the processes names and pids from the json input file (via option -p)
         This json will be extended to contain the CPU cores ranges per process group
         """
         if self.procs_file:
@@ -648,7 +648,7 @@ def main(argv):
         type=str,
         default=None,
         nargs="?",
-        help="JSON file to produce as output",
+        help="JSON file to produce as output CPU cores average",
     )
     parser.add_argument(
         "-v",

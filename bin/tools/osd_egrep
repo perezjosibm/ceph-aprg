@@ -1,9 +1,10 @@
 # Patterns to search on a osd.log:
 ceph_assert 
+ceph::assert
 Aborting  
 Assertion.*failed
 #slow requests
-##Backtrace
+^Backtrace:.*$
 # 70501: 
 In function 'PeeringState::Recovered::Recovered.*!ps->needs_recovery$
 # 72778

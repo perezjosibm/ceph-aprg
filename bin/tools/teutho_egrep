@@ -3,7 +3,7 @@ INFO:tasks.thrashosds.thrasher:in_osds:
 is failed
 tasks.daemonwatchdog.daemon_watchdog:BARK!
 Error ENXIO
-# 73169 
+# wait_for_recovery: failed before timeout expired: 73169 
 wait_for_recovery 
 # 71478: rados_api_tests
 Assertion 'get() != pointer()' failed
