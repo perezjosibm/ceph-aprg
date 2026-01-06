@@ -432,9 +432,12 @@ class Reporter(object):
         object FioPlot, with the list of entries, each a dict with the
         workload, test run name, and path to the .dat file. Traverse it and
         generate the .gnuplot script.
+        One step to generalise this, assuming the same set of ds_list entries, 
+        (each a dict of the workloads), we can provide a list of columns to plot against,
+        for example latency vs iops, iops vs CPU util, etc.
         """
         plot = FioPlot(
-            ds_list=self.ds_list,
+            ds_list=self.ds_list, # TBC. indicate the name .json to use
             workload_list=self.WORKLOAD_LIST,
             output_path=self.config["output"]["path"],
             output_name=self.config["output"]["name"],

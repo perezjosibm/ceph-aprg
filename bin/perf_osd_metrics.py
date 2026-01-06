@@ -1456,8 +1456,9 @@ class PerfMetricEntry(object):
         # Probably families deserve to be a class of their own
         self._save_families()
         self._plot_families()
-        # Call the new code for the stats dump: seastar and tcmalloc
-        self.load_stats_dump()
+        # Call the new code for the stats dump: seastar and tcmalloc: only if given the option
+        if self.options.stats_dump:
+            self.load_stats_dump()
         self._plot_stats()
 
     def _finalize(self):
@@ -1713,10 +1714,17 @@ def main(argv):
     ) 
     # To be deprecated since we always generate a .json output with the list of generated files
     parser.add_argument(
-        "-s",
+        "-g",
         "--gen_only",
         action="store_true",
         help="True to generated only but do not show the plots interactively",
+        default=False,
+    )
+    parser.add_argument(
+        "-s",
+        "--stats_dump",
+        action="store_true",
+        help="True to fetch for tcmalloc and seastar memory stats dumps and plot them",
         default=False,
     )
     options = parser.parse_args(argv)

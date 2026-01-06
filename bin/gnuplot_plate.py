@@ -120,10 +120,42 @@ class FioPlot(object):
     """
     Class to abstract away the basic functionality for the gen_plot() method in fio-parse-jsons.py
     """
-
+    # We might extend this to a set of predefined profiles, esp.
+    # cores:{user,sys,idle,wait}, mem:{pc,shr,res,free,cached}
     METRICS = ["cpu", "mem"]
     WORKLOAD_LIST = ["randread", "randwrite", "seqread", "seqwrite"]
+    # Traverse a guiding dictionary that specifies which columns to plot
+    # A profile key specifies the suffix for the .{png,svg} output file, and has settings
+    # like the columns to use for x,y axes, labels, etc.
+    cmp_list = [ 
+        {"x": "clat_ms", "y": "iops"},  # latency vs iops
+        {"x": "clat_ms", "y": "bw"},    # latency vs bandwidth
+        {"x": "time_sec", "y": "iops"}, # time vs iops
+        {"x": "time_sec", "y": "bw"},   # time vs bandwidth
+    ]
 
+    profiles = {
+        "iops_vs_lat": {
+            'data_name': "", #f"{entry['test_run']}_{workload}.dat", # default, but might be different
+            'style': 'lp', # or 'linespoints'
+            # We might use a regex to indicate which workloads to apply this profile to
+            "random": {
+                "xlabel": "IOPS (thousand)",
+                "ylabel": "Latency (ms)",
+                "xcolumn": "iops",
+                "ycolumn": "clat_ms",
+            },
+            "sequential": {
+                "xlabel": "Bandwidth (MB/s)",
+                "ylabel": "Latency (ms)",
+                "xcolumn": "bw",
+                "ycolumn": "clat_ms",
+            },
+        },
+        # perf_stats vs time
+    }
+
+ 
     def __init__(
         self,
         ds_list: Dict[str, Any] = {},
@@ -230,7 +262,7 @@ set autoscale y2
             logger.error(f"Error writing to {self.out_plot}: {e}")
             # If we cannot write the .plot file, try on /tmp
             raise
-        # Save the .dat file: this is normally empty foir comparison plots
+        # Save the .dat file: this is normally empty for comparison plots
         if not self.is_cmp:
             with open(self.out_data, "w") as f:
                 f.write(self.data)
@@ -249,6 +281,7 @@ set autoscale y2
 
     def generate_cmp_plot(
         self,
+        cmp_dict: Dict[str, Any] = {},
         xlabel: str = "IOPS (thousand)",
         ylabel: str = "Latency (ms)",
         out_chart: str = "",
@@ -268,8 +301,10 @@ set autoscale y2
         The .dat file is generated from the ds_list (except for Level 2 comparison charts)
         Each .png chart will be named as output_name_<workload>_<out_chart_suffix>.png in the subfolder figures/
         This is intended for the typical Level2 response curves already constructed from FIO output .json files.
+
         FIXME: there is a missnaming taking place elsewhere, as the output_name is not the same as out_chart
-        Probably more appropriate somewhere in common since we used the same method for gen_tex_figure_md_entry() in report_gen.py
+        Probably more appropriate somewhere in common since we used the same method for 
+        gen_tex_figure_md_entry() in report_gen.py
         """
 
         def generate_out_chart(
@@ -305,11 +340,47 @@ set title "{title}-{workload}"
             Generate the entry for each workload in the ds_list
             ds is a dictionary with keys 'path' (the .dat file) and 'workload' (the workload name)
             f"{test_run}_{workload}.dat" is the .dat file name
+            This is assuming the fixed layout of the .dat file:
+
             # The '4' is the column number for the latency in the .dat file
             return f '{dat_path}' every ::1::5 index 0 using ($2/1e3):4:5 t '{name}' w yerr axes x1y1 lc {lc}, \\
             '' every ::1::5 index 0 using ($2/1e3):4 notitle w lp lc {lc} axes x1y1
             """
             return f""" '{dat_path}' every ::1::5 index 0 using ($2/1e3):4 t '{name}' axes x1y1 w lp lc {lc}"""
+
+        def generate_col_entry(name: str, dat_path: str, lc: int, columns: List[str]):
+            """
+            Generate the entry for each workload in the ds_list, using specific columns, e.g. for CPU/MEM metrics
+            cols = ":".join( [ f"(column(\"{x}\"))" for x in columns])
+            return f" '{dat_path}' using {cols} t '{name}' axes x1y1 w lp lc {lc}"
+            """
+            using_clause = ":".join([f"(column(\"{col}\"))" for col in columns])
+            return f""" '{dat_path}' using {using_clause} t '{name}' axes x1y1 w lp lc {lc}"""
+
+
+        def _temp_generate_col_entry(name: str, dat_path: str, lc: int, columns: List[str], entries: List[str]):
+            """
+            Placeholder for the inner logic of generalising the existing comparison entries to use specific columns
+            """
+            if "columns" in entry:
+                columns = entry["columns"]
+                entries.append(
+                    generate_col_entry(name, dp_dat, lc, columns)
+                )
+            else:
+                if cmp_dict.get("use_yerr", False):
+                    entries.append(
+                        f""" '{dp_dat}' every ::1::5 index 0 using ($2/1e3):4:5 t '{name}' w yerr axes x1y1 lc {lc}, \\
+'' every ::1::5 index 0 using ($2/1e3):4 notitle w lp lc {lc} axes x1y1"""
+                    )
+                else:
+                    if cmp_dict is not None and "ycolumns" in cmp_dict:
+                        ycolumns = cmp_dict["ycolumns"]
+                        entries.append(
+                            generate_col_entry(name, dp_dat, lc, ycolumns)
+                        )
+                    else:
+                        entries.append(generate_entry(name, dp_dat, lc))
 
         # Set the default output file names for .the chart .png
         dp = os.path.join(self.output_path, "figures/", self.output_name)
@@ -333,9 +404,14 @@ set title "{title}-{workload}"
                 # Generate the entry for each workload in the ds_list
                 # logger.info(f"Generating comparison entry {workload} for {name}")
                 entry = ds[workload]
-                dir_path = entry["path"]
-                dat_name = f"{entry['test_run']}_{workload}.dat"  # The original aggregated FIO and metrics
+                dir_path = entry["path"]  
+                # The original aggregated FIO and metrics
+                # TBC. we might want to use different .json files here
+                dat_name = f"{entry['test_run']}_{workload}.dat"
                 dp_dat = os.path.join(dir_path, dat_name)
+                # If we provide a container object as cmp_dict, we might iterate over the 'ycolumns' key 
+                # The container might indicate whether to use yerr or not, the columns to use, and which
+                # json from the entry to use
                 entries.append(generate_entry(name, dp_dat, lc))
                 lc += 1  # increment the line color for each entry
 
