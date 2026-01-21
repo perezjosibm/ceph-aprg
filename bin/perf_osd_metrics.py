@@ -240,13 +240,13 @@ class PerfMetricEntry(object):
 
     # Minimum set of metrics to consider, can be provided by tge config .json
     DEFAULT_METRIC_REGEX = [
-        re.compile(r"^(reactor_|memory_|cache_).*"),
+        re.compile(r"^(reactor_|memory_|cache_|seastore_).*"),
         re.compile(
             r"(io_queue_|segment_manager_|network_bytes_|scheduler_|journal_).*"
         ),
     ]  # , re.DEBUG)
+
     # Subfamilies: these are regexes to filter the metrics we are interested in
-    # The following are the metrics we are interested in
     # These are the default if not specified in in the config file
     # These apply to Crimson OSD only, need extending for classic OSD
     # Use the following to select subfamilies as well:
@@ -255,7 +255,7 @@ class PerfMetricEntry(object):
 
     METRICS = {
         "reactor_aio": {
-            "regex": re.compile(r"^(reactor_aio_(reads|writes))"),
+            "regex": re.compile(r"^(reactor_aio_(reads|writes|retries))"),
             "normalisation": "minmax",
             "unit": "operations",
             "reduce": "difference",
@@ -310,13 +310,31 @@ class PerfMetricEntry(object):
             "reduce": "difference",
         },
         "cache_cached": {
-            "regex": re.compile(r"^(cache_cache(_access|_hit|d_extents))"),
+            "regex": re.compile(r"^(cache_(cached.*|dirty.*))"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
+        "cache_lru": {
+            "regex": re.compile(r"^(cache_lru.*)"),
             "normalisation": "minmax",
             "unit": "operations",
             "reduce": "difference",
         },
         "cache_commited": {
             "regex": re.compile(r"^(cache_committed_delta_bytes)"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
+        "cache_refresh": {
+            "regex": re.compile(r"^(cache_refresh.*)"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
+        "cache_successful": {
+            "regex": re.compile(r"^(cache_successful*|cache_trans_read_successful)"),
             "normalisation": "minmax",
             "unit": "operations",
             "reduce": "difference",
@@ -328,7 +346,7 @@ class PerfMetricEntry(object):
             "reduce": "difference",
         },
         "reactor_polls": {
-            "regex": re.compile(r"^(reactor_polls|reactor_tasks_processed)"),
+            "regex": re.compile(r"^(reactor_(polls|tasks_processed|cpp_exceptions))"),
             "normalisation": "minmax",
             "unit": "polls",
             "reduce": "difference",
@@ -338,6 +356,40 @@ class PerfMetricEntry(object):
             "normalisation": "minmax",
             "unit": "pc",
             "reduce": "average",
+        },
+        "journal_bytes": {
+            "regex": re.compile(r"^(journal_.*_bytes)"),
+            "normalisation": "minmax",
+            "unit": "bytes",
+            "reduce": "average",
+        },
+        "journal_ops": {
+            "regex": re.compile(r"^(journal_.*_num)"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "average",
+        },
+
+        "segment_cleaner": {
+            "regex": re.compile(r"^(segment_cleaner_.*)"),
+            "normalisation": "minmax",
+            "unit": "bytes",
+            "reduce": "average",
+        },
+
+        # This is a simple metric with single value per shard
+        "seastore_transactions": {
+                "regex": re.compile(r"^(seastore_(concurrent|pending)_transactions)"),
+                "normalisation": "minmax",
+                "unit": "transactions",
+                "reduce": "average",
+            },
+        # This is a special case since seastore_op_lat has multiple metrics
+        "seastore_op_lat": {
+            "regex": re.compile(r"^(seastore_op_lat)"),
+            "normalisation": "minmax",
+            "unit": "ms",
+            "reduce": "difference",
         },
     }
 
@@ -689,6 +741,33 @@ class PerfMetricEntry(object):
 
         return a_data
 
+
+    def _flat(self, d: Dict[str, Any], parent_key: str = "", sep: str = "_") -> Dict[str, Any]:
+        """
+        Flatten a nested dictionary in any levels into a single level dictionary
+        """
+        items = []
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(self._flat(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
+
+
+    def _flatd(self, d: Dict[str, Any], valids: List[str]) -> Dict[str, Any]:
+        """
+        Flatten a nested dictionary in a single level (used for "seastore_op_lat" )
+        """
+        res = {}
+        for k, v in d.items():
+            if isinstance(v, dict) and k in valids:
+                res.update(self._flatd(v, valids))
+            else:
+                res[k] = v
+        return res
+
     def filter_metrics(
         self, ds_list: Dict[str, Any] | List[Dict[str, Any]]
     ) -> Dict[str, Any]:
@@ -702,19 +781,20 @@ class PerfMetricEntry(object):
         * single value metrics, e.g. reactor_utilization, reactor_polls per
         shard,
 
-        * multi value metrics, e.g. cache_*, which have several attributes,
+        * multi-value metrics, e.g. cache_*, which have several attributes,
         like src, etc.
 
         There are two strategies that can be used to filter the metrics:
-        * main keys are shards: the values dictionaries whose keys are metric
+        * main keys are shards: the values are dictionaries whose keys are metric
         names, and their values array of the measurements (per shard),
         * main key is "metrics" and the values are dictionaries whose keys are
         shards, and their values are measurements (per shard).
 
-        This method returns a single dict with keys the shard names, values the
-        metric names from the set above.
+        This method follows the first strategy returning a single dict with
+        keys the shard names, values the metric names from the set above.
 
-        We might extend this method for the type of OSD metric (classic, crimson).
+        We might extend this method for the type of OSD metric (classic, crimson) essentially
+        by providing a (meta) dictionary to indicate the OSD type class.
 
         FUTURE:
         Try a different structure: as a data frame, the index are the shards (N),
@@ -724,8 +804,7 @@ class PerfMetricEntry(object):
 
         Each ds_list is a list of samples of measurements (e.g.
         reactor_utilization) taken from the OSD, taken at a given time (eg.
-        before/adfter the test run).
-        So each item in the ds_list is a sample.
+        before/adfter the test run). So each item in the ds_list is a sample.
         """
 
         def _get_metric_family(metric: Dict[str, Any]) -> str:
@@ -770,11 +849,24 @@ class PerfMetricEntry(object):
                     return True
             return False
 
+        def _update_metrics_seen(
+            metric_name: str, _shard: int
+        ) -> None:
+            """
+            Update the metrics_seen set with the metric name
+            """
+            if metric_name not in self.metrics_seen:
+                self.metrics_seen.add(metric_name)
+            # We need to keep track of the metrics_seen and shards seen
+            if _shard not in self.shards_seen:
+                self.shards_seen.add(_shard)
+
+
         def _update_shard_value_only(
             metric_name: str, item: Dict[str, Any], result: Dict[int, Any]
         ) -> None:
             """
-            Update the result dict with the scalar metric: the one that only has shard and value.
+            Update the result dict with a single scalar metric: this type only has shard and value.
             This is a dict with keys the shard names, values dicts with keys the metric names,
             and values the list of measurements
             """
@@ -785,13 +877,35 @@ class PerfMetricEntry(object):
                 if metric_name not in result[_shard]:
                     result[_shard][metric_name] = []
                 result[_shard][metric_name].append(item[metric_name]["value"])
-                # We need to keep track of the metrics_seen and shards seen
-                if metric_name not in self.metrics_seen:
-                    self.metrics_seen.add(metric_name)
-                if _shard not in self.shards_seen:
-                    self.shards_seen.add(_shard)
+                _update_metrics_seen(metric_name, _shard)
             except KeyError:
                 logger.error(f"KeyError: {item} has no shard key")
+
+        def _update_shard_generic(
+            metric_name: str, item: Dict[str, Any], result: Dict[int, Any]
+        ) -> None:
+            """
+            Update the result dict with a complex metric:
+            This is a dict with keys the shard names, values dicts with keys the metric names,
+            and values the list of measurements, one per attribute
+            """
+            try:
+                _shard = int(item["shard"])
+            except KeyError:
+                logger.error(f"KeyError: {item} has no shard key")
+                return
+            if _shard not in result:
+                result.update({_shard: {}})
+            _keys = list(item.keys() - {"shard"})
+            if metric_name not in result[_shard]:
+                result[_shard].update({ metric_name: {}} )
+            for k in _keys:
+                if k not in result[_shard][metric_name]:
+                    result[_shard][metric_name][k] = []
+                else:
+                    result[_shard][metric_name][k].append(item[k])
+                    # We might need to reduce two columns (eg sum and count) into a single value, eg for seastore_op_lat
+            _update_metrics_seen(metric_name, _shard)
 
         def _update_family(
             metric_name: str, metric: Dict[str, Any], family: str
@@ -823,6 +937,18 @@ class PerfMetricEntry(object):
                             f"Exception {e} updating family {family} with metric {metric_name}"
                         )
 
+        def _flat_metric(metric_name: str, metric: Dict[str, Any]) -> Dict[str, Any]:
+            """
+            Flatten the metric if needed, e.g. for seastore_op_lat
+            We will define a set of those metrics that need flattening
+            """
+            if metric_name == "seastore_op_lat":
+                # We need to flatten the dict first
+                _keys_to_flatten = ["value"]
+                return self._flatd(metric, _keys_to_flatten)
+            else:
+                return metric
+
         # Ensure that ds_list is a list of dicts
         if isinstance(ds_list, dict):
             ds_list = [ds_list]
@@ -839,11 +965,14 @@ class PerfMetricEntry(object):
                 for _metric in item.keys():
                     if _is_metric_wanted(_metric):
                         family = _get_metric_family(item[_metric])
-                        _update_family(_metric, item[_metric], family)
+                        _m = _flat_metric(_metric, item[_metric])
+                        _update_family(_metric, _m, family)
                         # The following only deals with shard and value
                         # attributes, we later expand to any other if possible
                         if family == "shard_value":
                             _update_shard_value_only(_metric, item, result)
+                        else:
+                            _update_shard_generic(_metric, _m, result)
         return result
 
         # We might also need the full sequence of the reactor_utilization to
@@ -896,6 +1025,77 @@ class PerfMetricEntry(object):
         save_json(_fname, self.m_families)
         self.generated_files.append(_fname)
 
+    def _get_units(self, group: str) -> str:
+        """
+        Get the units of the metric group
+        """
+        try:
+            _units = self.METRICS[group]["unit"]
+        except KeyError:
+            _units = "metric"
+        return _units
+
+
+    def _save_group_df(self, group:str, df: pd.DataFrame):
+        """
+        Save the dataframe as a json file
+        """
+        _fname = self.options.input.replace(".json", f"_{group}.json")
+        # _fname = self.config["output"].replace(".json", f"_{group}.json")
+        logging.info(f"Saving df {_fname} for group {group}:\n{pp.pformat(df)}")
+        with open(_fname, "w", encoding="utf-8") as f:
+            print(df.to_json(f, orient="split"), file=f)
+            f.close()
+        # Can save the df as csv too if needed:
+        df.to_csv(_fname.replace(".json", ".csv"), index=True)
+        self.generated_files.append(_fname)
+
+
+    def _plot_hue_group(self, group_name:str, group: List[pd.DataFrame]):
+        """
+        Special case for seastore_op_lat since we need to plot using hue for the latency attribute
+        """
+        try:
+            df = pd.concat(group, axis=0)
+            df = df.reset_index()
+            df_melted = df[["shard","latency", "seastore_op_lat"]]
+            #df_melted = df.melt(id_vars=["shard"], var_name="latency", value_name="seastore_op_lat")
+            logger.info(f"Plotting seastore_op_lat melted dataframe:\n{pp.pformat(df_melted)}")
+            # setting the dimensions of the plot
+            fig, ax = plt.subplots(figsize=(8, 4))
+            sns.lineplot(data=df_melted, x="shard", y="seastore_op_lat", hue="latency", ax=ax) #, marker="o")
+            # We need to indicate for the xticks the shards in groups of 56
+            #ax.set_xticks(sorted(self.shards_seen))
+            # Get the number of rows of the dataframe 
+            num_rows = df_melted.shape[0]
+            # A sample is num_rows / number of shards per attribute (eg. latency)
+            num_shards = len(self.shards_seen)
+            num_ops = len(df_melted['latency'].unique())
+            # If we have all ops per shard in a sample, then
+            sample_size =  int(num_rows / (num_ops *num_shards))
+            xticks_lst = [ x for x in sorted(self.shards_seen) if x % 56 == 0 ]
+
+            plt.title("Seastore op latency per shard")
+            plt.xlabel("Shard")
+            plt.ylabel("Latency (ms)")
+            plt.grid(True)
+            _ext = self.options.plot_ext
+            chart_name = self.options.input.replace(".json", f"_seastore_op_lat.{_ext}")
+            plt.savefig(
+                chart_name,
+                # dpi=300,
+                bbox_inches="tight",
+            )
+            if self.options.gen_only:
+                logger.info(f"Generated only mode, skipping showing plot for seastore_op_lat")
+                plt.clf()
+                return
+            plt.show()
+            self._save_group_df(group_name, df_melted)
+        except Exception as e:
+            logger.error(f"Exception {e} plotting seastore_op_lat group")
+
+
     def _plot_group(self, groups: Dict[str, List[pd.DataFrame]]):
         """
         Plot the group of dataframes together
@@ -907,14 +1107,20 @@ class PerfMetricEntry(object):
         dfs = [df.set_index('id') for df in dfList]
         df = pd.concat(dfs, axis=1, join='inner')
         """
+
         for group, df_ls in groups.items():
             # result_df = df_ls[0].join(df_ls[1:], how="outer", lsuffix='_left', rsuffix='_right')
             # ValueError: Indexes have overlapping values: Index(['shard'], dtype='object')
             # df = df_ls[0].join(df_ls[1:])
+            logger.info(f"Plotting group {group} ...")
             try:
                 df_ls = [df.set_index("shard") for df in df_ls]
             except Exception as e:
                 logger.error(f"Exception {e} setting index shard for group {group}")
+            if group == "seastore_op_lat":
+                self._plot_hue_group(group, df_ls)
+                #self._save_group_df(group, df_ls[0])  # save the first df only
+                continue
             try:
                 # Need to extract the liist of columns from the group name
                 # (reversing the "encoding", and remove the value attribute),
@@ -929,23 +1135,10 @@ class PerfMetricEntry(object):
                 )
                 continue
             # df = df.rename_axis("samples")
-            try:
-                _units = self.METRICS[group]["unit"]
-            except KeyError:
-                _units = "metric"
 
-            _fname = self.options.input.replace(".json", f"_{group}.json")
-            # _fname = self.config["output"].replace(".json", f"_{group}.json")
-            logging.info(f"Saving df {_fname} for group {group}:\n{pp.pformat(df)}")
-            # Can save the df as csv too if needed:
-            df.to_csv(_fname.replace(".json", ".csv"), index=True)
-
-            with open(_fname, "w", encoding="utf-8") as f:
-                print(df.to_json(f, orient="split"), file=f)
-                f.close()
-            self.generated_files.append(_fname)
-
-            # Try using seaborn instead
+            _units = self._get_units(group)
+            self._save_group_df(group, df)
+            # Try using seaborn instead of pandas plot
             try:
                 df.plot(
                     kind="line",
@@ -976,12 +1169,26 @@ class PerfMetricEntry(object):
                 continue
             plt.show()
 
+                # try:
+                #     df.insert(0, "shard", df.index)
+                # except Exception as e:
+                #     logger.error(
+                #         f"Exception {e} inserting shard index on family {family} metric {metric_name}"
+                #     )
+
     def _plot_families(self):
         """
         Plot the families, each family is a dict with keys the metric names,
         values the dataframes with the attributes as columns.
         ax = df1.plot()
         df2.plot(ax=ax)
+
+        try:
+            df.insert(0, "shard", df.index)
+        except Exception as e:
+            logger.error(
+                f"Exception {e} inserting shard index on family {family} metric {metric_name}"
+            )
         """
         for family in self.m_families:
             groups = {}
@@ -989,20 +1196,29 @@ class PerfMetricEntry(object):
                 # Get the subfamily to plot the metrics together
                 group = self._get_metric_group(metric_name)
                 try:
-                    # Need to rename the "value" column into the metric name
                     df = pd.DataFrame(self.m_families[family][metric_name])
-                    df.rename(columns={"value": metric_name}, inplace=True)
-                    logger.info(
-                        f"Family {family} metric {metric_name}:\n{pp.pformat(df)}"
-                    )
-                    if group is not None and group not in groups:
-                        groups[group] = [df]
-                    else:
-                        groups[group].append(df)
                 except Exception as e:
                     logger.error(
                         f"Exception {e} getting dataframe on family {family} metric {metric_name}"
                     )
+                    continue
+                # Special case: for group "seastore_op_lat", we need to produce "value" as [sum]/[count]
+                if group == "seastore_op_lat":
+                    try:
+                        df["value"] = df["sum"] / df["count"]
+                    except Exception as e:
+                        logger.error(f"Exception {e} reducing seastore_op_lat dataframe:\n{pp.pformat(df)}")
+
+                # Need to rename the "value" column into the metric name
+                df.rename(columns={"value": metric_name}, inplace=True)
+                logger.info(
+                    f"Family {family} metric {metric_name}:\n{pp.pformat(df)}"
+                )
+                if group is not None:
+                    if group not in groups:
+                        groups[group] = [df]
+                    else:
+                        groups[group].append(df)
             self._plot_group(groups)
 
     def load_files(self, json_files: List[str]) -> None:  # List[Dict[str,Any]]:
@@ -1284,7 +1500,7 @@ class PerfMetricEntry(object):
           "timestamp": "2023-10-01T12:00:00Z",
           "label": "before_test",
           "data": {
-            <keys> : <values
+            <keys> : <values>
           }
         ]
         We will transform it into a dict with index the timestamps, and values the data dicts, one column per key

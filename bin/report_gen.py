@@ -123,10 +123,10 @@ class Reporter(object):
         expected_files = {
             "tex": {
                 "tables": re.compile(r".*fg\.tex"),
-                "charts": re.compile(r".*\.png"),
+                "charts": re.compile(r".*\.(png|svg)"),
             },
             "md": {
-                "charts": re.compile(r".*\.png"),
+                "charts": re.compile(r".*\.(png|svg)"),
                 "tables": re.compile(r".*fg\.md"),
                 "flamegraph": re.compile(
                     r".*fg\.svg"
@@ -551,7 +551,7 @@ class Reporter(object):
 
             if key == "tex":
                 title = title.replace("_", "-")
-                self.document["tex"] += "\\begin{figure}[H]\n"
+                self.document["tex"] += "\\begin{figure}[h!]\n"
                 self.document["tex"] += "\\centering\n"
                 self.document["tex"] += (
                     f"\\includegraphics[width=0.8\\textwidth]{{{dir_path}/{file_name}}}\n"
