@@ -297,7 +297,7 @@ class PerfMetricEntry(object):
             # Capture all other metrics, like cross_cpu_free_operations
             "regex": re.compile(r"^(memory_.*)"),
             "normalisation": "minmax",
-            "unit": "bytes", # TBC convert to "MBs",
+            "unit": "bytes",  # TBC convert to "MBs",
             "reduce": "difference",
         },
         "cache_2q": {
@@ -369,27 +369,26 @@ class PerfMetricEntry(object):
             "unit": "operations",
             "reduce": "average",
         },
-
         "segment_cleaner": {
             "regex": re.compile(r"^(segment_cleaner_.*)"),
             "normalisation": "minmax",
             "unit": "bytes",
             "reduce": "average",
         },
-
         # This is a simple metric with single value per shard
         "seastore_transactions": {
-                "regex": re.compile(r"^(seastore_(concurrent|pending)_transactions)"),
-                "normalisation": "minmax",
-                "unit": "transactions",
-                "reduce": "average",
-            },
+            "regex": re.compile(r"^(seastore_(concurrent|pending)_transactions)"),
+            "normalisation": "minmax",
+            "unit": "transactions",
+            "reduce": "average",
+        },
         # This is a special case since seastore_op_lat has multiple metrics
         "seastore_op_lat": {
             "regex": re.compile(r"^(seastore_op_lat)"),
             "normalisation": "minmax",
             "unit": "ms",
             "reduce": "difference",
+            "style": "points",  # special style since multiple metrics
         },
     }
 
@@ -741,8 +740,9 @@ class PerfMetricEntry(object):
 
         return a_data
 
-
-    def _flat(self, d: Dict[str, Any], parent_key: str = "", sep: str = "_") -> Dict[str, Any]:
+    def _flat(
+        self, d: Dict[str, Any], parent_key: str = "", sep: str = "_"
+    ) -> Dict[str, Any]:
         """
         Flatten a nested dictionary in any levels into a single level dictionary
         """
@@ -754,7 +754,6 @@ class PerfMetricEntry(object):
             else:
                 items.append((new_key, v))
         return dict(items)
-
 
     def _flatd(self, d: Dict[str, Any], valids: List[str]) -> Dict[str, Any]:
         """
@@ -849,9 +848,7 @@ class PerfMetricEntry(object):
                     return True
             return False
 
-        def _update_metrics_seen(
-            metric_name: str, _shard: int
-        ) -> None:
+        def _update_metrics_seen(metric_name: str, _shard: int) -> None:
             """
             Update the metrics_seen set with the metric name
             """
@@ -860,7 +857,6 @@ class PerfMetricEntry(object):
             # We need to keep track of the metrics_seen and shards seen
             if _shard not in self.shards_seen:
                 self.shards_seen.add(_shard)
-
 
         def _update_shard_value_only(
             metric_name: str, item: Dict[str, Any], result: Dict[int, Any]
@@ -898,7 +894,7 @@ class PerfMetricEntry(object):
                 result.update({_shard: {}})
             _keys = list(item.keys() - {"shard"})
             if metric_name not in result[_shard]:
-                result[_shard].update({ metric_name: {}} )
+                result[_shard].update({metric_name: {}})
             for k in _keys:
                 if k not in result[_shard][metric_name]:
                     result[_shard][metric_name][k] = []
@@ -1035,67 +1031,90 @@ class PerfMetricEntry(object):
             _units = "metric"
         return _units
 
-
-    def _save_group_df(self, group:str, df: pd.DataFrame):
+    def _save_group_df(self, group: str, df: pd.DataFrame):
         """
         Save the dataframe as a json file
         """
         _fname = self.options.input.replace(".json", f"_{group}.json")
         # _fname = self.config["output"].replace(".json", f"_{group}.json")
         logging.info(f"Saving df {_fname} for group {group}:\n{pp.pformat(df)}")
-        with open(_fname, "w", encoding="utf-8") as f:
-            print(df.to_json(f, orient="split"), file=f)
-            f.close()
+        try:
+            json_dict = json.loads(df.to_json(orient='records'))
+        except ValueError as ve:
+            logger.error(f"ValueError: {ve} saving df for group {group}, trying orient='split'")
+            json_dict = json.loads(df.to_json(orient='split'))
+        # ValueError: DataFrame columns must be unique for orient='records'.
+        save_json(_fname, json_dict)
+        # with open(_fname, "w", encoding="utf-8") as f:
+        #     print(df.to_json(f, orient="split"), file=f)
+        #     f.close()
         # Can save the df as csv too if needed:
-        df.to_csv(_fname.replace(".json", ".csv"), index=True)
+        df.to_csv(_fname.replace(".json", ".csv"), index=True, na_rep="-", float_format="%.3f")
         self.generated_files.append(_fname)
 
-
-    def _plot_hue_group(self, group_name:str, group: List[pd.DataFrame]):
+    def _plot_hue_group(self, group_name: str, df: pd.DataFrame):
         """
-        Special case for seastore_op_lat since we need to plot using hue for the latency attribute
-        """
-        try:
+        Special case for seastore_op_lat (and some other metrics) since we need to plot using hue for the latency attribute
+        TODO: extend to other metrics that might need hue, eg journal ops bytes scheduler (group) tasks, which we need to indicate
+        which column name to use as hue
+         group: List[pd.DataFrame]
             df = pd.concat(group, axis=0)
             df = df.reset_index()
-            df_melted = df[["shard","latency", "seastore_op_lat"]]
-            #df_melted = df.melt(id_vars=["shard"], var_name="latency", value_name="seastore_op_lat")
-            logger.info(f"Plotting seastore_op_lat melted dataframe:\n{pp.pformat(df_melted)}")
-            # setting the dimensions of the plot
-            fig, ax = plt.subplots(figsize=(8, 4))
-            sns.lineplot(data=df_melted, x="shard", y="seastore_op_lat", hue="latency", ax=ax) #, marker="o")
-            # We need to indicate for the xticks the shards in groups of 56
-            #ax.set_xticks(sorted(self.shards_seen))
-            # Get the number of rows of the dataframe 
-            num_rows = df_melted.shape[0]
-            # A sample is num_rows / number of shards per attribute (eg. latency)
-            num_shards = len(self.shards_seen)
-            num_ops = len(df_melted['latency'].unique())
-            # If we have all ops per shard in a sample, then
-            sample_size =  int(num_rows / (num_ops *num_shards))
-            xticks_lst = [ x for x in sorted(self.shards_seen) if x % 56 == 0 ]
-
-            plt.title("Seastore op latency per shard")
-            plt.xlabel("Shard")
-            plt.ylabel("Latency (ms)")
-            plt.grid(True)
-            _ext = self.options.plot_ext
-            chart_name = self.options.input.replace(".json", f"_seastore_op_lat.{_ext}")
-            plt.savefig(
-                chart_name,
-                # dpi=300,
-                bbox_inches="tight",
+        try:
+            df_melted = df[["shard", "latency", "seastore_op_lat"]]
+            # df_melted = df.melt(id_vars=["shard"], var_name="latency", value_name="seastore_op_lat")
+            logger.info(
+                f"Plotting seastore_op_lat melted dataframe:\n{pp.pformat(df_melted)}"
             )
-            if self.options.gen_only:
-                logger.info(f"Generated only mode, skipping showing plot for seastore_op_lat")
-                plt.clf()
-                return
-            plt.show()
-            self._save_group_df(group_name, df_melted)
         except Exception as e:
             logger.error(f"Exception {e} plotting seastore_op_lat group")
+        """
+        # We need to indicate for the xticks the shards in groups of 56
+        # ax.set_xticks(sorted(self.shards_seen))
+        # Get the number of rows of the dataframe
+        num_rows = df.shape[0]
+        # A sample is num_rows / number of shards per attribute (eg. latency)
+        num_shards = len(self.shards_seen)
+        num_ops = len(df["latency"].unique())
+        # If we have all ops per shard in a sample, then
+        sample_size = int(num_rows / (num_ops * num_shards))
+        # xticks_lst = [ x for x in sorted(self.shards_seen) if x % 56 == 0 ]
+        logger.info(
+            f"num_ros: {num_rows}, num_shards: {num_shards}, num_ops: {num_ops}, sample_size: {sample_size}"
+        )
+        listxticks=[ x for x in range(0,num_shards+1,int(num_shards/5))]
 
-
+        # setting the dimensions of the plot
+        try:
+            sns.set_theme()
+            fig, ax = plt.subplots(figsize=(8, 4))
+            #sns.lineplot( data=df, x="shard", y="seastore_op_lat", hue="latency", ax=ax) marker="o"
+            sns.scatterplot(data=df, x="shard", y="seastore_op_lat", hue="latency", ax=ax)
+        except Exception as e:
+            logger.error(f"Exception {e} setting seaborn theme for group {group_name}")
+            return
+        plt.title("Seastore op latency per shard")
+        plt.xlabel("Shard")
+        plt.yscale('log')
+        plt.xticks(listxticks)
+        plt.ylabel("Latency (ms)")
+        # plt.grid(True)
+        _ext = self.options.plot_ext
+        chart_name = self.options.input.replace(".json", f"_seastore_op_lat.{_ext}")
+        plt.savefig(
+            chart_name,
+            # dpi=300,
+            bbox_inches="tight",
+        )
+        if self.options.gen_only:
+            logger.info(
+                f"Generated only mode, skipping showing plot for {group_name}"
+            )
+            plt.clf()
+            return
+        plt.show()
+        self._save_group_df(group_name, df)
+        
     def _plot_group(self, groups: Dict[str, List[pd.DataFrame]]):
         """
         Plot the group of dataframes together
@@ -1113,16 +1132,28 @@ class PerfMetricEntry(object):
             # ValueError: Indexes have overlapping values: Index(['shard'], dtype='object')
             # df = df_ls[0].join(df_ls[1:])
             logger.info(f"Plotting group {group} ...")
+            if group == "seastore_op_lat":
+                df = df_ls[0]
+                logger.info(f"Before filtering metric {group}:\n{pp.pformat(df)}")
+                try:
+                    df = df[[ "shard", "latency", "seastore_op_lat"]]
+                except Exception as e:
+                    logger.error(
+                        f"Exception {e} filtering {group} dataframe:\n{pp.pformat(df)}"
+                    )
+                    continue
+                logger.info(f"After filtering metric {group}:\n{pp.pformat(df)}")
+
+                self._plot_hue_group(group, df)
+                # self._save_group_df(group, df_ls[0])  # save the first df only
+                continue
+
             try:
                 df_ls = [df.set_index("shard") for df in df_ls]
             except Exception as e:
                 logger.error(f"Exception {e} setting index shard for group {group}")
-            if group == "seastore_op_lat":
-                self._plot_hue_group(group, df_ls)
-                #self._save_group_df(group, df_ls[0])  # save the first df only
-                continue
             try:
-                # Need to extract the liist of columns from the group name
+                # Need to extract the list of columns from the group name
                 # (reversing the "encoding", and remove the value attribute),
                 # and investigate whether the concat can be done specifiying a
                 # set of columns
@@ -1141,15 +1172,15 @@ class PerfMetricEntry(object):
             # Try using seaborn instead of pandas plot
             try:
                 df.plot(
-                    kind="line",
+                    kind="line",  # marker='.', linestyle='none') # for plotting points
                     title=f"{group} ({_units})",
                     figsize=(8, 4),
                     grid=True,
                     # xlabel="samples",
                     # ylabel="metric",
                     # We need a range of styles to differentiate the lines better
-                    #style=['+-','o-','.--','s:', 'x--','d-.'],
-                    #markevevery=self.sample_size,
+                    # style=['+-','o-','.--','s:', 'x--','d-.'],
+                    # markevevery=self.sample_size,
                     fontsize=8,
                 )
             except Exception as e:
@@ -1169,12 +1200,12 @@ class PerfMetricEntry(object):
                 continue
             plt.show()
 
-                # try:
-                #     df.insert(0, "shard", df.index)
-                # except Exception as e:
-                #     logger.error(
-                #         f"Exception {e} inserting shard index on family {family} metric {metric_name}"
-                #     )
+            # try:
+            #     df.insert(0, "shard", df.index)
+            # except Exception as e:
+            #     logger.error(
+            #         f"Exception {e} inserting shard index on family {family} metric {metric_name}"
+            #     )
 
     def _plot_families(self):
         """
@@ -1207,13 +1238,13 @@ class PerfMetricEntry(object):
                     try:
                         df["value"] = df["sum"] / df["count"]
                     except Exception as e:
-                        logger.error(f"Exception {e} reducing seastore_op_lat dataframe:\n{pp.pformat(df)}")
+                        logger.error(
+                            f"Exception {e} reducing seastore_op_lat dataframe:\n{pp.pformat(df)}"
+                        )
 
                 # Need to rename the "value" column into the metric name
                 df.rename(columns={"value": metric_name}, inplace=True)
-                logger.info(
-                    f"Family {family} metric {metric_name}:\n{pp.pformat(df)}"
-                )
+                logger.info(f"Family {family} metric {metric_name}:\n{pp.pformat(df)}")
                 if group is not None:
                     if group not in groups:
                         groups[group] = [df]
@@ -1588,11 +1619,13 @@ class PerfMetricEntry(object):
                     grid=True,
                     fontsize=8,
                     # We need a range of styles to differentiate the lines better
-                    style=['+-','o-','.--','s:', 'x--','d-.'],
+                    style=["+-", "o-", ".--", "s:", "x--", "d-."],
                     rot=45,
                 )
                 _ext = self.options.plot_ext
-                chart_name = self.options.input.replace("dump.json", f"{schema}_stats_over_time.{_ext}")
+                chart_name = self.options.input.replace(
+                    "dump.json", f"{schema}_stats_over_time.{_ext}"
+                )
                 plt.savefig(
                     chart_name,
                     # dpi=300,
@@ -1924,10 +1957,12 @@ def main(argv):
         default=False,
     )
     parser.add_argument(
-        "-t", "--plot_ext", 
+        "-t",
+        "--plot_ext",
         type=str,
-        help="Either .png or .svg", default=DEFAULT_PLOT_EXT
-    ) 
+        help="Either .png or .svg",
+        default=DEFAULT_PLOT_EXT,
+    )
     # To be deprecated since we always generate a .json output with the list of generated files
     parser.add_argument(
         "-g",
