@@ -9,8 +9,7 @@
     },
     {
       "tracker": "73790",
-      "pattern": [ "crimson::os::seastore::TransactionManager::pin_to_extent.*abort(abort() called)$",
-        "ceph::__ceph_abort" ],
+      "pattern": [ "crimson::os::seastore::TransactionManager::pin_to_extent.*abort(abort() called)$"],
         "description": "",
         "status": "open"
     },

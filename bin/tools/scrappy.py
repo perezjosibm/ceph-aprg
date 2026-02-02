@@ -87,7 +87,7 @@ def prepare_egrep_file(patterns):
     """
     temp_egrep = tempfile.NamedTemporaryFile(delete=False, mode="w")
     for pattern in patterns:
-        temp_egrep.write(pattern + "\n")
+        temp_egrep.write(f"{pattern}\n")
     temp_egrep.close()
     return temp_egrep.name
 
@@ -337,15 +337,22 @@ class Scrappy:
                 r"Error ENXIO",
             ],
             "report": {},  # maps jobs to trackers
-            "report_tmp": "teutho_report.log",
+            "report_tmp": "teutho",
         },
         "osd": {
             "path": _cb_get_osd_logs_path,
             "compressed": True,
-            "patterns": [r"ceph_assert", r"^Backtrace:", r"Aborting", r"slow requests"],
+            "patterns": [
+                r"ceph_assert",
+                r"ceph::assert",
+                r"^Backtrace:",
+                r"Aborting",
+                r"Assertion.*failed",
+                r"ceph::__ceph_abort",
+            ],  # , r"Segmentation fault"
             "egrep_file": "",
             "report": {},
-            "report_tmp": "osd_report.log",
+            "report_tmp": "osd",
         },
     }
 
@@ -364,15 +371,24 @@ class Scrappy:
                 # cmd = "zgrep -f <(echo '" + "\n".join(
                 #     log_info["patterns"]
                 # ) + "') "
+            # patterns = [issue["pattern"] for _k, issue in self.issues.items()]
+            #_patterns = self.issues[log_type]
+            #patterns = [item["pattern"] for item in _patterns]
+            #log_info["patterns"].extend(patterns)
         """
         for log_type, log_info in self.LOG_TYPES.items():
-            # patterns = [issue["pattern"] for _k, issue in self.issues.items()]
-            _patterns = self.issues[log_type]
-            patterns = [item["pattern"] for item in _patterns]
-            log_info["patterns"].extend(patterns)
-            egrep_file = prepare_egrep_file(log_info["patterns"])
+            _patterns = log_info["patterns"]
+            for item in self.issues[log_type]:
+                for pattern in item["pattern"]:
+                    _patterns.append(pattern)
+            egrep_file = prepare_egrep_file(_patterns)
             log_info["egrep_file"] = egrep_file
             logger.debug(f"Prepared _egrep file for {log_type}: {egrep_file}")
+
+    # Unzip the log file into a temporary directory
+    # with tempfile.TemporaryDirectory() as temp_dir:
+    #     unzip_run_file(log_path, temp_dir)
+    #     report = scan_logs(temp_dir, self.issues)
 
     def scan_logs(self, job: str, log_type: str, log_info: dict):
         """
@@ -382,39 +398,97 @@ class Scrappy:
             "compressed": self.LOG_TYPES[log_type]["compressed"],
         }
         """
-        report = {}
+        report = self.LOG_TYPES[log_type]["report"]
         for log_path in log_info["path"](self.logdir, job):
             logger.debug(f"Scanning log file: {log_path}")
-            print(f"{job}: Scanning {log_path} ...")
-            report_tmp = log_info["report_tmp"]
-            report_tmp.replace("_report.log", f"{job}_report.log")
+            report_tmp = f"{job}_{log_info['report_tmp']}_report.log"
+            # report_tmp.replace("_report.log", f"{job}_report.log")
             if log_info["compressed"]:
                 cmd = f"zgrep -f {log_info['egrep_file']} -B 15 -A 20 {log_path} >> {report_tmp}"  # &
-                # # Unzip the log file into a temporary directory
-                # with tempfile.TemporaryDirectory() as temp_dir:
-                #     unzip_run_file(log_path, temp_dir)
-                #     report = scan_logs(temp_dir, self.issues)
             else:
                 cmd = f"grep -f {log_info['egrep_file']} {log_path} >> {report_tmp}"
 
             # Execute the cmd and capture output into report per job, run in the background:
+            logger.debug(f"Executing: {cmd}")
             proc = subprocess.Popen(
                 cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
             _stdout, stderr = proc.communicate()
             if proc.returncode == 0:
-                print(f"Matches found in {log_path}:")
-                # print(stdout.decode())
-                report[job] = {"log": report_tmp, "trackers": []}
+                logger.debug(f"Matches found in job {job}")
+                # print(_stdout.decode())
+                if job not in report:
+                    report[job] = {
+                        "log": report_tmp,
+                        "trackers": {},
+                    }  # how many times each tracker found in job
             else:
-                print(f"No matches found in {log_path} or error occurred.")
+                logger.debug(
+                    f"No matches found in {log_path} or error occurred: {_stdout}"
+                )
                 if stderr:
-                    print(f"Error: {stderr.decode()}")
+                    logger.debug(f"Error: {stderr.decode()}")
 
-        self.LOG_TYPES[log_type]["report"].update(report)
-        logger.debug(f" Job {job}: {pp.pformat(report)}")
+        # logger.debug(f" Job {job}: {pp.pformat(report)}")
         # report = scan_logs(self.logdir, self.issues)
         # pprint.pprint(report)
+
+    def _show_occurences(self, log_file: str, pattern: str) -> int:
+        """
+        Show the number of occurrences of the given pattern in the log file.
+        """
+        cmd = f"grep -c -e {pattern} {log_file}"
+        logger.debug(f"Executing: {cmd}")
+        proc = subprocess.Popen(
+            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+        _stdout, stderr = proc.communicate()
+        if proc.returncode == 0:
+            return int(_stdout.decode().strip())
+        else:
+            logger.debug(
+                f"No matches found for pattern {pattern} in {log_file} or error occurred: {_stdout}"
+            )
+            if stderr:
+                logger.debug(f"Error: {stderr.decode()}")
+            return 0
+
+    def _count_occurrences(self, log_file: str, pattern: str) -> int:
+        """
+        Count the number of occurrences of the given pattern in the log file.
+        """
+        count = 0
+        with open(log_file, "r") as f:
+            for line in f:
+                if re.search(pattern, line):
+                    count += 1
+        return count
+
+    def count_issue_occurrences(
+        self, job: str, log_file: str, issue: dict, job_info: dict
+    ) -> int:
+        """
+        Count the number of occurrences of the given issue in the log file.
+        An issue can have multiple patterns, we sum the occurrences of each pattern.
+        """
+        total_count = 0
+        for pattern in issue["pattern"]:
+            count = self._count_occurrences(log_file, pattern)
+            total_count += count
+        if total_count > 0:
+            if issue["tracker"] not in job_info["trackers"]:
+                logger.debug(
+                    f"Job {job}: Matches issue {issue['tracker']} found in {log_file} occurrences: {total_count}"
+                )
+                job_info["trackers"].update({issue["tracker"]: total_count})
+                # job_info["trackers"].append(issue["tracker"])
+            else:
+                logger.debug(
+                    f"Job {job}: Additional Matches issue {issue['tracker']} found in {log_file} occurrences: {total_count}"
+                )
+                job_info["trackers"][issue["tracker"]] += total_count
+
+        return total_count
 
     def scan_reports(self):
         """
@@ -424,30 +498,48 @@ class Scrappy:
             for job, job_info in log_info["report"].items():
                 report_tmp = job_info["log"]
                 if os.path.isfile(report_tmp):
-                    for issue in self.issues:
+                    for issue in self.issues[log_type]:
                         # grep the issue regex patterns in the report_tmp file
-                        cmd = f"grep -c  -e {issue['pattern']} {report_tmp}"
-                        proc = subprocess.Popen(
-                            cmd,
-                            shell=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                        )
-                        _stdout, stderr = proc.communicate()
-                        if proc.returncode == 0:
-                            print(
-                                f"Job {job}: Matches issue {issue['tracker']} found in {report_tmp}:"
-                            )
-                            # print(stdout.decode())
-                            job_info[job]["trackers"].append(issue["tracker"])
+                        self.count_issue_occurrences(job, report_tmp, issue, job_info)
+                    # Construct a dummy issue representing the 'generic'pattern
+                    _generic = {
+                        "tracker": "GENERIC",
+                        "pattern": log_info["patterns"],
+                        "description": "Generic pattern match",
+                    }
+                    self.count_issue_occurrences(job, report_tmp, _generic, job_info)
 
     def show_report(self):
         """
         Show the final report.
+        For each job, use the number of trackers found to use as the severity indicator.
+        tracker_count.get(issue["tracker"], 0) + 1
         """
+        tracker_count = {}
         for log_type, log_info in self.LOG_TYPES.items():
-            print(f"Report for log type: {log_type}")
-            pp.pprint(log_info["report"])
+            logger.debug(
+                f"Report for log type: {log_type}\n{pp.pprint(log_info['report'])}"
+            )
+            for issue in self.issues[log_type]:
+                tracker = issue["tracker"]
+                logger.info(f"Issue {tracker}: {issue['description']}")
+                for job, job_info in log_info["report"].items():
+                    if tracker in job_info["trackers"]:
+                        logger.info(f"  job {job}, in {tracker}")
+                        if tracker not in tracker_count:
+                            tracker_count[tracker] = {
+                                job: job_info["trackers"][tracker]
+                            }
+                        else:
+                            tracker_count[tracker][job] = job_info["trackers"][tracker]
+
+        print("\nSummary of issues found:")
+        for tracker, info in tracker_count.items():
+            # Sort info.keys()) by number of occurrences descending
+            _sorted = sorted(info, key=info.get, reverse=True)
+            print(
+                f"Issue {tracker}: found in {len(info.keys())} jobs: {', '.join(_sorted)}"
+            )
 
     def run(self):
         """
