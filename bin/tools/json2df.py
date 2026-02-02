@@ -22,7 +22,7 @@ pp = pprint.PrettyPrinter(width=61, compact=True)
 
 # Dictionary of files to load and process:
 input = {
-  "atomics": "~/Work/cephdev/redcarp/reports/2025/build_91c5653e30a/data/sea_56reactor_1osd_4x400GB_atomics_rc/sea_1osd_56reactor_32fio_bal_osd_rc_1procs_randwrite_d/sea_1osd_56reactor_4x400GB_atomics_4k_randwrite_perf_stat_metrics.json",
+    "atomics": "~/Work/cephdev/redcarp/reports/2025/build_91c5653e30a/data/sea_56reactor_1osd_4x400GB_atomics_rc/sea_1osd_56reactor_32fio_bal_osd_rc_1procs_randwrite_d/sea_1osd_56reactor_4x400GB_atomics_4k_randwrite_perf_stat_metrics.json",
     "seastore": "data/sea_56reactor_1osd_4x400GB_rc/sea_1osd_56reactor_32fio_bal_osd_rc_1procs_randwrite_d/sea_1osd_56reactor_4x400GB_4k_randwrite_perf_stat_metrics.json",
 }
 

@@ -11,7 +11,6 @@ import logging
 import subprocess
 import os
 import sys
-import json
 import glob
 import re
 import tempfile
@@ -24,6 +23,20 @@ logger = logging.getLogger(__name__)
 FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
 # root_logger = logging.getLogger(__name__)
 pp = pprint.PrettyPrinter(width=61, compact=True)
+
+
+def extract_job_ids(log_file):
+    job_ids = []
+    pattern = re.compile(r"\d+ jobs: \[(.*?)\]")
+
+    with open(log_file, "r") as file:
+        for line in file:
+            match = pattern.search(line)
+            if match:
+                ids = match.group(1).replace("'", "").split(", ")
+                job_ids.extend(ids)
+
+    return job_ids
 
 
 def load_issues(issues_file):
@@ -47,9 +60,11 @@ def load_scrapper(scrapper_file):
     From this, we get the list of job failures to scan for
     """
     # List of all the failures from the scrapper_file:
-    failures = []
+    # failures = []
+    job_ids = []
     # Regular expression to match lines like: 123 jobs: ['job1','job2']
-    regex = re.compile(r"^\d+\s+jobs:\s+\[('\d.+',?)+\]$")
+    # regex = re.compile(r"^\d+\s+jobs:\s+\[('\d.+',?)+\]$")
+    pattern = re.compile(r"\d+ jobs: \[(.*?)\]")
     # Unit test using a sample scrapper lines
     # 1 jobs: ['8595670']
     # 2 jobs: ['8595671', '8595672']
@@ -57,10 +72,14 @@ def load_scrapper(scrapper_file):
         for line in f:
             # if line.startswith('#'):
             #     continue
-            match = regex.match(line)
+            # match = regex.match(line)
+            match = pattern.search(line)
             if match:
-                failures.append(match.group(1).split(","))
-    return failures
+                ids = match.group(1).replace("'", "").split(", ")
+                job_ids.extend(ids)
+                # failures.append(match.group(1).split(","))
+    return job_ids
+
 
 def prepare_egrep_file(patterns):
     """
@@ -71,6 +90,7 @@ def prepare_egrep_file(patterns):
         temp_egrep.write(pattern + "\n")
     temp_egrep.close()
     return temp_egrep.name
+
 
 def unzip_run_file(zip_file: str, out_dir: str):
     """
@@ -83,7 +103,7 @@ def unzip_run_file(zip_file: str, out_dir: str):
     return proc.returncode == 0
 
 
-def scan_logs(logdir, issues):
+def _scan_logs(logdir, issues):
     """
     We reuse this function to scan for either teuthology or osd logs, might also serve for any other type of log.
     Scan log files in the given directory for known issues.
@@ -105,12 +125,14 @@ def scan_logs(logdir, issues):
                         report[log_filename].append(issue["description"])
     return report
 
+
 def _cb_get_logs_path(logdir, job):
     """
     Callback to get the teuthology log path.
     """
     pattern = os.path.join(logdir, job, "teuthology.log")
     return [n for n in glob.glob(pattern) if os.path.isfile(n)]
+
 
 def _cb_get_osd_logs_path(logdir, job):
     """
@@ -127,18 +149,24 @@ def get_backtraces_from_coredumps(coredump_path, dump_path, dump_program, dump):
     """
     # Need to check whether the coredump is compressed, try uncompressing it first with gzip
     # In which case, we might need the f_out produced in fetch_binaries_for_coredumps
-    #if dump.endswith('.gz'):
+    # if dump.endswith('.gz'):
 
-    gdb_output_path = os.path.join(coredump_path,
-                                   dump + '.gdb.txt')
-    logger.info(f'Getting backtrace from core {dump} ...')
-    with open(gdb_output_path, 'w') as gdb_out:
+    gdb_output_path = os.path.join(coredump_path, dump + ".gdb.txt")
+    logger.info(f"Getting backtrace from core {dump} ...")
+    with open(gdb_output_path, "w") as gdb_out:
         gdb_proc = subprocess.Popen(
-            ['gdb', '--batch', '-ex', 'set pagination 0',
-             '-ex', 'thread apply all bt full',
-             dump_program, dump_path],
+            [
+                "gdb",
+                "--batch",
+                "-ex",
+                "set pagination 0",
+                "-ex",
+                "thread apply all bt full",
+                dump_program,
+                dump_path,
+            ],
             stdout=gdb_out,
-            stderr=subprocess.STDOUT
+            stderr=subprocess.STDOUT,
         )
         gdb_proc.wait()
         logger.info(f"core {dump} backtrace saved to {gdb_output_path}")
@@ -152,20 +180,23 @@ class CoreDump:
     1f 8b 08 - gzip
     28 b5 2f fd - zstd
     42 5a 68 - bzip2
-    50 4b 03 04 - zip 
+    50 4b 03 04 - zip
     7f 45 4c 46 - elf
     We uncopmpress the code, then run gdb to get the backtrace and compare against known issues.
     """
+
     class GzipCoreDump:
         """
         Subclass to handle gzip compressed core dumps.
         """
-        uncompress = [ 'gzip',  '-d ']
+
+        uncompress = ["gzip", "-d "]
+
         # We might need to import mimetypes to check for gzip files
         def check(self, dump_path):
-            with open(dump_path, 'rb') as f:
+            with open(dump_path, "rb") as f:
                 magic = f.read(2)
-                if magic == b'\x1f\x8b':
+                if magic == b"\x1f\x8b":
                     return True
             return False
 
@@ -173,63 +204,64 @@ class CoreDump:
         """
         Subclass to handle zstd compressed core dumps.
         """
-        uncompress = [ 'zstd',  '-d ']
+
+        uncompress = ["zstd", "-d "]
+
         # centos 9 coredumps are zstded
         def check(self, dump_path):
-            with open(dump_path, 'rb') as f:
+            with open(dump_path, "rb") as f:
                 magic = f.read(4)
-                if magic == b'\x28\xb5\x2f\xfd':
+                if magic == b"\x28\xb5\x2f\xfd":
                     return True
             return False
 
     csdict = {
-        'gzip': {
-            'regex': r'.*gzip compressed data.*',
-            'class': GzipCoreDump(),
+        "gzip": {
+            "regex": r".*gzip compressed data.*",
+            "class": GzipCoreDump(),
         },
-        'zstd': {
-            'regex': r'.*Zstandard compressed data.*',
-            'class':  ZstdCoreDump(),
+        "zstd": {
+            "regex": r".*Zstandard compressed data.*",
+            "class": ZstdCoreDump(),
         },
     }
 
     def _get_compressed_type(self, dump_path):
         for cs in self.csdict.values():
-            obj = cs['class']()
+            obj = cs["class"]()
             if obj.check(dump_path):
                 return obj
         return None
 
-    def _looks_compressed(self,dump_out):
+    def _looks_compressed(self, dump_out):
         for cs in self.csdict.values():
-            if re.match(cs['regex'], dump_out):
-                return True 
+            if re.match(cs["regex"], dump_out):
+                return True
         return False
 
     def _get_file_info(self, dump_path):
-        dump_info = subprocess.Popen(['file', dump_path],
-                                     stdout=subprocess.PIPE)
+        dump_info = subprocess.Popen(["file", dump_path], stdout=subprocess.PIPE)
         dump_out = dump_info.communicate()[0].decode()
         return dump_out
 
     def _uncompress_file(self, dump_path, cs_type):
         if cs_type is None:
             return None
-        # Construct a bash cmd to uncompress the file based on its type 
+        # Construct a bash cmd to uncompress the file based on its type
         try:
             cmd = cs_type.uncompress + [dump_path]
-            unc = subprocess.Popen( cmd )
+            unc = subprocess.Popen(cmd)
             unc.wait()
             # After uncompressing, the new file path is the original path without the compression suffix
-            uncompressed_path = dump_path.rsplit('.', 1)[0]
+            uncompressed_path = dump_path.rsplit(".", 1)[0]
             return uncompressed_path
         except Exception as e:
-            logger.info('Something went wrong while attempting to uncompress the file')
+            logger.info("Something went wrong while attempting to uncompress the file")
             logger.error(e)
             return None
 
     def __init__(self, core_file):
-        self.core_file = core_file # path to the core dump file 
+        self.core_file = core_file  # path to the core dump file
         self.compression_type = None
         dump_info = self._get_file_info(core_file)
         if self._looks_compressed(dump_info):
@@ -285,7 +317,8 @@ class CoreDump:
                 log.error(e)
                 return None
     """
-    
+
+
 class Scrappy:
     """
     Main class to scan log files for known issues.
@@ -294,7 +327,7 @@ class Scrappy:
     # Generic patterns to identify in the log files: we always search for these by default
     LOG_TYPES = {
         "teuthology": {
-            "path": _cb_get_logs_path, 
+            "path": _cb_get_logs_path,
             "compressed": False,
             "egrep_file": "",
             "patterns": [
@@ -303,10 +336,10 @@ class Scrappy:
                 r"tasks.daemonwatchdog.daemon_watchdog:BARK!",
                 r"Error ENXIO",
             ],
-            "report": {},
+            "report": {},  # maps jobs to trackers
             "report_tmp": "teutho_report.log",
         },
-        "osd": { 
+        "osd": {
             "path": _cb_get_osd_logs_path,
             "compressed": True,
             "patterns": [r"ceph_assert", r"^Backtrace:", r"Aborting", r"slow requests"],
@@ -320,7 +353,7 @@ class Scrappy:
         self.issues_file = issues_file
         self.logdir = logdir
         self.issues = load_issues(issues_file)
-        logger.debug(f"Issues: {self.issues}")
+        logger.debug(f"Issues: {pp.pformat(self.issues)}")
         self.failures = load_scrapper(os.path.join(logdir, "scrape.log"))
         logger.debug(f"Failures: {self.failures}")
 
@@ -333,13 +366,15 @@ class Scrappy:
                 # ) + "') "
         """
         for log_type, log_info in self.LOG_TYPES.items():
-            patterns = [issue["pattern"] for issue in self.issues]
+            # patterns = [issue["pattern"] for _k, issue in self.issues.items()]
+            _patterns = self.issues[log_type]
+            patterns = [item["pattern"] for item in _patterns]
             log_info["patterns"].extend(patterns)
             egrep_file = prepare_egrep_file(log_info["patterns"])
             log_info["egrep_file"] = egrep_file
             logger.debug(f"Prepared _egrep file for {log_type}: {egrep_file}")
 
-    def scan_logs(self, job, log_type, log_info):
+    def scan_logs(self, job: str, log_type: str, log_info: dict):
         """
         Scan the type of log.
         grepper = {
@@ -354,28 +389,65 @@ class Scrappy:
             report_tmp = log_info["report_tmp"]
             report_tmp.replace("_report.log", f"{job}_report.log")
             if log_info["compressed"]:
-                cmd= f"zgrep -f {log_info['egrep_file']} -B 15 -A 20 {log_path} >> {report_tmp}" # &
+                cmd = f"zgrep -f {log_info['egrep_file']} -B 15 -A 20 {log_path} >> {report_tmp}"  # &
                 # # Unzip the log file into a temporary directory
                 # with tempfile.TemporaryDirectory() as temp_dir:
                 #     unzip_run_file(log_path, temp_dir)
                 #     report = scan_logs(temp_dir, self.issues)
             else:
-                cmd= f"grep -f {log_info['egrep_file']} {log_path} >> {report_tmp}"
+                cmd = f"grep -f {log_info['egrep_file']} {log_path} >> {report_tmp}"
 
             # Execute the cmd and capture output into report per job, run in the background:
-            proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            stdout, stderr = proc.communicate()
+            proc = subprocess.Popen(
+                cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            _stdout, stderr = proc.communicate()
             if proc.returncode == 0:
                 print(f"Matches found in {log_path}:")
-                #print(stdout.decode())
-                report[job] = report_tmp
+                # print(stdout.decode())
+                report[job] = {"log": report_tmp, "trackers": []}
             else:
                 print(f"No matches found in {log_path} or error occurred.")
                 if stderr:
                     print(f"Error: {stderr.decode()}")
 
-        #report = scan_logs(self.logdir, self.issues)
-        pprint.pprint(report)
+        self.LOG_TYPES[log_type]["report"].update(report)
+        logger.debug(f" Job {job}: {pp.pformat(report)}")
+        # report = scan_logs(self.logdir, self.issues)
+        # pprint.pprint(report)
+
+    def scan_reports(self):
+        """
+        From the produced report, scan for the specific issues found and attribute them to the log file being scanned.
+        """
+        for log_type, log_info in self.LOG_TYPES.items():
+            for job, job_info in log_info["report"].items():
+                report_tmp = job_info["log"]
+                if os.path.isfile(report_tmp):
+                    for issue in self.issues:
+                        # grep the issue regex patterns in the report_tmp file
+                        cmd = f"grep -c  -e {issue['pattern']} {report_tmp}"
+                        proc = subprocess.Popen(
+                            cmd,
+                            shell=True,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                        )
+                        _stdout, stderr = proc.communicate()
+                        if proc.returncode == 0:
+                            print(
+                                f"Job {job}: Matches issue {issue['tracker']} found in {report_tmp}:"
+                            )
+                            # print(stdout.decode())
+                            job_info[job]["trackers"].append(issue["tracker"])
+
+    def show_report(self):
+        """
+        Show the final report.
+        """
+        for log_type, log_info in self.LOG_TYPES.items():
+            print(f"Report for log type: {log_type}")
+            pp.pprint(log_info["report"])
 
     def run(self):
         """
@@ -384,16 +456,19 @@ class Scrappy:
         A second pass is required to attribute the specific issues found to the log file being scanned.
         """
         self.prepare_egrep_files()
+
         for job in self.failures:
             print(f"Scanning job: {job}")
             for log_type, log_info in self.LOG_TYPES.items():
                 print(f"Scanning for {log_type} logs...")
-                corefile_list = glob.glob(self.logdir + job + "remote" +  "*" + "coredump")
+                corefile_list = glob.glob(
+                    self.logdir + job + "remote" + "*" + "coredump"
+                )
                 logger.debug(f"Found {len(corefile_list)} core files for job {job}")
                 self.scan_logs(job, log_type, log_info)
 
 
-def parse_arguments():
+def parse_arguments(argv):
     parser = argparse.ArgumentParser(description="Scan log files for known issues.")
     parser.add_argument(
         "-i",
@@ -404,13 +479,33 @@ def parse_arguments():
     parser.add_argument(
         "-d", "--logdir", required=True, help="Directory containing log files to scan."
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="True to enable verbose logging mode",
+        default=False,
+    )
+
     return parser.parse_args()
 
 
 def main(argv):
-    args = parse_arguments()
+    args = parse_arguments(argv)
+    if args.verbose:
+        logLevel = logging.DEBUG
+    else:
+        logLevel = logging.INFO
+
+    with tempfile.NamedTemporaryFile(dir="/tmp", delete=False) as tmpfile:
+        logging.basicConfig(
+            filename=tmpfile.name, encoding="utf-8", level=logLevel, format=FORMAT
+        )
+    logger.debug("Got options: {0}".format(args))
     scrappy = Scrappy(args.issues, args.logdir)
     scrappy.run()
+    scrappy.scan_reports()
+    scrappy.show_report()
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ usage() {
 }
 
 declare -a keywords=()
+declare -a jobs=()
 
 #zgrep -A 3 -B 3 -e Aborting  /a/jjperez-2025-09-29_11:43:50-crimson-rados-wip-perezjos-crimson-only-29-09-2025-PR65707-distro-crimson-debug-smithi/8524850/remote/smithi124/log/ceph-osd.2.log.gz^C
 function load_keywords() {
@@ -71,7 +72,7 @@ while getopts 'pf:d:r:' option; do
   esac
 done
 
-for x in $FAILED; do 
+for x in ($FAILED); do 
 	echo "== $x ==" 
 	ls $TESTDIR/$x/remote/*/coredump; 
 	echo "== $x ==" >> $REPORT; 
