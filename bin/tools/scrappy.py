@@ -610,19 +610,17 @@ class Scrappy:
 
             for issue in self.issues[log_type]:
                 tracker = issue["tracker"]
-                logger.info(f"Issue {tracker}: {issue['description']}")
+                # logger.debug(f"Issue {tracker}: {issue['description']}")
                 for job, job_info in log_info["report"].items():
                     if tracker in job_info["trackers"]:
-                        logger.info(f"  job {job}, in {tracker}")
+                        # logger.debug(f"  job {job}, in {tracker}")
+                        value = job_info["trackers"][tracker]["total_count"]
                         if tracker not in tracker_count:
-                            tracker_count[tracker] = {
-                                job: job_info["trackers"][tracker]["total_count"]
-                            }
+                            tracker_count[tracker] = {job: value}
                         else:
-                            tracker_count[tracker][job] = job_info["trackers"][tracker][
-                                "total_count"
-                            ]
+                            tracker_count[tracker][job] = value
 
+        logger.debug(f"tracker_count:\n{pp.pformat(tracker_count)}")
         # Need to remove dumplicate jobs from each tracker count, as the same
         # issue can be found in different log files from the same job, we
         # assume the order of the issues has been defined in the issues.json
@@ -637,13 +635,31 @@ class Scrappy:
             set1 = set(tracker_count[tracker])
             set2 = set(tracker_count["GENERIC"])
             # Remove all the jobs in info from GENERIC
-            tracker_count["GENERIC"] = dict(set2 - set1)
+            try:
+                _diff = list(set2 - set1)
+                tracker_count["GENERIC"] = {
+                    job: tracker_count["GENERIC"][job] for job in _diff
+                }
+            except Exception as e:
+                logger.error(
+                    f"Error while calculating set difference for tracker {tracker}: ({set1} - {set2}): {e}"
+                )
+                continue
             # Remove all the jobs in info from the rest of the trackers
             for other_tracker in ordered_issues:
                 if other_tracker == tracker or other_tracker == "GENERIC":
                     continue
                 set3 = set(tracker_count[other_tracker])
-                tracker_count[other_tracker] = dict(set3 - set1)
+                try:
+                    _diff = set3 - set1
+                    tracker_count[other_tracker] = {
+                        job: tracker_count[other_tracker][job] for job in _diff
+                    }
+                except Exception as e:
+                    logger.error(
+                        f"Error while calculating set difference for tracker {other_tracker}: ({set3} - {set1}): {e}"
+                    )
+                    continue
 
         print("\nSummary of issues found:")
         summary = {}
@@ -667,7 +683,7 @@ class Scrappy:
         if "GENERIC" in tracker_count:
             generic_info = tracker_count["GENERIC"]
             print(
-                f"\nPotentially new issues found matching generic patterns: found in {len(generic_info.keys())} jobs: {', '.join(generic_info.keys())}"
+                f"\nPotentially new issues found matching generic patterns *only*: found in {len(generic_info.keys())} jobs: {', '.join(generic_info.keys())}"
             )
 
     def run(self):
