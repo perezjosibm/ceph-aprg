@@ -14,6 +14,24 @@
         "status": "open"
     },
     {
+      "tracker": "74797",
+      "pattern": [ "crimson::os::seastore::SegmentCleaner::clean_space().*abort(abort() called)$"],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "74798",
+      "pattern": [ "crimson::os::seastore::SegmentCleaner::.*Assertion.*failed"],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "74801",
+      "pattern": [ "TransactionManager::_remove_indirect_mapping.*ceph_assert"],
+        "description": "",
+        "status": "open"
+    },
+    {
       "tracker": "72778",
       "pattern": [ "OSD::get_health_metrics: slow request"],
       "description": "",

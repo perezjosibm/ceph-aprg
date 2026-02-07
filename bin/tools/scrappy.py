@@ -2,7 +2,10 @@
 """
 Simple script to scan the osd/teuthology log files for know issues taken from a .json input file
 and report them in a human readable format.
-Usage: python3 scrappy.py -i issues.json -d /path/to/logs/
+
+Usage: python3 scrappy.py [-i issues.json] -d /path/to/logs/
+
+If not provided, the script will look for the issues.json file in the same directory as the script.
 """
 
 import argparse
@@ -15,7 +18,7 @@ import glob
 import re
 import tempfile
 import pprint
-import gzip
+# import gzip
 
 __author__ = "Jose J Palacios-Perez"
 
@@ -23,6 +26,9 @@ logger = logging.getLogger(__name__)
 FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
 # root_logger = logging.getLogger(__name__)
 pp = pprint.PrettyPrinter(width=61, compact=True)
+
+# This script path:
+SCRIPT_PATH = os.path.dirname(os.path.realpath(__file__))
 
 
 def extract_job_ids(log_file):
@@ -140,6 +146,17 @@ def _cb_get_osd_logs_path(logdir, job):
     """
     pattern = os.path.join(logdir, job, "remote", "*", "log", "ceph-osd.*.log.gz")
     return [n for n in glob.glob(pattern) if os.path.isfile(n)]
+
+
+def _get_osd_id(log_path):
+    """
+    Get the osd id from the log path, assuming the log path is like: /path/to/job/remote/ceph-osd.1.log.gz
+    """
+    match = re.search(r"ceph-osd\.(\d+)\.log\.gz", log_path)
+    if match:
+        return match.group(1)
+    else:
+        return None
 
 
 def get_backtraces_from_coredumps(coredump_path, dump_path, dump_program, dump):
@@ -285,7 +302,7 @@ class CoreDump:
                 return decompressed.name
         return None
 
-    # We need two subclassed for each of these types of compression
+    # We need two subclasses for each of these types of compression
     csdict = {
         'gzip': {
             'check': _is_core_gziped,
@@ -347,6 +364,7 @@ class Scrappy:
                 r"ceph::assert",
                 r"^Backtrace:",
                 r"Aborting",
+                r"SIGABRT",
                 r"Assertion.*failed",
                 r"ceph::__ceph_abort",
             ],  # , r"Segmentation fault"
@@ -355,6 +373,7 @@ class Scrappy:
             "report_tmp": "osd",
         },
     }
+    ISSUES_FILE = os.path.join(SCRIPT_PATH, "issues.json")
 
     def __init__(self, issues_file, logdir):
         self.issues_file = issues_file
@@ -401,14 +420,21 @@ class Scrappy:
         report = self.LOG_TYPES[log_type]["report"]
         for log_path in log_info["path"](self.logdir, job):
             logger.debug(f"Scanning log file: {log_path}")
-            report_tmp = f"{job}_{log_info['report_tmp']}_report.log"
             # report_tmp.replace("_report.log", f"{job}_report.log")
+            report_tmp = f"{job}_{log_info['report_tmp']}_report.log"
+            # Special case for osd logs, we want to extract the osd id and use it in the report file name to avoid conflicts between different osd logs from the same job
+            if log_type == "osd":
+                osd_id = _get_osd_id(log_path)
+                report_tmp = f"{job}_{log_info['report_tmp']}_osd{osd_id}_report.log"
             if log_info["compressed"]:
                 cmd = f"zgrep -f {log_info['egrep_file']} -B 15 -A 20 {log_path} >> {report_tmp}"  # &
             else:
                 cmd = f"grep -f {log_info['egrep_file']} {log_path} >> {report_tmp}"
 
             # Execute the cmd and capture output into report per job, run in the background:
+            # TODO: run them in parallel, but we need to be careful with the report_tmp file name,
+            # maybe we can use a temporary file instead and then move it to the final name once the process is done
+
             logger.debug(f"Executing: {cmd}")
             proc = subprocess.Popen(
                 cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -433,7 +459,7 @@ class Scrappy:
         # report = scan_logs(self.logdir, self.issues)
         # pprint.pprint(report)
 
-    def _show_occurences(self, log_file: str, pattern: str) -> int:
+    def _get_occurences(self, log_file: str, pattern: str) -> int:
         """
         Show the number of occurrences of the given pattern in the log file.
         """
@@ -472,21 +498,32 @@ class Scrappy:
         An issue can have multiple patterns, we sum the occurrences of each pattern.
         """
         total_count = 0
+        distribution = {}
         for pattern in issue["pattern"]:
             count = self._count_occurrences(log_file, pattern)
+            distribution[pattern] = count
             total_count += count
         if total_count > 0:
             if issue["tracker"] not in job_info["trackers"]:
                 logger.debug(
                     f"Job {job}: Matches issue {issue['tracker']} found in {log_file} occurrences: {total_count}"
                 )
-                job_info["trackers"].update({issue["tracker"]: total_count})
-                # job_info["trackers"].append(issue["tracker"])
+                job_info["trackers"].update(
+                    {
+                        issue["tracker"]: {
+                            "total_count": total_count,
+                            "distribution": distribution,
+                        }
+                    }
+                )
             else:
                 logger.debug(
                     f"Job {job}: Additional Matches issue {issue['tracker']} found in {log_file} occurrences: {total_count}"
                 )
-                job_info["trackers"][issue["tracker"]] += total_count
+                job_info["trackers"][issue["tracker"]]["total_count"] += total_count
+                job_info["trackers"][issue["tracker"]]["distribution"].update(
+                    distribution
+                )
 
         return total_count
 
@@ -495,19 +532,65 @@ class Scrappy:
         From the produced report, scan for the specific issues found and attribute them to the log file being scanned.
         """
         for log_type, log_info in self.LOG_TYPES.items():
+            # Construct an special issue representing the 'generic' pattern
+            _generic = {
+                "tracker": "GENERIC",
+                "pattern": log_info["patterns"],
+                "description": "Generic pattern match -- useful to find new issues",
+            }
+            # self.count_issue_occurrences(job, report_tmp, _generic, job_info)
+            self.issues[log_type].append(_generic)
             for job, job_info in log_info["report"].items():
                 report_tmp = job_info["log"]
                 if os.path.isfile(report_tmp):
                     for issue in self.issues[log_type]:
-                        # grep the issue regex patterns in the report_tmp file
                         self.count_issue_occurrences(job, report_tmp, issue, job_info)
-                    # Construct a dummy issue representing the 'generic'pattern
-                    _generic = {
-                        "tracker": "GENERIC",
-                        "pattern": log_info["patterns"],
-                        "description": "Generic pattern match",
-                    }
-                    self.count_issue_occurrences(job, report_tmp, _generic, job_info)
+
+    def filter_reports(self):
+        """
+        Filter the report to only keep the issues found in the logs.
+        We can also add a severity indicator based on the number of occurrences of the issue in the log file.
+        For example, we can use a simple threshold to classify the issue as low, medium or high severity.
+        """
+
+        def _get_severity(count):
+            if count >= 10:
+                return "high"
+            elif count >= 5:
+                return "medium"
+            else:
+                return "low"
+
+        def _get_severity_from_distribution(distribution):
+            total_count = sum(distribution.values())
+            return _get_severity(total_count)
+
+        def filter_distribution(distribution):
+            return {
+                pattern: count for pattern, count in distribution.items() if count >= 1
+            }
+
+        for log_info in self.LOG_TYPES.values():
+            report = log_info["report"]
+            for job_info in report.values():
+                trackers = job_info["trackers"]
+                # From the issue distribution, filter out those entries with
+                # less than 1 occurrences, as they are likely to be false positives or
+                # not relevant enough to be included in the final report.
+
+                for info in trackers.values():
+                    severity = _get_severity_from_distribution(info["distribution"])
+                    info["severity"] = severity
+                    distribution = filter_distribution(info["distribution"])
+                    info["distribution"] = distribution
+
+                # We can filter out trackers with less than 1 occurrences as low severity
+                filtered_trackers = {
+                    tracker: info
+                    for tracker, info in trackers.items()
+                    if info["total_count"] >= 1
+                }
+                job_info["trackers"] = filtered_trackers
 
     def show_report(self):
         """
@@ -518,8 +601,13 @@ class Scrappy:
         tracker_count = {}
         for log_type, log_info in self.LOG_TYPES.items():
             logger.debug(
-                f"Report for log type: {log_type}\n{pp.pprint(log_info['report'])}"
+                f"Report for log type: {log_type}\n{pp.pformat(log_info['report'])}"
             )
+            report_fname = f"{log_type}_report.json"
+            print(f"\nSaving {report_fname}:")
+            with open(report_fname, "w") as f:
+                json.dump(log_info["report"], f, indent=4)
+
             for issue in self.issues[log_type]:
                 tracker = issue["tracker"]
                 logger.info(f"Issue {tracker}: {issue['description']}")
@@ -528,24 +616,71 @@ class Scrappy:
                         logger.info(f"  job {job}, in {tracker}")
                         if tracker not in tracker_count:
                             tracker_count[tracker] = {
-                                job: job_info["trackers"][tracker]
+                                job: job_info["trackers"][tracker]["total_count"]
                             }
                         else:
-                            tracker_count[tracker][job] = job_info["trackers"][tracker]
+                            tracker_count[tracker][job] = job_info["trackers"][tracker][
+                                "total_count"
+                            ]
+
+        # Need to remove dumplicate jobs from each tracker count, as the same
+        # issue can be found in different log files from the same job, we
+        # assume the order of the issues has been defined in the issues.json
+        # from the most specific to the most generic, so if an issue is found
+        # in a job, we don't count the same job for the rest of the issues in
+        # the same log type, as they are likely to be less specific and
+        # relevant than the first one.
+        ordered_issues = tracker_count.keys()
+        for tracker in ordered_issues:
+            if tracker == "GENERIC":
+                continue
+            set1 = set(tracker_count[tracker])
+            set2 = set(tracker_count["GENERIC"])
+            # Remove all the jobs in info from GENERIC
+            tracker_count["GENERIC"] = dict(set2 - set1)
+            # Remove all the jobs in info from the rest of the trackers
+            for other_tracker in ordered_issues:
+                if other_tracker == tracker or other_tracker == "GENERIC":
+                    continue
+                set3 = set(tracker_count[other_tracker])
+                tracker_count[other_tracker] = dict(set3 - set1)
 
         print("\nSummary of issues found:")
+        summary = {}
         for tracker, info in tracker_count.items():
             # Sort info.keys()) by number of occurrences descending
             _sorted = sorted(info, key=info.get, reverse=True)
             print(
                 f"Issue {tracker}: found in {len(info.keys())} jobs: {', '.join(_sorted)}"
             )
+            summary[tracker] = {
+                "total_jobs": len(info.keys()),
+                "jobs": _sorted,
+            }
+        # Save tracker_count to a json file for future reference
+        print("\nSaving tracker_summary.json.")
+        with open("tracker_summary.json", "w") as f:
+            json.dump({"summary": summary, "tracker_count": tracker_count}, f, indent=4)
+
+        # Potentially new issues: those with the 'GENERIC' tracker, which means that they matched
+        # the generic patterns but not any of the specific issues in the issues_file
+        if "GENERIC" in tracker_count:
+            generic_info = tracker_count["GENERIC"]
+            print(
+                f"\nPotentially new issues found matching generic patterns: found in {len(generic_info.keys())} jobs: {', '.join(generic_info.keys())}"
+            )
 
     def run(self):
         """
         Traverse the log directory and use the LOG_TYPES to guide the scanning
         of the failures.
-        A second pass is required to attribute the specific issues found to the log file being scanned.
+        Scans log (teuthology and osd) files in the given directory, extracting
+        matches for the patterns defined in the LOG_TYPES as well as the
+        issues_file. These extracted matches are stored in a temporary report
+        file per job and log type (aka report). Then summarise from the reports
+        to produce a final report that attributes the specific issues found to
+        the log file being scanned, using the number of occurrences of the
+        issue in the log file as a severity indicator.
         """
         self.prepare_egrep_files()
 
@@ -559,13 +694,19 @@ class Scrappy:
                 logger.debug(f"Found {len(corefile_list)} core files for job {job}")
                 self.scan_logs(job, log_type, log_info)
 
+        self.scan_reports()
+        self.filter_reports()
+        self.show_report()
+
 
 def parse_arguments(argv):
     parser = argparse.ArgumentParser(description="Scan log files for known issues.")
     parser.add_argument(
         "-i",
         "--issues",
-        required=True,
+        required=False,
+        # Use the path of this script as the default path for the issues.json file
+        default=Scrappy.ISSUES_FILE,
         help="Path to the JSON file containing known issues.",
     )
     parser.add_argument(
@@ -579,7 +720,7 @@ def parse_arguments(argv):
         default=False,
     )
 
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def main(argv):
@@ -596,8 +737,8 @@ def main(argv):
     logger.debug("Got options: {0}".format(args))
     scrappy = Scrappy(args.issues, args.logdir)
     scrappy.run()
-    scrappy.scan_reports()
-    scrappy.show_report()
+    # We might need options to scan only specific types of logs,
+    # or to scan the current directory for ,json produced by a previous run to generate a report without having to rescan the logs, etc.
 
 
 if __name__ == "__main__":
