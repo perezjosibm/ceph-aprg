@@ -56,6 +56,10 @@ def load_issues(issues_file):
     :
     Eventually, we should be able to generate this from the tracker system for open issues
     """
+    # Check if the file exists
+    if not os.path.isfile(issues_file):
+        logger.error(f"Issues file not found: {issues_file}")
+        return { "osd": [], "teuthology": [] }
     with open(issues_file, "r") as f:
         return json.load(f)
 
