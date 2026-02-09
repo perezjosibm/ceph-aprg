@@ -59,7 +59,7 @@ def load_issues(issues_file):
     # Check if the file exists
     if not os.path.isfile(issues_file):
         logger.error(f"Issues file not found: {issues_file}")
-        return { "osd": [], "teuthology": [] }
+        return {"osd": [], "teuthology": []}
     with open(issues_file, "r") as f:
         return json.load(f)
 
@@ -379,11 +379,12 @@ class Scrappy:
     }
     ISSUES_FILE = os.path.join(SCRIPT_PATH, "issues.json")
 
-    def __init__(self, issues_file, logdir):
+    def __init__(self, issues_file, logdir, previous_report=False):
         self.issues_file = issues_file
         self.logdir = logdir
         self.issues = load_issues(issues_file)
         logger.debug(f"Issues: {pp.pformat(self.issues)}")
+        self.previous_report = previous_report
         self.failures = load_scrapper(os.path.join(logdir, "scrape.log"))
         logger.debug(f"Failures: {self.failures}")
 
@@ -424,12 +425,13 @@ class Scrappy:
         report = self.LOG_TYPES[log_type]["report"]
         for log_path in log_info["path"](self.logdir, job):
             logger.debug(f"Scanning log file: {log_path}")
-            # report_tmp.replace("_report.log", f"{job}_report.log")
             report_tmp = f"{job}_{log_info['report_tmp']}_report.log"
-            # Special case for osd logs, we want to extract the osd id and use it in the report file name to avoid conflicts between different osd logs from the same job
+            # Special case for osd logs, we want to extract the osd id and use
+            # it in the report file name to avoid conflicts between different
+            # osd logs from the same job
             if log_type == "osd":
                 osd_id = _get_osd_id(log_path)
-                report_tmp = f"{job}_{log_info['report_tmp']}_osd{osd_id}_report.log"
+                report_tmp = f"{job}_{log_info['report_tmp']}_{osd_id}_report.log"
             if log_info["compressed"]:
                 cmd = f"zgrep -f {log_info['egrep_file']} -B 15 -A 20 {log_path} >> {report_tmp}"  # &
             else:
@@ -437,7 +439,8 @@ class Scrappy:
 
             # Execute the cmd and capture output into report per job, run in the background:
             # TODO: run them in parallel, but we need to be careful with the report_tmp file name,
-            # maybe we can use a temporary file instead and then move it to the final name once the process is done
+            # maybe we can use a temporary file instead and then move it to the
+            # final name once the process is done
 
             logger.debug(f"Executing: {cmd}")
             proc = subprocess.Popen(
@@ -458,10 +461,6 @@ class Scrappy:
                 )
                 if stderr:
                     logger.debug(f"Error: {stderr.decode()}")
-
-        # logger.debug(f" Job {job}: {pp.pformat(report)}")
-        # report = scan_logs(self.logdir, self.issues)
-        # pprint.pprint(report)
 
     def _get_occurences(self, log_file: str, pattern: str) -> int:
         """
@@ -625,8 +624,8 @@ class Scrappy:
                             tracker_count[tracker][job] = value
 
         logger.debug(f"tracker_count:\n{pp.pformat(tracker_count)}")
-        # Need to remove dumplicate jobs from each tracker count, as the same
-        # issue can be found in different log files from the same job, we
+        # Need to remove duplicated jobs from each tracker count, as the same
+        # issue can be found in different log files from different jobs. We
         # assume the order of the issues has been defined in the issues.json
         # from the most specific to the most generic, so if an issue is found
         # in a job, we don't count the same job for the rest of the issues in
@@ -634,12 +633,14 @@ class Scrappy:
         # relevant than the first one.
         ordered_issues = tracker_count.keys()
         # Get a numeric index so we can only remove the jobs from the rest of the
-        # trackers that are below in the order, not all the rest of the trackers 
-        indices = [ (i, tracker) for i, tracker in enumerate(ordered_issues) if tracker != "GENERIC" ]
+        # trackers that are above in the order
+        indices = [
+            (i, tracker)
+            for i, tracker in enumerate(ordered_issues)
+            if tracker != "GENERIC"
+        ]
         for index in indices:
             tracker = index[1]
-            if tracker == "GENERIC":
-                continue
             set1 = set(tracker_count[tracker])
             set2 = set(tracker_count["GENERIC"])
             # Remove all the jobs in info from GENERIC
@@ -654,9 +655,9 @@ class Scrappy:
                 )
                 continue
             # Remove all the jobs in info from the rest of the trackers
-            # Get slice of indices from index + 1 to the end of the list 
-            remainder = [ t[1] for t in indices if t[0] > index[0] ]
-            #for other_index in range(index[0] + 1, len(ordered_issues)):
+            # Get slice of indices from index + 1 to the end of the list
+            remainder = [t[1] for t in indices if t[0] > index[0]]
+            # for other_index in range(index[0] + 1, len(ordered_issues)):
             for other_tracker in remainder:
                 if other_tracker == tracker or other_tracker == "GENERIC":
                     continue
@@ -711,15 +712,33 @@ class Scrappy:
         """
         self.prepare_egrep_files()
 
-        for job in self.failures:
-            print(f"Scanning job: {job}")
+        if self.previous_report:
+            logger.info(
+                "Previous report option enabled, skipping log scanning and using existing osd_report.json and teuthology_report.json files to generate the final report."
+            )
+            # Load the existing report files and populate the LOG_TYPES report with their content
             for log_type, log_info in self.LOG_TYPES.items():
-                print(f"Scanning for {log_type} logs...")
-                corefile_list = glob.glob(
-                    self.logdir + job + "remote" + "*" + "coredump"
-                )
-                logger.debug(f"Found {len(corefile_list)} core files for job {job}")
-                self.scan_logs(job, log_type, log_info)
+                report_fname = f"{log_type}_report.json"
+                if os.path.isfile(report_fname):
+                    with open(report_fname, "r") as f:
+                        log_info["report"] = json.load(f)
+                        logger.debug(
+                            f"Loaded existing report for {log_type} from {report_fname}"
+                        )
+                else:
+                    logger.warning(
+                        f"Report file {report_fname} not found, skipping loading report for {log_type}"
+                    )
+        else:
+            for job in self.failures:
+                print(f"Scanning job: {job}")
+                for log_type, log_info in self.LOG_TYPES.items():
+                    print(f"Scanning for {log_type} logs...")
+                    corefile_list = glob.glob(
+                        self.logdir + job + "remote" + "*" + "coredump"
+                    )
+                    logger.debug(f"Found {len(corefile_list)} core files for job {job}")
+                    self.scan_logs(job, log_type, log_info)
 
         self.scan_reports()
         self.filter_reports()
@@ -746,6 +765,13 @@ def parse_arguments(argv):
         help="True to enable verbose logging mode",
         default=False,
     )
+    parser.add_argument(
+        "-p",
+        "--previous_report",
+        action="store_true",
+        help="True to only generate the report from the existing osd_report.json files, without scanning the logs again",
+        default=False,
+    )
 
     return parser.parse_args(argv)
 
@@ -762,7 +788,7 @@ def main(argv):
             filename=tmpfile.name, encoding="utf-8", level=logLevel, format=FORMAT
         )
     logger.debug("Got options: {0}".format(args))
-    scrappy = Scrappy(args.issues, args.logdir)
+    scrappy = Scrappy(args.issues, args.logdir, args.previous_report)
     scrappy.run()
     # We might need options to scan only specific types of logs,
     # or to scan the current directory for ,json produced by a previous run to generate a report without having to rescan the logs, etc.
