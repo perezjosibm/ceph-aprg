@@ -1,8 +1,8 @@
 # This is Git's per-user configuration file.
 [user]
 # Please adapt and uncomment the following lines:
-    name = Jose J Palacios-Perez
-    email = perezjos@uk.ibm.com
+    #name =  Your Name
+    #email = your_id@dot.com
 
 [color]
     ui = auto
@@ -118,9 +118,7 @@
     sw = switch
 [core]
     editor = vim
-    #excludesfile = /gsa/hurgsa/home/j/j/jjperez/.gitignore
     excludesfile = ~/.gitignore
-    #autocrlf = input
     autocrlf = input
 [mergetool]
     prompt = false
