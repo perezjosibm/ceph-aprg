@@ -2,12 +2,6 @@
   "osd":
   [
     {
-      "tracker": "70501",
-      "pattern": [ "In function 'PeeringState::Recovered::Recovered.*!ps->needs_recovery$"],
-      "description": "",
-      "status": "open"
-    },
-    {
       "tracker": "73790",
       "pattern": [ "crimson::os::seastore::TransactionManager::pin_to_extent.*abort(abort() called)$"],
         "description": "",
@@ -30,6 +24,12 @@
       "pattern": [ "TransactionManager::_remove_indirect_mapping.*ceph_assert"],
         "description": "",
         "status": "open"
+    },
+    {
+      "tracker": "70501",
+      "pattern": [ "In function 'PeeringState::Recovered::Recovered.*!ps->needs_recovery$"],
+      "description": "",
+      "status": "open"
     },
     {
       "tracker": "72778",

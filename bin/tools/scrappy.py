@@ -633,7 +633,11 @@ class Scrappy:
         # the same log type, as they are likely to be less specific and
         # relevant than the first one.
         ordered_issues = tracker_count.keys()
-        for tracker in ordered_issues:
+        # Get a numeric index so we can only remove the jobs from the rest of the
+        # trackers that are below in the order, not all the rest of the trackers 
+        indices = [ (i, tracker) for i, tracker in enumerate(ordered_issues) if tracker != "GENERIC" ]
+        for index in indices:
+            tracker = index[1]
             if tracker == "GENERIC":
                 continue
             set1 = set(tracker_count[tracker])
@@ -650,7 +654,10 @@ class Scrappy:
                 )
                 continue
             # Remove all the jobs in info from the rest of the trackers
-            for other_tracker in ordered_issues:
+            # Get slice of indices from index + 1 to the end of the list 
+            remainder = [ t[1] for t in indices if t[0] > index[0] ]
+            #for other_index in range(index[0] + 1, len(ordered_issues)):
+            for other_tracker in remainder:
                 if other_tracker == tracker or other_tracker == "GENERIC":
                     continue
                 set3 = set(tracker_count[other_tracker])
