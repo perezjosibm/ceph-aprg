@@ -82,15 +82,15 @@ def generate_osd_commands(table: List[str], start: int, end: int,
         interval0_idx = 2 * osd
         interval1_idx = 2 * osd + 1
         
-        if interval0_idx < len(table):
-            interval0 = table[interval0_idx]
-            cmd0 = f"{ceph_bin}/ceph -c {conf_fn} config set osd.{osd} crimson_seastar_cpu_cores {interval0}"
-            commands.append(cmd0)
-            
-        if interval1_idx < len(table):
-            interval1 = table[interval1_idx]
-            cmd1 = f"{ceph_bin}/ceph -c {conf_fn} config set osd.{osd} crimson_seastar_cpu_cores {interval1}"
-            commands.append(cmd1)
+        # Get interval0 value or empty string if out of bounds
+        interval0 = table[interval0_idx] if interval0_idx < len(table) else ""
+        cmd0 = f"{ceph_bin}/ceph -c {conf_fn} config set osd.{osd} crimson_seastar_cpu_cores {interval0}"
+        commands.append(cmd0)
+        
+        # Get interval1 value or empty string if out of bounds
+        interval1 = table[interval1_idx] if interval1_idx < len(table) else ""
+        cmd1 = f"{ceph_bin}/ceph -c {conf_fn} config set osd.{osd} crimson_seastar_cpu_cores {interval1}"
+        commands.append(cmd1)
     
     return commands
 

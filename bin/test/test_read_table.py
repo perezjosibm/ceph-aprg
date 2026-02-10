@@ -94,8 +94,14 @@ class TestGenerateOsdCommands(unittest.TestCase):
         table = ['0-3', '4-7']
         cmds = generate_osd_commands(table, 0, 2, '/ceph/build/bin', 'config.conf')
         
-        # Should only generate commands for available data
-        self.assertEqual(len(cmds), 2)
+        # Should generate commands for all OSDs, with empty values when data is missing
+        # OSDs 0-2 = 3 OSDs * 2 commands each = 6 commands
+        self.assertEqual(len(cmds), 6)
+        # First two should have data
+        self.assertIn('0-3', cmds[0])
+        self.assertIn('4-7', cmds[1])
+        # Remaining should be empty
+        self.assertTrue(cmds[2].endswith(' '))
     
     def test_generate_commands_single_osd(self):
         """Test command generation for a single OSD"""
@@ -103,8 +109,10 @@ class TestGenerateOsdCommands(unittest.TestCase):
         cmds = generate_osd_commands(table, 5, 5, '/ceph/build/bin', 'config.conf')
         
         # For OSD 5, we need indices 10 and 11 (2*5 and 2*5+1)
-        # Since table only has 2 entries, no commands should be generated
-        self.assertEqual(len(cmds), 0)
+        # Since table only has 2 entries, commands should be generated with empty values
+        self.assertEqual(len(cmds), 2)
+        self.assertTrue(cmds[0].endswith(' '))
+        self.assertTrue(cmds[1].endswith(' '))
 
 
 class TestGenerateCpuDisableCommands(unittest.TestCase):
