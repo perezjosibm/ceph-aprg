@@ -2,3 +2,5 @@ matplotlib
 numpy
 pandas
 seaborn
+pytest
+pytest-mock
