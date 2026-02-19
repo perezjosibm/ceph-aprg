@@ -120,6 +120,7 @@ class LsCpuJson(object):
         numa_re = re.compile(r"NUMA node\(s\):")
         node_re = re.compile(r"NUMA node(\d+) CPU\(s\):")
         ranges_re = re.compile(r"(\d+)-(\d+),(\d+)-(\d+)")
+        simple_range_re = re.compile(r"^(\d+)-(\d+)$")
         cores_re = re.compile(r"^Core\(s\) per socket:$")
         socket_lst = self.socket_lst
         for d in self._dict["lscpu"]:
@@ -139,6 +140,18 @@ class LsCpuJson(object):
                         "physical_end": int(m.group(2)),
                         "ht_sibling_start": int(m.group(3)),
                         "ht_sibling_end": int(m.group(4)),
+                    }
+                    socket_lst["sockets"].append(drange)
+                    continue
+                # Handle non-HT layout: simple range, e.g. "0-95"
+                m = simple_range_re.search(d["data"])
+                if m:
+                    drange = {
+                        "socket": int(socket),
+                        "physical_start": int(m.group(1)),
+                        "physical_end": int(m.group(2)),
+                        "ht_sibling_start": -1,
+                        "ht_sibling_end": -2,
                     }
                     socket_lst["sockets"].append(drange)
                     continue
