@@ -1,0 +1,72 @@
+{
+  "cluster": {
+    "configurations": {
+        "sea_1-8osd_4x400GB_rc": {
+	  "osd_type": "seastore",
+          "osd_range": [ 1, 2, 4, 8 ],
+          "store_devs": [ "/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1", "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1" ],
+          "reactor_core_range": [ "0-95", "0-48,49-95", "0-23,24-47,48-71,72-95", "0-11,12-23,24-35,36-47,48-59,60-71,72-83,84-95" ],
+	  "pool_type": "rbd",
+          "num_rbd_images": 4,
+          "rbd_image_size": "400gb"
+        },
+        "classic_1-8osd_4x400GB_rc": {
+	  "osd_type": "classic",
+          "osd_range": [ 1, 2, 4, 8 ],
+          "store_devs": [ "/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1", "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1" ],
+          "classic_cpu_set": [ "0-95" ],
+	  "pool_type": "rbd",
+          "num_rbd_images": 4,
+          "rbd_image_size": "400gb"
+        }
+      }
+    },
+    "name": "ceph",
+    "user": "root",
+    "head": "localhost",
+    "ceph_conf": "/etc/ceph/ceph.conf",
+    "ceph_keyring": "/etc/ceph/ceph.client.admin.keyring",
+    "clients": [ "localhost" ],
+    "osds": [ "localhost" ],
+    "ceph_conf": "/etc/ceph/ceph.conf",
+    "ceph_keyring": "/etc/ceph/ceph.client.admin.keyring"
+  },
+  "benchmarks": {
+      "librbdfio": {
+        "cmd_path": "/ceph/build/fio",
+        "invariant": {
+          "fio_cpu_range": [ "28-55,84-111" ],
+          "fio_workload": [ "-j -w hockey -r -a -m" ],
+          "runtime": 180
+        }
+      },
+      "workloads": {
+        "precondition": {
+          "name": "randrw_70_4k",
+          "rw": "randrw",
+          "rwmixread": 70,
+          "bs": "4k"
+      },
+      "randwrite": {
+          "name": "randrw_70_4k",
+          "rw": "randrw",
+          "rwmixread": 70,
+          "bs": "4k"
+      },
+      "randread": {
+          "name": "randrd_70_4k",
+          "rw": "randrd",
+          "bs": "4k"
+      },
+      "seqwrite": {
+          "name": "randrw_70_64k",
+          "rw": "write",
+          "bs": "64k"
+      },
+      "seqread": {
+          "name": "read_64k",
+          "rw": "read",
+          "bs": "64k"
+      }
+  }
+}

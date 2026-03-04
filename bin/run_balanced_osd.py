@@ -19,8 +19,9 @@ import signal
 import subprocess
 import sys
 import time
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+#from pathlib import Path
+from typing import Dict, Optional
+#List, , Tuple
 
 __author__ = "Jose J Palacios-Perez (translated from bash)"
 
@@ -62,13 +63,14 @@ class BalancedOSDRunner:
         self.multi_job_vol = False
         self.precond = False
         self.watchdog_enabled = False
-        self.test_plan = os.path.join(script_dir, "tp_cmp_classic_seastore.sh")
+        # Need to load the plan from a .json instead of sourcing a .sh
+        self.test_plan = os.path.join(script_dir, "tp_cmp_classic_seastore.json")
         self.skip_exec = False
         self.regen = True  # always regenerate the .fio jobs by default
         self.fio_pid = 0
         self.pid_watchdog = 0
         
-        # Associative arrays
+        # Associative arrays: we might deprecate these
         self.test_table: Dict[str, str] = {}
         self.test_row: Dict[str, str] = {}
         self.num_cpus: Dict[str, int] = {
@@ -96,14 +98,32 @@ class BalancedOSDRunner:
         self.balance = "all"
         self.store_devs = ""
         self.num_rbd_images = 1
-        self.rbd_size = ""
+        self.rbd_size = "400gb"
+        self.test_plan_data = {}
 
     def log_color(self, message: str, color: str = GREEN):
         """Log a message with color"""
         logger.info(f"{color}{message}{NC}")
 
+    
+    def load_test_plan(self, test_plan_path: Optional[str] = None):
+        """Load test plan configuration from JSON file"""
+        test_plan_path = os.path.join(self.script_dir, "test_plan.json") if test_plan_path is None else test_plan_path
+        if os.path.exists(test_plan_path):
+            with open(test_plan_path, 'r') as f:
+                self.test_plan_data = json.load(f)
+                # We need a class for test plan, which contains classes for
+                # cluster configurations and benchmark workloads, so in the
+                # main loop we iterate over each cluster configuration
+                # according to the OSD type, and for each cluster configuration
+                # we iterate over the benchmark workloads, which contain the
+                # FIO options and the test name suffixes
+        else:
+            logger.warning(f"{RED}== Test plan file {test_plan_path} not found, using defaults =={NC}")
+
     def save_test_plan(self):
-        """Save test plan configuration to JSON file"""
+        """Save test plan configuration to JSON file
+        Simply serialise the object as JSON -- TBC"""
         test_plan_data = {
             "VSTART_CPU_CORES": self.vstart_cpu_cores,
             "OSD_CPU": self.osd_cpu,
@@ -292,6 +312,7 @@ class BalancedOSDRunner:
             '-d', self.run_dir,
             '-a', precond_json
         ]
+        subprocess.run(cmd, capture_output=True, text=True)
         # Pipe in the new diskstats
         subprocess.Popen(['jc', '--pretty', '/proc/diskstats'], stdout=subprocess.PIPE)
 
@@ -329,7 +350,8 @@ class BalancedOSDRunner:
         opts = ""
         if self.latency_target:
             opts += "-l "
-        
+        # Need to ensure that the scripts directory is in the PATH for the gen_fio_job.sh script 
+        # Shall we produce a Python module instead?
         cmd = [
             '/root/bin/gen_fio_job.sh',
             opts,
@@ -349,6 +371,7 @@ class BalancedOSDRunner:
         logger.info(f"{GREEN}== OSD type: {osd_type} =={NC}")
         
         suffix = "lt" if self.latency_target else "rc"
+        test_name = "" 
         
         # Sort keys
         sorted_keys = sorted(self.test_table.keys(), key=lambda x: int(x) if x.isdigit() else 0)
@@ -502,14 +525,13 @@ class BalancedOSDRunner:
             self.test_plan = os.path.join(self.script_dir, args.test_plan)
         
         logger.info(f"{GREEN}== Loading test plan from {self.test_plan} =={NC}")
-        # In bash we'd source the test plan, here we'd need to parse it
-        # For now, skip this step
+        self.load_test_plan(self.test_plan)
         
         # Create run directory
         os.makedirs(self.run_dir, exist_ok=True)
         
         # Save test plan
-        self.save_test_plan()
+        #self.save_test_plan()
         
         # Change to build directory
         os.chdir('/ceph/build/')
@@ -522,7 +544,10 @@ class BalancedOSDRunner:
         if self.precond:
             self.run_precond("precond")
         
-        # Run tests
+        # Run tests: cluster config in terms of osd_type, we can run all
+        # balance strategies for a given osd_type, or a single balance strategy
+        # for all osd_types, which are ignored for Classic, we can be defined
+        # in the test plan or passed as arguments
         if self.osd_type == "all":
             for osd_type in ["classic", "sea"]:  # cyan, blue
                 self.run_bal_vs_default_tests(osd_type, self.balance)

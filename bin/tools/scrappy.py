@@ -61,7 +61,15 @@ def load_issues(issues_file):
         logger.error(f"Issues file not found: {issues_file}")
         return {"osd": [], "teuthology": []}
     with open(issues_file, "r") as f:
-        return json.load(f)
+        # Keep only those whose state is "open" or "in_progress"
+        issues = json.load(f)
+        for log_type in issues.keys():
+            issues[log_type] = [
+                issue
+                for issue in issues[log_type]
+                if issue.get("state", "open") in ["open", "in_progress"]
+            ]
+        return issues
 
 
 def load_scrapper(scrapper_file):
