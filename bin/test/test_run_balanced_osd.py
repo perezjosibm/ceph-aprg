@@ -391,6 +391,129 @@ class TestBalancedOSDRunnerIntegration(unittest.TestCase):
         self.assertTrue(True)
 
 
+class TestLoadTestPlanRefactored(unittest.TestCase):
+    """Tests for the refactored BalancedOSDRunner.load_test_plan() method
+    that now delegates to the test_plan module."""
+
+    PLAN_DATA = {
+        "cluster": {
+            "name": "ceph",
+            "user": "root",
+            "head": "localhost",
+            "ceph_conf": "/etc/ceph/ceph.conf",
+            "ceph_keyring": "/etc/ceph/ceph.client.admin.keyring",
+            "clients": ["localhost"],
+            "osds": ["localhost"],
+            "configurations": {
+                "sea_cfg": {
+                    "osd_type": "seastore",
+                    "osd_range": [1, 2],
+                    "store_devs": ["/dev/nvme0n1", "/dev/nvme1n1"],
+                    "reactor_core_range": [8, 16],
+                    "pool_type": "rbd",
+                    "num_rbd_images": 2,
+                    "rbd_image_size": "200gb",
+                },
+                "classic_cfg": {
+                    "osd_type": "classic",
+                    "osd_range": [1, 2],
+                    "store_devs": ["/dev/nvme0n1", "/dev/nvme1n1"],
+                    "classic_cpu_set": ["0-23"],
+                    "pool_type": "rbd",
+                    "num_rbd_images": 2,
+                    "rbd_image_size": "200gb",
+                },
+            },
+        },
+        "benchmarks": {
+            "librbdfio": {
+                "cmd_path": "/usr/bin/fio",
+                "invariant": {
+                    "fio_cpu_range": ["0-7"],
+                    "fio_workload": ["-w hockey"],
+                    "runtime": 60,
+                },
+            },
+            "workloads": {
+                "randwrite": {"name": "rw_4k", "rw": "randwrite", "bs": "4k"},
+            },
+        },
+    }
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.runner = BalancedOSDRunner(self.temp_dir)
+        self.runner.run_dir = self.temp_dir
+        # Write a plan file into the temp dir
+        self.plan_path = os.path.join(self.temp_dir, "test_plan.json")
+        with open(self.plan_path, "w") as fh:
+            import json as _json
+            _json.dump(self.PLAN_DATA, fh)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.temp_dir)
+
+    def test_load_sets_osd_range_seastore(self):
+        """load_test_plan sets osd_range from seastore configuration."""
+        self.runner.osd_type = "sea"
+        self.runner.load_test_plan(self.plan_path)
+        self.assertEqual(self.runner.osd_range, "1 2")
+
+    def test_load_sets_reactor_range_seastore(self):
+        """load_test_plan sets reactor_range from seastore configuration."""
+        self.runner.osd_type = "sea"
+        self.runner.load_test_plan(self.plan_path)
+        self.assertEqual(self.runner.reactor_range, "8 16")
+
+    def test_load_sets_store_devs_seastore(self):
+        """load_test_plan sets store_devs from seastore configuration."""
+        self.runner.osd_type = "sea"
+        self.runner.load_test_plan(self.plan_path)
+        self.assertEqual(self.runner.store_devs, "/dev/nvme0n1 /dev/nvme1n1")
+
+    def test_load_sets_osd_cpu_classic(self):
+        """load_test_plan sets osd_cpu from classic_cpu_set."""
+        self.runner.osd_type = "classic"
+        self.runner.load_test_plan(self.plan_path)
+        self.assertEqual(self.runner.osd_cpu, "0-23")
+
+    def test_load_all_osd_type(self):
+        """load_test_plan with osd_type='all' iterates all configurations."""
+        self.runner.osd_type = "all"
+        self.runner.load_test_plan(self.plan_path)
+        # Both configs were visited; last one written wins for common fields
+        self.assertIsNotNone(self.runner.osd_range)
+        self.assertIsNotNone(self.runner.store_devs)
+
+    def test_load_stores_test_plan_data(self):
+        """load_test_plan stores the TestPlan object in test_plan_data."""
+        from test_plan import TestPlan
+        self.runner.osd_type = "sea"
+        self.runner.load_test_plan(self.plan_path)
+        self.assertIsInstance(self.runner.test_plan_data, TestPlan)
+
+    def test_load_missing_file_logs_warning(self):
+        """load_test_plan logs a warning when the file does not exist."""
+        self.runner.osd_type = "sea"
+        # Should not raise, just warn
+        self.runner.load_test_plan("/nonexistent/plan.json")
+        # Defaults should remain unchanged
+        self.assertEqual(self.runner.osd_range, "1")
+
+    def test_load_num_rbd_images(self):
+        """load_test_plan sets num_rbd_images from configuration."""
+        self.runner.osd_type = "sea"
+        self.runner.load_test_plan(self.plan_path)
+        self.assertEqual(self.runner.num_rbd_images, 2)
+
+    def test_load_rbd_size(self):
+        """load_test_plan sets rbd_size from configuration."""
+        self.runner.osd_type = "sea"
+        self.runner.load_test_plan(self.plan_path)
+        self.assertEqual(self.runner.rbd_size, "200gb")
+
+
 class TestMainFunction(unittest.TestCase):
     """Test the main function and CLI argument parsing"""
 
