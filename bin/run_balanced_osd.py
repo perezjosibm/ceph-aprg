@@ -115,6 +115,7 @@ class BalancedOSDRunner:
         self.num_rbd_images = 1
         self.rbd_size = "400gb"
         self.test_plan_data = {}
+        self.test_name = ""
 
     def log_color(self, message: str, color: str = GREEN):
         """Log a message with color"""
@@ -432,134 +433,150 @@ class BalancedOSDRunner:
             )
 
     def run_fixed_bal_tests(self, bal_key: str, osd_type: str):
-        """Run balanced vs default CPU core/reactor distribution tests"""
-        logger.info(f"{GREEN}== OSD type: {osd_type} =={NC}")
+        """
+        Run balanced vs default CPU core/reactor distribution tests
+        """
+        def _run_body(cfg, title, test_name, cmd):
+            """Run the test body for a given configuration and parameters"""
 
-        suffix = "lt" if self.latency_target else "rc"
-        test_name = ""
+            self.log_color(f"== Title: {title} ==")
+            logger.info(f"Test name: {test_name}")
 
-        # Sort keys
-        sorted_keys = sorted(
-            self.test_table.keys(), key=lambda x: int(x) if x.isdigit() else 0
-        )
-
-        # TODO: Need to create an enumerator from the cluster configurations and get
-        # each config accorindgly, instead of relying on the test_table which
-        # is a remnant of the bash script and might not be needed anymore
-
-        for num_osd in sorted_keys:
-            reactor_range = self.reactor_range.split()
-            for num_reactors in reactor_range:
-                num_reactors = int(num_reactors)
-
-                if osd_type == "classic":
-                    title = f"({osd_type}) {num_osd} OSD classic, fixed {self.fio_spec}"
-                    cmd = (
-                        f"MDS=0 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.vstart_cpu_cores}' "
-                        f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
-                        f"--redirect-output {self.osd_be_table['blue']} {self.store_devs} --no-restart"
-                    )
-                    test_name = f"{osd_type}_{num_osd}osd_{self.fio_spec}_{suffix}"
-                else:
-                    title = f"({osd_type}) {num_osd} OSD crimson, {num_reactors} reactor, fixed {self.fio_spec}"
-                    cmd = (
-                        f"MDS=0 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.vstart_cpu_cores}' "
-                        f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
-                        f"--redirect-output {self.osd_be_table[osd_type]} {self.store_devs} "
-                        f"--crimson {self.bal_ops_table[bal_key]} --crimson-smp {num_reactors} --no-restart"
-                    )
-                    # TODO: method that constructs the test name based on the parameters, instead of hardcoding it here and in the show_grid and run_fio methods
-                    test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{self.fio_spec}_{bal_key}_{suffix}"
-
-                    if osd_type == "blue":
-                        num_alien_threads = 4 * int(num_osd) * num_reactors
-                        title += f" alien_num_threads={num_alien_threads}"
-                        cmd += f" --crimson-alien-num-threads {num_alien_threads}"
-                        test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{num_alien_threads}at_{self.fio_spec}_{bal_key}_{suffix}"
-
-                self.log_color(f"== Title: {title} ==")
-                logger.info(f"Test name: {test_name}")
-
-                test_run_log = os.path.join(self.run_dir, f"{test_name}_test_run.log")
-                with open(test_run_log, "a") as f:
-                    f.write(f"{cmd}\n")
-
-                if self.skip_exec:
-                    logger.info(f"Test: {test_name}")
-                    logger.info(f"Command: {cmd}")
-                    continue
-
-                # Execute command
-                with open(test_run_log, "a") as log_file:
-                    subprocess.run(
-                        cmd, shell=True, stdout=log_file, stderr=subprocess.STDOUT
-                    )
-
-                if osd_type == "classic":
-                    # Set OSD process affinity
-                    pgrep_result = subprocess.run(
-                        ["pgrep", "osd"], capture_output=True, text=True
-                    )
-                    osd_pid = pgrep_result.stdout.strip()
-                    if osd_pid:
-                        taskset_cmd = f"taskset -a -c -p {self.osd_cpu} {osd_pid}"
-                        with open(test_run_log, "a") as log_file:
-                            subprocess.run(
-                                taskset_cmd,
-                                shell=True,
-                                stdout=log_file,
-                                stderr=subprocess.STDOUT,
-                            )
-
-                logger.info(
-                    f"{time.strftime('%Y-%m-%d %H:%M:%S')} Sleeping for 20 secs..."
-                )
-                time.sleep(20)
-
-                self.show_grid(test_name)
-
-                # Start FIO
-                logger.info(f"{time.strftime('%Y-%m-%d %H:%M:%S')} Starting FIO...")
-                self.fio_pid = self.run_fio(test_name, "")
-                logger.info(
-                    f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO {self.fio_pid} started: {test_name}"
-                )
-
-                # Start watchdog
-                logger.info(
-                    f"{time.strftime('%Y-%m-%d %H:%M:%S')} Starting watchdog..."
-                )
-                self.watchdog_enabled = True
-                import threading
-
-                watchdog_thread = threading.Thread(
-                    target=self.watchdog, args=(self.fio_pid,)
-                )
-                watchdog_thread.daemon = True
-                watchdog_thread.start()
-
-                # Wait for FIO to finish
-                logger.info(
-                    f"{time.strftime('%Y-%m-%d %H:%M:%S')} Waiting for FIO to complete..."
-                )
-                os.waitpid(self.fio_pid, 0)
-
-                # Stop watchdog
-                logger.info(
-                    f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO completed, stopping watchdog..."
-                )
-                self.watchdog_enabled = False
-
-                # Stop cluster
-                if osd_type == "classic":
-                    subprocess.run(["/ceph/src/stop.sh"])
-                else:
-                    subprocess.run(["/ceph/src/stop.sh", "--crimson"])
-
-                time.sleep(60)
-
-            # Compress log
             test_run_log = os.path.join(self.run_dir, f"{test_name}_test_run.log")
+            with open(test_run_log, "a") as f:
+                f.write(f"{cmd}\n")
+
+            if self.skip_exec:
+                logger.info(f"Test: {test_name}")
+                logger.info(f"Command: {cmd}")
+                return #continue
+
+            # Execute command
+            with open(test_run_log, "a") as log_file:
+                subprocess.run(
+                    cmd, shell=True, stdout=log_file, stderr=subprocess.STDOUT
+                )
+
+            if isinstance(cfg, ClassicClusterConfiguration): #osd_type == "classic":
+                # Set OSD process affinity
+                pgrep_result = subprocess.run(
+                    ["pgrep", "osd"], capture_output=True, text=True
+                )
+                osd_pid = pgrep_result.stdout.strip()
+                if osd_pid:
+                    taskset_cmd = f"taskset -a -c -p {self.osd_cpu} {osd_pid}"
+                    with open(test_run_log, "a") as log_file:
+                        subprocess.run(
+                            taskset_cmd,
+                            shell=True,
+                            stdout=log_file,
+                            stderr=subprocess.STDOUT,
+                        )
+
+            logger.info(
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')} Sleeping for 20 secs..."
+            )
+            time.sleep(20)
+
+            self.show_grid(test_name)
+
+            # Start FIO
+            logger.info(f"{time.strftime('%Y-%m-%d %H:%M:%S')} Starting FIO...")
+            self.fio_pid = self.run_fio(test_name, "")
+            logger.info(
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO {self.fio_pid} started: {test_name}"
+            )
+
+            # Start watchdog
+            logger.info(
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')} Starting watchdog..."
+            )
+            self.watchdog_enabled = True
+            import threading
+
+            watchdog_thread = threading.Thread(
+                target=self.watchdog, args=(self.fio_pid,)
+            )
+            watchdog_thread.daemon = True
+            watchdog_thread.start()
+
+            # Wait for FIO to finish
+            logger.info(
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')} Waiting for FIO to complete..."
+            )
+            os.waitpid(self.fio_pid, 0)
+
+            # Stop watchdog
+            logger.info(
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO completed, stopping watchdog..."
+            )
+            self.watchdog_enabled = False
+
+            # Stop cluster
+            if isinstance(cfg, ClassicClusterConfiguration): #cfg.osd_type == "classic":
+                subprocess.run(["/ceph/src/stop.sh"])
+            else:
+                subprocess.run(["/ceph/src/stop.sh", "--crimson"])
+
+            time.sleep(60)
+
+        def _run_seastore(cfg, num_osd, osd_type, bal_key, suffix):
+            logger.info(
+                f"{GREEN}== Running Seastore test: {num_osd} OSD, {osd_type}, {bal_key}, {suffix} =={NC}"
+            )
+            for num_reactors in cfg.reactor_range:
+                logger.info(
+                    f"{GREEN}== Running Seastore test: {num_osd} OSD, {osd_type}, {bal_key}, {suffix}, {num_reactors} reactors =={NC}"
+                )
+                title = f"({osd_type}) {num_osd} OSD crimson, {num_reactors} reactor, fixed {self.fio_spec}"
+                cmd = (
+                    f"MDS=0 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.vstart_cpu_cores}' "
+                    f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
+                    f"--redirect-output {self.osd_be_table[osd_type]} {self.store_devs} "
+                    f"--crimson {self.bal_ops_table[bal_key]} --crimson-smp {num_reactors} --no-restart"
+                )
+                # TODO: method that constructs the test name based on the parameters
+                test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{self.fio_spec}_{bal_key}_{suffix}"
+
+                if osd_type == "blue":
+                    num_alien_threads = 4 * int(num_osd) * num_reactors
+                    title += f" alien_num_threads={num_alien_threads}"
+                    cmd += f" --crimson-alien-num-threads {num_alien_threads}"
+                    test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{num_alien_threads}at_{self.fio_spec}_{bal_key}_{suffix}"
+                self.test_name = test_name
+                _run_body(cfg, title, test_name, cmd)
+
+
+        def _run_classic(cfg, num_osd, osd_type, bal_key, suffix):
+            logger.info(
+                f"{GREEN}== Running Classic test: {num_osd} OSD, {osd_type}, {bal_key}, {suffix} =={NC}"
+            )
+            title = f"({osd_type}) {num_osd} OSD classic, fixed {self.fio_spec}"
+            cmd = (
+                f"MDS=0 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.vstart_cpu_cores}' "
+                f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
+                f"--redirect-output {self.osd_be_table['blue']} {self.store_devs} --no-restart"
+            )
+            test_name = f"{osd_type}_{num_osd}osd_{self.fio_spec}_{suffix}"
+            self.test_name = test_name
+            _run_body(cfg, title, test_name, cmd)
+
+
+        logger.info(f"{GREEN}== OSD type: {osd_type} =={NC}")
+        suffix = "lt" if self.latency_target else "rc"
+        # Sort keys
+        # sorted_keys = sorted(
+        #     self.test_table.keys(), key=lambda x: int(x) if x.isdigit() else 0
+        # )
+        for cfg_name, cfg in self.test_plan_data.cluster.configurations.items():
+            for num_osd in cfg.osd_range:
+                logger.info(f"{GREEN}== {cfg_name} =={NC}")
+                if isinstance(cfg, SeastoreClusterConfiguration):
+                    _run_seastore(cfg, num_osd, osd_type, bal_key, suffix)
+                elif isinstance(cfg, ClassicClusterConfiguration):
+                    _run_classic(cfg, num_osd, osd_type, bal_key, suffix)
+            # Compress log
+            test_run_log = os.path.join(self.run_dir, f"{self.test_name}_test_run.log")
             subprocess.run(["gzip", "-9fq", test_run_log])
 
     def run_bal_vs_default_tests(self, osd_type: str, bal: str):
