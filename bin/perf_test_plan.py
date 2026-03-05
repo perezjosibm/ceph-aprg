@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-test_plan module – load a test-plan JSON and expose typed dataclasses.
+perf_test_plan module – load a performance-test-plan JSON and expose typed dataclasses.
 
 Schema
 ------
-TestPlan
+PerfTestPlan
     cluster: Cluster
     benchmarks: Benchmarks
 Cluster
@@ -28,7 +28,7 @@ Key API
 -------
 load_test_plan(path)  – read JSON, return TestPlan
 validate_plan(plan)   – raise ValueError on schema problems
-factory(osd_type)     – return the correct configuration class
+factory(osd_type)     – return the correct configuration class for *osd_type*
 """
 
 import json
@@ -79,7 +79,10 @@ class Workload:
 
 @dataclass
 class LibrbdFio:
-    """Librbdfio benchmark parameters."""
+    """
+    Librbdfio benchmark engine parameters.
+    We might extend for furthe FIO engines, like AIO, etc.
+    """
     cmd_path: str
     fio_cpu_range: List[str]
     fio_workload: List[str]
@@ -111,8 +114,8 @@ class Cluster:
 
 
 @dataclass
-class TestPlan:
-    """Root dataclass representing a complete test plan."""
+class PerfTestPlan:
+    """Root dataclass representing a complete performance test plan."""
     cluster: Cluster
     benchmarks: Benchmarks
 
@@ -222,8 +225,8 @@ def _parse_benchmarks(raw: dict) -> Benchmarks:
 # Validation
 # ---------------------------------------------------------------------------
 
-def validate_plan(plan: TestPlan) -> None:
-    """Validate a :class:`TestPlan` instance.
+def validate_plan(plan: PerfTestPlan) -> None:
+    """Validate a :class:`PerfTestPlan` instance.
 
     Raises
     ------
@@ -232,7 +235,7 @@ def validate_plan(plan: TestPlan) -> None:
     """
     # Cluster must have at least one configuration
     if not plan.cluster.configurations:
-        raise ValueError("TestPlan.cluster.configurations must not be empty")
+        raise ValueError("PerfTestPlan.cluster.configurations must not be empty")
 
     for cfg_name, cfg in plan.cluster.configurations.items():
         if not cfg.osd_range:
@@ -267,8 +270,8 @@ def validate_plan(plan: TestPlan) -> None:
 # Public loader
 # ---------------------------------------------------------------------------
 
-def load_test_plan(json_file: str) -> TestPlan:
-    """Read *json_file* and return a fully populated :class:`TestPlan`.
+def load_test_plan(json_file: str) -> PerfTestPlan:
+    """Read *json_file* and return a fully populated :class:`PerfTestPlan`.
 
     Parameters
     ----------
@@ -287,7 +290,7 @@ def load_test_plan(json_file: str) -> TestPlan:
 
     cluster = _parse_cluster(data["cluster"])
     benchmarks = _parse_benchmarks(data["benchmarks"])
-    plan = TestPlan(cluster=cluster, benchmarks=benchmarks)
+    plan = PerfTestPlan(cluster=cluster, benchmarks=benchmarks)
     validate_plan(plan)
     return plan
 

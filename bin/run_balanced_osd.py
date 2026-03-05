@@ -10,20 +10,6 @@ Usage: ./run_balanced_osd.py [-t <osd-be-type>] [-d rundir] [-b balance_strategy
      distribution tests for the given OSD backend type, 'all' for the three of them.
 -b : Run a single balanced CPU core/reactor distribution tests for all the OSD backend types
 
-Refactor bin/run_balanced_osd.py to use the new module and the test plan JSON file, and implement the following features:
-
-What to change in BalancedOSDRunner.load_test_plan():
-
-    Load TestPlan from the path.
-    Pick the right cluster configuration(s) based on args.osd_type:
-        If args.osd_type == "all", iterate all configurations (or all matching types).
-        Otherwise, only configs whose osd_type matches the requested backend (with mapping "sea" CLI value → "seastore" json value).
-    For each configuration:
-        self.store_devs = " ".join(cfg.store_devs) (or whatever your vstart expects)
-        self.osd_range = " ".join(map(str, cfg.osd_range)) so the existing loop still works
-        self.reactor_range = " ".join(map(str, cfg.reactor_range)) for seastore configs (reactor counts)
-        classic: set self.osd_cpu from classic_cpu_set[0] (or decide how to handle multiple sets)
-
 """
 
 import argparse
@@ -38,10 +24,10 @@ import time
 from typing import Dict, List, Optional
 #Tuple
 
-from test_plan import (
+from perf_test_plan import (
     ClassicClusterConfiguration,
     SeastoreClusterConfiguration,
-    TestPlan,
+    PerfTestPlan,
     load_test_plan as _load_test_plan,
 )
 
@@ -132,7 +118,7 @@ class BalancedOSDRunner:
         """Load test plan configuration from JSON file using the test_plan module."""
         test_plan_path = os.path.join(self.script_dir, "test_plan.json") if test_plan_path is None else test_plan_path
         if os.path.exists(test_plan_path):
-            plan: TestPlan = _load_test_plan(test_plan_path)
+            plan: PerfTestPlan = _load_test_plan(test_plan_path)
             # Iterate cluster configurations and set runner state based on
             # the requested osd_type.  CLI value "sea" maps to JSON value
             # "seastore"; "all" iterates every configuration.
@@ -140,9 +126,10 @@ class BalancedOSDRunner:
             requested = osd_type_map.get(self.osd_type, self.osd_type)
 
             for cfg_name, cfg in plan.cluster.configurations.items():
+                logger.info(f"Processing cluster configuration: {cfg_name} (OSD type: {cfg.osd_type})")
                 if requested != "all" and cfg.osd_type != requested:
                     continue
-                # Common fields
+                # Common fields: we might simplify remove self fields and use the config directly in the test execution
                 self.store_devs = " ".join(cfg.store_devs)
                 self.osd_range = " ".join(map(str, cfg.osd_range))
                 self.num_rbd_images = cfg.num_rbd_images
@@ -298,11 +285,11 @@ class BalancedOSDRunner:
             else:
                 opts += "-w hockey -r -a "
         
-        # Construct FIO command
+        # Construct FIO command: this should be obtained from the perf_test_plan JSON
         cmd_parts = [
             '/root/bin/run_fio.sh',
             '-s', opts,
-            '-c', '0-111',
+            '-c', '0-192', # monitor all cores in the system: we might get this from the JSON produced by taskset_pid.py 
             '-f', self.fio_cpu_cores,
             '-p', test_name,
             '-n',
@@ -340,20 +327,31 @@ class BalancedOSDRunner:
         
         if result.returncode != 0:
             logger.error(f"{RED}== FIO preconditioning failed =={NC}")
-            sys.exit(1)
+            sys.exit(1) # we might want to handle this more gracefully, bail out to next test
         
         # Get diskstats diff
-        subprocess.run(['jc', '--pretty', '/proc/diskstats'], 
-                      capture_output=True, text=True)
-        cmd = [
-            'python3', '/root/bin/diskstat_diff.py',
-            '-d', self.run_dir,
-            '-a', precond_json
-        ]
-        subprocess.run(cmd, capture_output=True, text=True)
-        # Pipe in the new diskstats
-        subprocess.Popen(['jc', '--pretty', '/proc/diskstats'], stdout=subprocess.PIPE)
-
+        result = subprocess.run(
+            "jc --pretty /proc/diskstats| python3 /root/bin/diskstat_diff.py -d {} -a {}".format(self.run_dir, precond_json),
+            capture_output=True
+        )
+        if result.returncode != 0:
+            logger.error(f"{RED}== diskstat_diff failed =={NC}")
+        # # subprocess.run(['jc', '--pretty', '/proc/diskstats'], 
+        # #               capture_output=True, text=True)
+        # new_ds = subprocess.Popen(['jc', '--pretty', '/proc/diskstats'], stdout=subprocess.PIPE)
+        # cmd = [
+        #     'python3', '/root/bin/diskstat_diff.py',
+        #     '-d', self.run_dir,
+        #     '-a', precond_json
+        # ]
+        # # Similar to subprocess.run("dd if=/dev/sda | pv", shell=True)
+        # #dsdiff_proc = subprocess.Popen(cmd,stdin=new_ds.stdout, capture_output=True, text=True)
+        # dsdiff_proc = subprocess.Popen(cmd,stdin=new_ds.stdout)
+        # dsdiff_proc.wait()
+        # out, err = dsdiff_proc.communicate()
+        # if dsdiff_proc.returncode == 0:
+        logger.info(f"{GREEN}== Diskstats diff saved to {self.run_dir} =={NC}")
+        
     def stop_cluster(self, pid_fio: int = 0):
         """Stop the cluster and kill the FIO process"""
         logger.info(f"{time.strftime('%Y-%m-%d %H:%M:%S')} == Stopping the cluster... ==")
@@ -414,11 +412,11 @@ class BalancedOSDRunner:
         # Sort keys
         sorted_keys = sorted(self.test_table.keys(), key=lambda x: int(x) if x.isdigit() else 0)
         
+        # TODO: Need to create an enumerator from the cluster configurations and get
+        # each config accorindgly, instead of relying on the test_table which
+        # is a remnant of the bash script and might not be needed anymore
+
         for num_osd in sorted_keys:
-            # Evaluate test_table entry
-            test_row_str = self.test_table[num_osd]
-            # In bash this would be eval, here we'd need to parse it
-            # For now, skip this complex evaluation
             
             reactor_range = self.reactor_range.split()
             for num_reactors in reactor_range:
@@ -440,6 +438,7 @@ class BalancedOSDRunner:
                         f"--redirect-output {self.osd_be_table[osd_type]} {self.store_devs} "
                         f"--crimson {self.bal_ops_table[bal_key]} --crimson-smp {num_reactors} --no-restart"
                     )
+                    # TODO: method that constructs the test name based on the parameters, instead of hardcoding it here and in the show_grid and run_fio methods
                     test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{self.fio_spec}_{bal_key}_{suffix}"
                     
                     if osd_type == "blue":
@@ -534,7 +533,7 @@ class BalancedOSDRunner:
         signal.signal(signal.SIGTERM, self.signal_handler)
         signal.signal(signal.SIGHUP, self.signal_handler)
         
-        # Parse arguments
+        # Parse arguments: we might use the perf_test_plan JSON for these instead
         self.osd_type = args.osd_type
         self.balance = args.balance
         self.run_dir = args.run_dir
