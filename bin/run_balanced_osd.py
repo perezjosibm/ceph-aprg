@@ -35,8 +35,15 @@ import subprocess
 import sys
 import time
 #from pathlib import Path
-from typing import Dict, Optional
-#List, , Tuple
+from typing import Dict, List, Optional
+#Tuple
+
+from test_plan import (
+    ClassicClusterConfiguration,
+    SeastoreClusterConfiguration,
+    TestPlan,
+    load_test_plan as _load_test_plan,
+)
 
 __author__ = "Jose J Palacios-Perez (translated from bash)"
 
@@ -122,17 +129,33 @@ class BalancedOSDRunner:
 
     
     def load_test_plan(self, test_plan_path: Optional[str] = None):
-        """Load test plan configuration from JSON file"""
+        """Load test plan configuration from JSON file using the test_plan module."""
         test_plan_path = os.path.join(self.script_dir, "test_plan.json") if test_plan_path is None else test_plan_path
         if os.path.exists(test_plan_path):
-            with open(test_plan_path, 'r') as f:
-                self.test_plan_data = json.load(f)
-                # We need a class for test plan, which contains classes for
-                # cluster configurations and benchmark workloads, so in the
-                # main loop we iterate over each cluster configuration
-                # according to the OSD type, and for each cluster configuration
-                # we iterate over the benchmark workloads, which contain the
-                # FIO options and the test name suffixes
+            plan: TestPlan = _load_test_plan(test_plan_path)
+            # Iterate cluster configurations and set runner state based on
+            # the requested osd_type.  CLI value "sea" maps to JSON value
+            # "seastore"; "all" iterates every configuration.
+            osd_type_map = {"sea": "seastore"}
+            requested = osd_type_map.get(self.osd_type, self.osd_type)
+
+            for cfg_name, cfg in plan.cluster.configurations.items():
+                if requested != "all" and cfg.osd_type != requested:
+                    continue
+                # Common fields
+                self.store_devs = " ".join(cfg.store_devs)
+                self.osd_range = " ".join(map(str, cfg.osd_range))
+                self.num_rbd_images = cfg.num_rbd_images
+                self.rbd_size = cfg.rbd_image_size
+                # Type-specific fields
+                if isinstance(cfg, SeastoreClusterConfiguration):
+                    self.reactor_range = " ".join(map(str, cfg.reactor_range))
+                elif isinstance(cfg, ClassicClusterConfiguration):
+                    if cfg.classic_cpu_set:
+                        self.osd_cpu = cfg.classic_cpu_set[0]
+
+            # Expose the full plan for advanced consumers
+            self.test_plan_data = plan
         else:
             logger.warning(f"{RED}== Test plan file {test_plan_path} not found, using defaults =={NC}")
 
