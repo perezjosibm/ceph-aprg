@@ -5,7 +5,7 @@
 	  "osd_type": "seastore",
           "osd_range": [ 1, 2, 4, 8 ],
           "store_devs": [ "/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1", "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1" ],
-          "reactor_core_range": [ "0-95", "0-48,49-95", "0-23,24-47,48-71,72-95", "0-11,12-23,24-35,36-47,48-59,60-71,72-83,84-95" ],
+          "reactor_core_range": [ 96, 48, 24, 12 ],
 	  "pool_type": "rbd",
           "num_rbd_images": 4,
           "rbd_image_size": "400gb"

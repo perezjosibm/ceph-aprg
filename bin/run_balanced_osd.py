@@ -9,6 +9,21 @@ Usage: ./run_balanced_osd.py [-t <osd-be-type>] [-d rundir] [-b balance_strategy
 -t : OSD backend type: classic, cyan, blue, sea. Runs all the balanced vs default CPU core/reactor
      distribution tests for the given OSD backend type, 'all' for the three of them.
 -b : Run a single balanced CPU core/reactor distribution tests for all the OSD backend types
+
+Refactor bin/run_balanced_osd.py to use the new module and the test plan JSON file, and implement the following features:
+
+What to change in BalancedOSDRunner.load_test_plan():
+
+    Load TestPlan from the path.
+    Pick the right cluster configuration(s) based on args.osd_type:
+        If args.osd_type == "all", iterate all configurations (or all matching types).
+        Otherwise, only configs whose osd_type matches the requested backend (with mapping "sea" CLI value → "seastore" json value).
+    For each configuration:
+        self.store_devs = " ".join(cfg.store_devs) (or whatever your vstart expects)
+        self.osd_range = " ".join(map(str, cfg.osd_range)) so the existing loop still works
+        self.reactor_range = " ".join(map(str, cfg.reactor_range)) for seastore configs (reactor counts)
+        classic: set self.osd_cpu from classic_cpu_set[0] (or decide how to handle multiple sets)
+
 """
 
 import argparse
