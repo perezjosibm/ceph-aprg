@@ -71,9 +71,12 @@ declare -a procs_order=( true false )
 declare -A osd_id
 declare -A fio_id
 declare -a global_fio_id=()
+
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
 # Default values that can be changed via arg options
 # Or even betterm via test_plan.json
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=${SCRIPT_DIR}/rbd_fio_examples/
 FIO_CORES="0-31" # unrestricted
 FIO_JOB_SPEC="rbd_"
 OSD_CORES="0-31" # range of CPU cores to monitor
@@ -106,8 +109,8 @@ WATCHDOG_PID=0
 WATCHDOG=false
 fio_rc=0
 
-source /root/bin/common.sh
-source /root/bin/monitoring.sh
+source ${SCRIPT_DIR}/common.sh
+source ${SCRIPT_DIR}/monitoring.sh
 
 while getopts 'ac:d:f:jklrsrw:p:nmt:gxz' option; do
   case "$option" in
@@ -202,7 +205,7 @@ fun_osd_mem_profile() {
         echo "{ \"timestamp\": \"$timestamp\" ," >> ${OUTFILE}
         echo " \"mem_profile\": " >> ${OUTFILE}
         local cmd="gdb -p ${osdpid} --batch \
-            -d /root/bin/tools -x run_scylla"
+            -d ${SCRIPT_DIR}/tools -x run_scylla"
         $cmd 2>&1 >> ${OUTFILE}
         echo "}" >> ${OUTFILE}
     fi
@@ -554,7 +557,7 @@ fun_run_workload() {
     WATCHDOG=false 
     
     # Measure the diskstats after the completion of FIO instances
-    jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
+    jc --pretty /proc/diskstats | python3 ${SCRIPT_DIR}/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
     # Filter FIO .json: remove any error line not in .json format
     sed -i '/^fio: .*/d' fio_${TEST_NAME}.json
     # eg if the latency_target was not met or any other error
@@ -615,7 +618,7 @@ fun_post_process() {
         for x in $(cat ${OSD_TEST_LIST}); do
             sed -i '/^fio:/d' $x
         done
-        python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
+        python3 ${SCRIPT_DIR}/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
     fi
 
     # Post processing: OSD dump_metrics .json -- disabling this since we are no longer using it
@@ -640,7 +643,7 @@ fun_post_process() {
     #fio/tools/fio_generate_plots ${TEST_PREFIX} 650 280 # Made some tweaks, so will keep it in my priv repo
     # Neeed coalescing by volume
     # Deprecating this, will try using pandas instead
-    #/root/bin/fio_generate_plots ${TEST_NAME} 650 280 2>&1 > /dev/null
+    #${SCRIPT_DIR}/fio_generate_plots ${TEST_NAME} 650 280 2>&1 > /dev/null
 
     # Process perf if any
     if [ "$WITH_FLAMEGRAPHS" = true ]; then
@@ -650,7 +653,7 @@ fun_post_process() {
             y=${x/perf.out}
             echo "==$(date) == Perf script $x: $y =="
             perf script -i $x | c++filt | ${PACK_DIR}/FlameGraph/stackcollapse-perf.pl | sed -e 's/perf-crimson-ms/reactor/g' -e 's/reactor-[0-9]\+/reactor/g'  -e 's/msgr-worker-[0-9]\+/msgr-worker/g' > ${x}_merged
-            python3 /root/bin/pp_crimson_flamegraphs.py -i ${x}_merged |  ${PACK_DIR}/FlameGraph/flamegraph.pl --title "${y}" > ${z}
+            python3 ${SCRIPT_DIR}/pp_crimson_flamegraphs.py -i ${x}_merged |  ${PACK_DIR}/FlameGraph/flamegraph.pl --title "${y}" > ${z}
             #perf script -i $x | c++filt | gzip -9 > $y
             # Option whether want to keep the raw data
             #perf script -i $x | c++filt | ./stackcollapse-perf.pl | ./flamegraph.pl > $z
@@ -661,7 +664,7 @@ fun_post_process() {
     
     # if  [ "${OSD_TYPE}" != "classic" ]; then
     #     # Curate perf_metrics (Crimson only): no longer needed since we are used a single file per dump and rutil
-    #     #/root/bin/pp_get_config_json.sh -d ${RUN_DIR} -w ${TEST_RESULT}
+    #     #${SCRIPT_DIR}/pp_get_config_json.sh -d ${RUN_DIR} -w ${TEST_RESULT}
     # fi
 
     fun_tidyup ${TEST_RESULT}
@@ -798,7 +801,7 @@ fun_post_process_cold() {
     [ -f "${OSD_CPU_AVG}" ] && rm -f ${OSD_CPU_AVG}
     if [ -f "${TEST_RESULT}_top.json" ]; then
       echo "== Reconstructing ${OSD_CPU_AVG}:"
-      python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" \
+      python3 ${SCRIPT_DIR}/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" \
         --avg=${OSD_CPU_AVG} --pids=${TOP_PID_JSON} 2>&1 > /dev/null
     fi
     # Post processing: FIO .json
@@ -807,7 +810,7 @@ fun_post_process_cold() {
       for x in $(cat ${OSD_TEST_LIST}); do
         sed -i '/^fio:/d' $x
       done
-      python3 /root/bin/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} \
+      python3 ${SCRIPT_DIR}/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} \
           -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
     fi
 
