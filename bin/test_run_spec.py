@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 The intention of this class is to uniquely specify a Test run, this is normally via a name (str)
 that succintly describes the following sections of (preferential) information:

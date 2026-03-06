@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 """
 This module extends bin/tasksetcpu.py to visualise the allocation of threads
 to CPU core IDs for a given process ID.  It accepts an lscpu JSON file (in

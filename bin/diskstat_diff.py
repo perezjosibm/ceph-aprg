@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 """
 This script expect an input .json file name as argument, and a .json stream
 from stdin, and

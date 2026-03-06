@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 """
 This script traverses the ouput from taskset and ps to produce a .JSON
 to generate an ascii grid for visualisation.
