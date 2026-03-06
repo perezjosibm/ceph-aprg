@@ -581,11 +581,12 @@ class BalancedOSDRunner:
                     f"{GREEN}== Running Seastore test: {num_osd} OSD, {osd_type}, {bal_key}, {suffix}, {num_reactors} reactors =={NC}"
                 )
                 title = f"({osd_type}) {num_osd} OSD crimson, {num_reactors} reactor, fixed {self.fio_spec}"
+                store_devs = cfg.store_devs[:num_osd]
                 cmd = (
-                    f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{cfg.osd_cpu}' "
+                    f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.osd_cpu}' "
                     f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
                     f"--redirect-output {self.osd_be_table[osd_type]} "
-                    f"--seastore-devs {','.join(cfg.store_devs)} "
+                    f"--seastore-devs {','.join(store_devs)} "
                     f"--crimson {self.bal_ops_table[bal_key]} --crimson-smp {num_reactors} --no-restart"
                 )
                 # TODO: method that constructs the test name based on the parameters
@@ -605,10 +606,12 @@ class BalancedOSDRunner:
                 f"{GREEN}== Running Classic test: {num_osd} OSD, {osd_type}, {bal_key}, {suffix} =={NC}"
             )
             title = f"({osd_type}) {num_osd} OSD classic, fixed {self.fio_spec}"
+            # Slice cfg.store_devs to use up to num_osd devices
+            store_devs = cfg.store_devs[:num_osd]
             cmd = (
-                f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{cfg.osd_cpu}' "
+                f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.osd_cpu}' "
                 f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
-                f"--redirect-output {self.osd_be_table['blue']} {','.join(cfg.store_devs)} --no-restart"
+                f"--redirect-output {self.osd_be_table['blue']} {','.join(store_devs)} --no-restart"
             )
             test_name = f"{osd_type}_{num_osd}osd_{self.fio_spec}_{suffix}"
             self.test_name = test_name
