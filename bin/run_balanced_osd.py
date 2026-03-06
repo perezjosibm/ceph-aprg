@@ -108,7 +108,8 @@ class BalancedOSDRunner:
         self.osd_be_table = {
             "cyan": "--cyanstore",
             "blue": "--bluestore --bluestore-devs ",
-            "sea": '--seastore --osd-args "--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=',
+            #"sea": '--seastore --osd-args "--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=',
+            "sea": '--seastore --osd-args "--seastore_max_concurrent_transactions=128"', 
         }
 
         # Default options
@@ -498,11 +499,14 @@ class BalancedOSDRunner:
                 return #continue
 
             # Execute command
-            logger.info(f"Executing command: {' '.join(cmd)}")
+            logger.info(f"Executing command: {cmd}")
             with open(test_run_log, "a") as log_file:
-                subprocess.run(
+                result = subprocess.run(
                     cmd, shell=True, stdout=log_file, stderr=subprocess.STDOUT
                 )
+            if result.returncode != 0:
+                logger.error(f"{RED}== Command failed: {cmd} =={NC}")
+                return
 
             if isinstance(cfg, ClassicClusterConfiguration): #osd_type == "classic":
                 # Set OSD process affinity
@@ -550,7 +554,11 @@ class BalancedOSDRunner:
             watchdog_thread.daemon = True
             watchdog_thread.start()
 
-            # Wait for FIO to finish
+            # Wait for FIO to finish: we need to trigger the monitoring once
+            # the time ramp up has finished and the system is in steady state,
+            # we can improve this by monitoring the FIO output log and looking
+            # for specific patterns to trigger the monitoring, instead of
+            # waiting for the whole FIO run to finish
             logger.info(
                 f"{time.strftime('%Y-%m-%d %H:%M:%S')} Waiting for FIO to complete..."
             )
@@ -568,7 +576,7 @@ class BalancedOSDRunner:
             else:
                 subprocess.run(["/ceph/src/stop.sh", "--crimson"])
 
-            time.sleep(60)
+            time.sleep(30)
 
         def _run_seastore(cfg, num_osd, osd_type, bal_key, suffix):
             for num_reactors in cfg.reactor_range:
@@ -579,7 +587,8 @@ class BalancedOSDRunner:
                 cmd = (
                     f"MDS=0 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.vstart_cpu_cores}' "
                     f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
-                    f"--redirect-output {self.osd_be_table[osd_type]} {self.store_devs} "
+                    f"--redirect-output {self.osd_be_table[osd_type]} "
+                    f"--seastore-devs \"{','.join(self.store_devs)}\" "
                     f"--crimson {self.bal_ops_table[bal_key]} --crimson-smp {num_reactors} --no-restart"
                 )
                 # TODO: method that constructs the test name based on the parameters
