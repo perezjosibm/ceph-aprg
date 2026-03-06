@@ -327,9 +327,9 @@ class BalancedOSDRunner:
         # modify to accept them.
         with open(test_run_log, "a") as log_file:
             subprocess.run(["cephmkrbd.sh", 
-                            "-n", cfg.num_rbd_images,
+                            "-n", f"{cfg.num_rbd_images}",
                             "-p", test_name,
-                            "-s", cfg.rbd_image_size ], stdout=log_file, stderr=subprocess.STDOUT)
+                            "-s", f"{cfg.rbd_image_size}" ], stdout=log_file, stderr=subprocess.STDOUT)
 
         # Build FIO options
         if fio_opts:
