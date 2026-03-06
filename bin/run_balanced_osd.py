@@ -146,7 +146,7 @@ class BalancedOSDRunner:
                 if requested != "all" and cfg.osd_type != requested:
                     continue
                 # Common fields: we might simplify remove self fields and use the config directly in the test execution
-                self.store_devs = " ".join(cfg.store_devs)
+                self.store_devs = ",".join(cfg.store_devs)
                 self.osd_range = " ".join(map(str, cfg.osd_range))
                 self.num_rbd_images = cfg.num_rbd_images
                 self.rbd_size = cfg.rbd_image_size
@@ -484,7 +484,7 @@ class BalancedOSDRunner:
         """
         Run balanced vs default CPU core/reactor distribution tests
         """
-        def _run_body(cfg, title, test_name, cmd):
+        def _run_body(cfg, title, test_name, cmd) -> bool:
             """Run the test body for a given configuration and parameters"""
 
             self.log_color(f"== Title: {title} Test name: {test_name} ==")
@@ -496,7 +496,7 @@ class BalancedOSDRunner:
             if self.skip_exec:
                 logger.info(f"Test: {test_name}")
                 logger.info(f"Command: {cmd}")
-                return #continue
+                return False #continue
 
             # Execute command
             logger.info(f"Executing command: {cmd}")
@@ -506,7 +506,7 @@ class BalancedOSDRunner:
                 )
             if result.returncode != 0:
                 logger.error(f"{RED}== Command failed: {cmd} =={NC}")
-                return
+                return False
 
             if isinstance(cfg, ClassicClusterConfiguration): #osd_type == "classic":
                 # Set OSD process affinity
@@ -577,6 +577,7 @@ class BalancedOSDRunner:
                 subprocess.run(["/ceph/src/stop.sh", "--crimson"])
 
             time.sleep(30)
+            return True
 
         def _run_seastore(cfg, num_osd, osd_type, bal_key, suffix):
             for num_reactors in cfg.reactor_range:
@@ -588,7 +589,7 @@ class BalancedOSDRunner:
                     f"MDS=0 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.vstart_cpu_cores}' "
                     f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
                     f"--redirect-output {self.osd_be_table[osd_type]} "
-                    f"--seastore-devs \"{','.join(self.store_devs)}\" "
+                    f"--seastore-devs {','.join(cfg.store_devs)} "
                     f"--crimson {self.bal_ops_table[bal_key]} --crimson-smp {num_reactors} --no-restart"
                 )
                 # TODO: method that constructs the test name based on the parameters
@@ -611,7 +612,7 @@ class BalancedOSDRunner:
             cmd = (
                 f"MDS=0 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.vstart_cpu_cores}' "
                 f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
-                f"--redirect-output {self.osd_be_table['blue']} {self.store_devs} --no-restart"
+                f"--redirect-output {self.osd_be_table['blue']} {','.join(cfg.store_devs)} --no-restart"
             )
             test_name = f"{osd_type}_{num_osd}osd_{self.fio_spec}_{suffix}"
             self.test_name = test_name
