@@ -11,11 +11,11 @@ Cluster
     name, user, head, ceph_conf, ceph_keyring, clients, osds
     configurations: dict[str, BaseClusterConfiguration]
 BaseClusterConfiguration
-    osd_type, osd_range, store_devs, pool_type, num_rbd_images, rbd_image_size
+    osd_type, osd_range, store_devs, pool_type, num_rbd_images, rbd_image_size, vstart_cpu_set
 SeastoreClusterConfiguration(BaseClusterConfiguration)
     reactor_range  (JSON key: reactor_core_range)
 ClassicClusterConfiguration(BaseClusterConfiguration)
-    classic_cpu_set
+    classic_cpu_set -- deprecated
 Benchmarks
     librbdfio: LibrbdFio
     workloads: dict[str, Workload]
@@ -49,6 +49,7 @@ class BaseClusterConfiguration:
     pool_type: str
     num_rbd_images: int
     rbd_image_size: str
+    vstart_cpu_set: List[str]
 
 
 @dataclass
@@ -61,7 +62,7 @@ class SeastoreClusterConfiguration(BaseClusterConfiguration):
 @dataclass
 class ClassicClusterConfiguration(BaseClusterConfiguration):
     """Classic (BlueStore) OSD configuration."""
-    classic_cpu_set: List[str] = field(default_factory=list)
+    #classic_cpu_set: List[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -165,6 +166,7 @@ def _parse_configuration(
         pool_type=raw["pool_type"],
         num_rbd_images=raw["num_rbd_images"],
         rbd_image_size=raw["rbd_image_size"],
+        vstart_cpu_set=raw["vstart_cpu_set"],
     )
 
     if cls is SeastoreClusterConfiguration:
@@ -175,7 +177,7 @@ def _parse_configuration(
     # ClassicClusterConfiguration
     return ClassicClusterConfiguration(
         **base_kwargs,
-        classic_cpu_set=raw.get("classic_cpu_set", []),
+        #classic_cpu_set=raw.get("classic_cpu_set", []),
     )
 
 
@@ -242,6 +244,10 @@ def validate_plan(plan: PerfTestPlan) -> None:
             raise ValueError(
                 f"Configuration '{cfg_name}': osd_range must not be empty"
             )
+        if not cfg.vstart_cpu_set:
+            raise ValueError(
+                f"Configuration '{cfg_name}': vstart_cpu_set must not be empty"
+            )
         if not all(isinstance(n, int) for n in cfg.osd_range):
             raise ValueError(
                 f"Configuration '{cfg_name}': osd_range must contain integers"
@@ -255,11 +261,7 @@ def validate_plan(plan: PerfTestPlan) -> None:
                 raise ValueError(
                     f"Configuration '{cfg_name}': reactor_range must contain integers"
                 )
-        elif isinstance(cfg, ClassicClusterConfiguration):
-            if not cfg.classic_cpu_set:
-                raise ValueError(
-                    f"Configuration '{cfg_name}': classic_cpu_set must not be empty"
-                )
+        #elif isinstance(cfg, ClassicClusterConfiguration):
 
     # Benchmarks
     if not plan.benchmarks.workloads:

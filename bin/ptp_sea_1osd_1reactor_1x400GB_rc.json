@@ -13,7 +13,7 @@
         "osd_range": [ 1 ],
         "store_devs": [ "/dev/nvme0n1" ],
         "reactor_core_range": [ 1 ],
-        "vstart_cpu_cores": [ "0-95" ],
+        "vstart_cpu_set": [ "0-95" ],
         "pool_type": "rbd",
         "num_rbd_images": 1,
         "rbd_image_size": "400gb"
@@ -22,7 +22,7 @@
         "osd_type": "classic",
         "osd_range": [ 1 ],
         "store_devs": [ "/dev/nvme0n1"],
-        "classic_cpu_set": [ "0-95" ],
+        "vstart_cpu_set": [ "0-95" ],
         "pool_type": "rbd",
         "num_rbd_images": 1,
         "rbd_image_size": "400gb"

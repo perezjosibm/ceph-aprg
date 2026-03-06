@@ -233,11 +233,31 @@ class TasksetPid:
 
         t = TasksetPid(pid=12345, lscpu_json="intel_xeon_6740E-192_lscpu.json")
         t.run()
+
+    Extended to accept multiple PIDs grouped by name, eg:
+    proc_grp = {
+      "osd.0": {
+        "pid": 976084,
+        "threads": {
+          "976084": {
+            "comm": "crimson-osd",
+            "psr": "6",
+            "affinity": "0-27,56-83"
+          },
+          "976090": {
+            "comm": "syscall-0",
+            "psr": "7",
+            "affinity": "0-27,56-83"
+          }
+        }
+      }
+    }
     """
 
-    def __init__(self, pid: int, lscpu_json: str) -> None:
-        self.pid = pid # We might need to extend to a list of PIDs, or process name group patterns
+    def __init__(self, pid: int, lscpu_json: str, proc_grp: Dict = {}) -> None:
+        self.pid = pid
         self.lscpu = LsCpuJson(lscpu_json)
+        self.proc_grp = proc_grp 
         self.cpu_thread_map: Dict[int, List[Tuple[int, str]]] = {}
         self.grids: List[PidCpuGrid] = []
 

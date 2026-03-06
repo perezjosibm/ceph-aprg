@@ -153,9 +153,9 @@ class BalancedOSDRunner:
                 # Type-specific fields
                 if isinstance(cfg, SeastoreClusterConfiguration):
                     self.reactor_range = " ".join(map(str, cfg.reactor_range))
-                elif isinstance(cfg, ClassicClusterConfiguration):
-                    if cfg.classic_cpu_set:
-                        self.osd_cpu = cfg.classic_cpu_set[0]
+                # elif isinstance(cfg, ClassicClusterConfiguration):
+                #     if cfg.classic_cpu_set:
+                self.osd_cpu = cfg.vstart_cpu_set[0]
 
             # Expose the full plan for advanced consumers
             self.test_plan_data = plan
@@ -286,21 +286,13 @@ class BalancedOSDRunner:
 
     def validate_set(self, test_name: str):
         """Validate the CPU set using tasksetcpu.py"""
+        logger.info(f"== Validating CPU set for {test_name} ==")
         if not os.path.exists(self.numa_nodes_out):
             subprocess.run(["lscpu", "--json"], stdout=open(self.numa_nodes_out, "w"))
-        # Just use osd.0 as reference for the CPU set, we can improve this to handle multiple OSDs
-        pid=int(self.osd_id.get("osd.0", "0"))
-        ts = taskset_pid.TasksetPid(pid=pid, lscpu_json=self.numa_nodes_out)
-        ts.run()
-        #
-        # cmd = [
-        #     "taskset_pid.py",
-        #     "-p", self.osd_id.get("osd.0", "0"), 
-        #     #"-c", test_name,
-        #     "-u", self.numa_nodes_out,
-        #     #"-d", self.run_dir,
-        # ]
-        # subprocess.run(cmd)
+        for osd_id, info in self.osd_id.items():
+            logger.info(f"OSD ID: {osd_id}, PID: {info['pid']}, Threads: {len(info['threads'])}")
+            ts = taskset_pid.TasksetPid(pid=info['pid'], lscpu_json=self.numa_nodes_out, proc_grp=self.osd_id)
+            ts.run()
 
     def show_grid(self, test_name: str):
         """Show the CPU grid for manual tests"""
@@ -586,7 +578,7 @@ class BalancedOSDRunner:
                 )
                 title = f"({osd_type}) {num_osd} OSD crimson, {num_reactors} reactor, fixed {self.fio_spec}"
                 cmd = (
-                    f"MDS=0 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.vstart_cpu_cores}' "
+                    f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{cfg.vstart_cpu_set}' "
                     f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
                     f"--redirect-output {self.osd_be_table[osd_type]} "
                     f"--seastore-devs {','.join(cfg.store_devs)} "
@@ -610,7 +602,7 @@ class BalancedOSDRunner:
             )
             title = f"({osd_type}) {num_osd} OSD classic, fixed {self.fio_spec}"
             cmd = (
-                f"MDS=0 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.vstart_cpu_cores}' "
+                f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{cfg.vstart_cpu_set}' "
                 f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
                 f"--redirect-output {self.osd_be_table['blue']} {','.join(cfg.store_devs)} --no-restart"
             )
