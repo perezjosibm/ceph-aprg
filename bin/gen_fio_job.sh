@@ -8,6 +8,10 @@
 # ! rw (4k randomwrite), rr (4k randomread), sw (64k seqwrite), sr (64k seqread)
 # ! -l : indicate whether to use latency_target FIO profile
 #
+# TODO: convert this into a Python module, which expects cfg objects as input,
+# and generates the job files accordingly. This would be more maintainable and
+# easier to extend.
+#
 usage() {
     cat $0 | grep ^"# !" | cut -d"!" -f2-
 }
@@ -17,12 +21,13 @@ declare -A name=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread [pre]=p
 declare -A bsize=([rw]="4k" [rr]="4k" [sw]="64k" [sr]="64k" [pre]="64k")
 declare -a workloads_order=( rr rw sr sw pre )
 
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 # We probably want to ensure that we run this once at the start of the main test (eg. run_balanced_osd.sh)
 NUM_VOLUMES=32
 VOLNAME_PREFIX="fio_test"
 BLOCK_SIZE="64k" # for preconditioning
 LATENCY_TARGET=false
-OUT_DIR="./rbd_fio_examples"
+OUT_DIR="${SCRIPT_DIR}/rbd_fio_examples"
 
 while getopts 'ln:p:d:' option; do
   case "$option" in

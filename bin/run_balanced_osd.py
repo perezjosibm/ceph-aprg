@@ -22,8 +22,8 @@ import sys
 import time
 
 # from pathlib import Path
-from typing import Dict, List, Optional
-# Tuple
+from typing import Dict,  Optional
+# List,Tuple
 
 from perf_test_plan import (
     ClassicClusterConfiguration,
@@ -31,6 +31,7 @@ from perf_test_plan import (
     PerfTestPlan,
     load_test_plan as _load_test_plan,
 )
+import taskset_pid
 
 __author__ = "Jose J Palacios-Perez (translated from bash)"
 
@@ -47,6 +48,7 @@ NC = "\033[0m"  # No Color
 # SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Remove all hardcoded script paths: check they are in PATH
+CEPH_PATH="/ceph/build/"
 
 
 class BalancedOSDRunner:
@@ -92,7 +94,7 @@ class BalancedOSDRunner:
             "enable_ht": self.max_num_ht_cpus_per_socket,
             "disable_ht": self.max_num_phys_cpus_per_socket,
         }
-        self.osd_id: Dict[str, int] = {}
+        self.osd_id: Dict[str, Dict] = {}
 
         # CPU allocation strategies
         self.bal_ops_table = {
@@ -198,7 +200,59 @@ class BalancedOSDRunner:
         """
         Obtain the CPU id mapping per thread
         Returns a list of _threads.out files
+        Rework to have a single JSON file with the mapping instead of separate
+        files per OSD, we can easily extend this to monitor multiple OSDs in
+        the future, and also include other processes like MONs and MGRs if
+        needed
         """
+        def _update_osd_id_mapping(i: int, threads_out_file: str):
+            """Helper function to update the osd_id mapping with thread information"""
+
+            pid_file = f"{CEPH_PATH}/out/osd.{i}.pid"
+            if os.path.exists(pid_file):
+                with open(pid_file, "r") as f:
+                    pid = f.read().strip()
+                self.log_color(f"== osd{i} pid: {pid} ==")
+                osd_id = f"osd.{i}"
+                if osd_id not in self.osd_id:
+                    self.osd_id[osd_id] = { "pid": int(pid), "threads": {} }
+
+                # Get thread information
+                ps_result = subprocess.run(
+                    ["ps", "-p", pid, "-L", "-o", "pid,tid,comm,psr", "--no-headers"],
+                    capture_output=True,
+                    text=True,
+                )
+
+                taskset_result = subprocess.run(
+                    ["taskset", "-acp", pid], capture_output=True, text=True
+                )
+
+                # Combine outputs: produce JSON instead
+                with open(threads_out_file, "w") as f:
+                    # Simple concatenation (bash uses paste)
+                    ps_lines = ps_result.stdout.strip().split("\n")
+                    taskset_lines = taskset_result.stdout.strip().split("\n")
+                    for ps_line, taskset_line in zip(ps_lines, taskset_lines):
+                        f.write(f"{ps_line} {taskset_line}\n")
+                        # Each line is of the form:
+                        # PID TID COMM PSR PID: CPU list 
+                        # 2655380 2655380 crimson-osd       0     pid 2655380's current affinity list: 0-27,56-83
+                        parts = ps_line.split()
+                        if len(parts) >= 4:
+                            pid, tid, comm, psr = parts[:4]
+                            self.osd_id[osd_id]["threads"][tid] = {
+                                "comm": comm,
+                                "psr": psr,
+                                "affinity": taskset_line.split(":", 1)[-1].strip() if "pid" in taskset_line else "",
+                            }
+                # Add to threads list
+                with open(threads_list_path, "a") as f:
+                    f.write(f"osd_{i}_{test_prefix}_threads.out\n")
+            else:
+                logger.error(f"{RED}== osd.{i} not found =={NC}")
+
+
         self.log_color(
             f"== Constructing list of threads and affinity for {test_prefix} =="
         )
@@ -219,64 +273,47 @@ class BalancedOSDRunner:
             )
             if os.path.exists(threads_out_file):
                 os.remove(threads_out_file)
+            _update_osd_id_mapping(i, threads_out_file)
 
-            pid_file = f"/ceph/build/out/osd.{i}.pid"
-            if os.path.exists(pid_file):
-                with open(pid_file, "r") as f:
-                    pid = f.read().strip()
-                self.log_color(f"== osd{i} pid: {pid} ==")
-                self.osd_id[f"osd.{i}"] = int(pid)
-
-                # Get thread information
-                ps_result = subprocess.run(
-                    ["ps", "-p", pid, "-L", "-o", "pid,tid,comm,psr", "--no-headers"],
-                    capture_output=True,
-                    text=True,
-                )
-
-                taskset_result = subprocess.run(
-                    ["taskset", "-acp", pid], capture_output=True, text=True
-                )
-
-                # Combine outputs
-                with open(threads_out_file, "w") as f:
-                    # Simple concatenation (bash uses paste)
-                    ps_lines = ps_result.stdout.strip().split("\n")
-                    taskset_lines = taskset_result.stdout.strip().split("\n")
-                    for ps_line, taskset_line in zip(ps_lines, taskset_lines):
-                        f.write(f"{ps_line} {taskset_line}\n")
-
-                # Add to threads list
-                with open(threads_list_path, "a") as f:
-                    f.write(f"osd_{i}_{test_prefix}_threads.out\n")
-            else:
-                logger.error(f"{RED}== osd.{i} not found =={NC}")
+        # Save the self.osd_id mapping to a JSON file for later use in validation and monitoring
+        osd_id_json_path = os.path.join(self.run_dir, "osd_ids.json")
+        with open(osd_id_json_path, "w") as f:
+            json.dump(self.osd_id, f, indent=2)
 
         return threads_list_path
+
 
     def validate_set(self, test_name: str):
         """Validate the CPU set using tasksetcpu.py"""
         if not os.path.exists(self.numa_nodes_out):
             subprocess.run(["lscpu", "--json"], stdout=open(self.numa_nodes_out, "w"))
-
-        cmd = [
-            "python3", "tasksetcpu.py",
-            "-c", test_name,
-            "-u", self.numa_nodes_out,
-            "-d", self.run_dir,
-        ]
-        subprocess.run(cmd)
+        # Just use osd.0 as reference for the CPU set, we can improve this to handle multiple OSDs
+        pid=int(self.osd_id.get("osd.0", "0"))
+        ts = taskset_pid.TasksetPid(pid=pid, lscpu_json=self.numa_nodes_out)
+        ts.run()
+        #
+        # cmd = [
+        #     "taskset_pid.py",
+        #     "-p", self.osd_id.get("osd.0", "0"), 
+        #     #"-c", test_name,
+        #     "-u", self.numa_nodes_out,
+        #     #"-d", self.run_dir,
+        # ]
+        # subprocess.run(cmd)
 
     def show_grid(self, test_name: str):
         """Show the CPU grid for manual tests"""
         threads_list = self.set_osd_pids(test_name)
         if threads_list:
-            self.validate_set(threads_list)
+            self.validate_set(test_name)
 
-    def run_fio(self, test_name: str, fio_opts: str = "") -> int:
+    def run_fio(self, cfg, test_name: str) -> int:
         """Run FIO benchmark"""
+        fio_opts = cfg.fio_opts if hasattr(cfg, "fio_opts") else ""
         # Source environment if available
-        vstart_env = "/ceph/build/vstart_environment.sh"
+        # user = os.environ['USER'] # example of how to access environment variables if needed
+        # os.environ["DEBUSSY"] = "1"
+        vstart_env = "f{CEPH_PATH}/vstart_environment.sh"
         if os.path.exists(vstart_env):
             logger.info(f"Sourcing {vstart_env}")
 
@@ -287,9 +324,16 @@ class BalancedOSDRunner:
             ["cephlogoff.sh"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
 
-        # Run cephmkrbd.sh
+        # Run cephmkrbd.sh: this will create the RBD image(s) and export them
+        # as block devices, we can pass the number of images and size as
+        # parameters if needed. Need to set parameters as environment variables
+        # or pass them as arguments to the script, which we would need to
+        # modify to accept them.
         with open(test_run_log, "a") as log_file:
-            subprocess.run(["cephmkrbd.sh"], stdout=log_file, stderr=subprocess.STDOUT)
+            subprocess.run(["cephmkrbd.sh", 
+                            "-n", cfg.num_rbd_images,
+                            "-p", test_name,
+                            "-s", cfg.rbd_image_size ], stdout=log_file, stderr=subprocess.STDOUT)
 
         # Build FIO options
         if fio_opts:
@@ -305,12 +349,14 @@ class BalancedOSDRunner:
                 opts += "-w hockey -r -a "
 
         # Construct FIO command: this should be obtained from the perf_test_plan JSON
+        # monitor all cores in the system: we might get this from the JSON produced by taskset_pid.py
+        # We need to decouple the execution of the FIO and the monitoring
         cmd_parts = [
             "run_fio.sh", "-s", opts,
-            "-c", "0-192",  # monitor all cores in the system: we might get this from the JSON produced by taskset_pid.py
+            "-c", "0-192", # all CPU cores in the host
             "-f", self.fio_cpu_cores,
             "-p", test_name,
-            "-n",
+            "-n", # no flamegraphs
             "-d", self.run_dir,
             "-t", self.osd_type,
         ]
@@ -351,7 +397,7 @@ class BalancedOSDRunner:
 
         # Get diskstats diff
         result = subprocess.run(
-            "jc --pretty /proc/diskstats| python3 diskstat_diff.py -d {} -a {}".format(
+            "jc --pretty /proc/diskstats| diskstat_diff.py -d {} -a {}".format(
                 self.run_dir, precond_json
             ),
             capture_output=True,
@@ -420,9 +466,10 @@ class BalancedOSDRunner:
             "gen_fio_job.sh",
             opts,
             "-n", str(self.num_rbd_images),
+            "-p", "fio_rbd_vol",
             "-d", os.path.join(self.script_dir, "rbd_fio_examples"),
         ]
-
+        logger.info(f"Generating FIO job files with command: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
 
         if result.returncode == 0:
@@ -439,8 +486,7 @@ class BalancedOSDRunner:
         def _run_body(cfg, title, test_name, cmd):
             """Run the test body for a given configuration and parameters"""
 
-            self.log_color(f"== Title: {title} ==")
-            logger.info(f"Test name: {test_name}")
+            self.log_color(f"== Title: {title} Test name: {test_name} ==")
 
             test_run_log = os.path.join(self.run_dir, f"{test_name}_test_run.log")
             with open(test_run_log, "a") as f:
@@ -452,6 +498,7 @@ class BalancedOSDRunner:
                 return #continue
 
             # Execute command
+            logger.info(f"Executing command: {' '.join(cmd)}")
             with open(test_run_log, "a") as log_file:
                 subprocess.run(
                     cmd, shell=True, stdout=log_file, stderr=subprocess.STDOUT
@@ -482,7 +529,10 @@ class BalancedOSDRunner:
 
             # Start FIO
             logger.info(f"{time.strftime('%Y-%m-%d %H:%M:%S')} Starting FIO...")
-            self.fio_pid = self.run_fio(test_name, "")
+            # We might pass either the JSON with the OSD pid and threads, to
+            # monitor (or monitor them separately, which woul dbe better in the
+            # future since they normally run on separate hosts)
+            self.fio_pid = self.run_fio(cfg, test_name)
             logger.info(
                 f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO {self.fio_pid} started: {test_name}"
             )
@@ -521,9 +571,6 @@ class BalancedOSDRunner:
             time.sleep(60)
 
         def _run_seastore(cfg, num_osd, osd_type, bal_key, suffix):
-            logger.info(
-                f"{GREEN}== Running Seastore test: {num_osd} OSD, {osd_type}, {bal_key}, {suffix} =={NC}"
-            )
             for num_reactors in cfg.reactor_range:
                 logger.info(
                     f"{GREEN}== Running Seastore test: {num_osd} OSD, {osd_type}, {bal_key}, {suffix}, {num_reactors} reactors =={NC}"
@@ -575,7 +622,7 @@ class BalancedOSDRunner:
                     _run_seastore(cfg, num_osd, osd_type, bal_key, suffix)
                 elif isinstance(cfg, ClassicClusterConfiguration):
                     _run_classic(cfg, num_osd, osd_type, bal_key, suffix)
-            # Compress log
+            # Compress log for this configuration
             test_run_log = os.path.join(self.run_dir, f"{self.test_name}_test_run.log")
             subprocess.run(["gzip", "-9fq", test_run_log])
 

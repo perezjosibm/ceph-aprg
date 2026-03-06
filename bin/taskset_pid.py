@@ -236,7 +236,7 @@ class TasksetPid:
     """
 
     def __init__(self, pid: int, lscpu_json: str) -> None:
-        self.pid = pid
+        self.pid = pid # We might need to extend to a list of PIDs, or process name group patterns
         self.lscpu = LsCpuJson(lscpu_json)
         self.cpu_thread_map: Dict[int, List[Tuple[int, str]]] = {}
         self.grids: List[PidCpuGrid] = []
