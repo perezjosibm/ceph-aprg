@@ -155,6 +155,9 @@ class BalancedOSDRunner:
                     self.reactor_range = " ".join(map(str, cfg.reactor_range))
                 # elif isinstance(cfg, ClassicClusterConfiguration):
                 #     if cfg.classic_cpu_set:
+                # We might decide whether each OSD config set has its own CPU
+                # set defined in the JSON, or we just use the same field for
+                # all of them
                 self.osd_cpu = cfg.vstart_cpu_set[0]
 
             # Expose the full plan for advanced consumers
@@ -571,6 +574,7 @@ class BalancedOSDRunner:
             time.sleep(30)
             return True
 
+        # For both cases (Classic and Seastore) we willuse up to number of OSD for storage devices (slice)
         def _run_seastore(cfg, num_osd, osd_type, bal_key, suffix):
             for num_reactors in cfg.reactor_range:
                 logger.info(
@@ -578,7 +582,7 @@ class BalancedOSDRunner:
                 )
                 title = f"({osd_type}) {num_osd} OSD crimson, {num_reactors} reactor, fixed {self.fio_spec}"
                 cmd = (
-                    f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{cfg.vstart_cpu_set}' "
+                    f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{cfg.osd_cpu}' "
                     f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
                     f"--redirect-output {self.osd_be_table[osd_type]} "
                     f"--seastore-devs {','.join(cfg.store_devs)} "
@@ -602,7 +606,7 @@ class BalancedOSDRunner:
             )
             title = f"({osd_type}) {num_osd} OSD classic, fixed {self.fio_spec}"
             cmd = (
-                f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{cfg.vstart_cpu_set}' "
+                f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{cfg.osd_cpu}' "
                 f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
                 f"--redirect-output {self.osd_be_table['blue']} {','.join(cfg.store_devs)} --no-restart"
             )
