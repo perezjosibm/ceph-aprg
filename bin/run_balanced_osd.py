@@ -80,6 +80,7 @@ class BalancedOSDRunner:
         self.multi_job_vol = False
         self.precond = False
         self.watchdog_enabled = False
+        self.vol_prefix = "fio_rbd_vol"
         # Need to load the plan from a .json instead of sourcing a .sh
         self.test_plan = os.path.join(script_dir, "tp_cmp_classic_seastore.json")
         self.skip_exec = False
@@ -327,7 +328,7 @@ class BalancedOSDRunner:
         # modify to accept them.
         cmd = ["cephmkrbd.sh", 
                             "-n", f"{cfg.num_rbd_images}",
-                            "-p", test_name,
+                            "-p", self.vol_prefix,
                             "-s", f"{cfg.rbd_image_size}" ]
         logger.info(f"Running cephmkrbd.sh with command: {' '.join(cmd)}")
         with open(test_run_log, "a") as log_file:
@@ -349,9 +350,6 @@ class BalancedOSDRunner:
         runtime = self.test_plan_data.benchmarks.librbdfio.runtime #if hasattr(self.test_plan_data, "runtime") else 180
         logger.info(f"FIO runtime: {runtime} seconds")
         os.environ["RUNTIME"] = f"{runtime}"
-        subprocess.run(
-            [f"export RUNTIME={runtime}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
         # Construct FIO command: this should be obtained from the perf_test_plan JSON
         # monitor all cores in the system: we might get this from the JSON produced by taskset_pid.py
         # We need to decouple the execution of the FIO and the monitoring
@@ -472,7 +470,7 @@ class BalancedOSDRunner:
             "gen_fio_job.sh",
             opts,
             "-n", str(self.num_rbd_images),
-            "-p", "fio_rbd_vol",
+            "-p", self.vol_prefix,
             "-d", os.path.join(self.script_dir, "rbd_fio_examples"),
         ]
         logger.info(f"Generating FIO job files with command: {' '.join(cmd)}")
