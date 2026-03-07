@@ -348,11 +348,16 @@ class BalancedOSDRunner:
 
         runtime = self.test_plan_data.benchmarks.librbdfio.runtime #if hasattr(self.test_plan_data, "runtime") else 180
         logger.info(f"FIO runtime: {runtime} seconds")
-        os.environ["RUNTIME"] = f"{runtime}"  # example of how to set environment variables for the FIO process if needed
+        os.environ["RUNTIME"] = f"{runtime}"
+        subprocess.run(
+            [f"export RUNTIME={runtime}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         # Construct FIO command: this should be obtained from the perf_test_plan JSON
         # monitor all cores in the system: we might get this from the JSON produced by taskset_pid.py
         # We need to decouple the execution of the FIO and the monitoring
-        fio_cpu_cores = self.test_plan_data.benchmarks.librbdfio.fio_cpu_range #if hasattr(self.test_plan_data, "fio_cpu_range") else self.fio_cpu_cores
+        fio_cpu_cores = self.test_plan_data.benchmarks.librbdfio.fio_cpu_range 
+        #if hasattr(self.test_plan_data, "fio_cpu_range") else self.fio_cpu_cores
+        logger.info(f"FIO_CPU_CORES: {fio_cpu_cores}")
         cmd_parts = [
             "run_fio.sh", "-s", opts,
             "-c", "0-192", # all CPU cores in the host
