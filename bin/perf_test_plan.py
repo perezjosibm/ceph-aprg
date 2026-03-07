@@ -207,7 +207,7 @@ def _parse_benchmarks(raw: dict) -> Benchmarks:
         cmd_path=librbdfio_raw["cmd_path"],
         fio_cpu_range=invariant.get("fio_cpu_range", []),
         fio_workload=invariant.get("fio_workload", []),
-        runtime=invariant.get("runtime", 0),
+        runtime=invariant.get("runtime", 180),
     )
 
     workloads: Dict[str, Workload] = {

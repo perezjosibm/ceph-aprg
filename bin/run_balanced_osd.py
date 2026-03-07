@@ -325,11 +325,13 @@ class BalancedOSDRunner:
         # parameters if needed. Need to set parameters as environment variables
         # or pass them as arguments to the script, which we would need to
         # modify to accept them.
-        with open(test_run_log, "a") as log_file:
-            subprocess.run(["cephmkrbd.sh", 
+        cmd = ["cephmkrbd.sh", 
                             "-n", f"{cfg.num_rbd_images}",
                             "-p", test_name,
-                            "-s", f"{cfg.rbd_image_size}" ], stdout=log_file, stderr=subprocess.STDOUT)
+                            "-s", f"{cfg.rbd_image_size}" ]
+        logger.info(f"Running cephmkrbd.sh with command: {' '.join(cmd)}")
+        with open(test_run_log, "a") as log_file:
+            subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT)
 
         # Build FIO options
         if fio_opts:
@@ -344,20 +346,23 @@ class BalancedOSDRunner:
             else:
                 opts += "-w hockey -r -a "
 
+        runtime = self.test_plan_data.benchmarks.librbdfio.runtime #if hasattr(self.test_plan_data, "runtime") else 180
+        logger.info(f"FIO runtime: {runtime} seconds")
+        os.environ["RUNTIME"] = f"{runtime}"  # example of how to set environment variables for the FIO process if needed
         # Construct FIO command: this should be obtained from the perf_test_plan JSON
         # monitor all cores in the system: we might get this from the JSON produced by taskset_pid.py
         # We need to decouple the execution of the FIO and the monitoring
+        fio_cpu_cores = self.test_plan_data.benchmarks.librbdfio.fio_cpu_range #if hasattr(self.test_plan_data, "fio_cpu_range") else self.fio_cpu_cores
         cmd_parts = [
             "run_fio.sh", "-s", opts,
             "-c", "0-192", # all CPU cores in the host
-            "-f", self.fio_cpu_cores,
+            "-f", fio_cpu_cores,
             "-p", test_name,
             "-n", # no flamegraphs
             "-d", self.run_dir,
-            "-t", self.osd_type,
+            "-t", cfg.osd_type,
         ]
         cmd = " ".join(cmd_parts)
-
         logger.info(f"FIO command: {cmd}")
         with open(test_run_log, "a") as log_file:
             log_file.write(f"{cmd}\n")

@@ -22,7 +22,6 @@
         "osd_type": "classic",
         "osd_range": [ 1 ],
         "store_devs": [ "/dev/nvme0n1"],
-        "vstart_cpu_set": [ "0-95" ],
         "pool_type": "rbd",
         "num_rbd_images": 1,
         "rbd_image_size": "400gb"
