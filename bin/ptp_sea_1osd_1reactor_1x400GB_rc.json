@@ -16,7 +16,7 @@
         "vstart_cpu_set": [ "0-95" ],
         "pool_type": "rbd",
         "num_rbd_images": 1,
-        "rbd_image_size": "400gb"
+        "rbd_image_size": "400GB"
       },
       "classic_1-8osd_4x400GB_rc": {
         "osd_type": "classic",
@@ -25,7 +25,7 @@
         "vstart_cpu_set": [ "0-95" ],
         "pool_type": "rbd",
         "num_rbd_images": 1,
-        "rbd_image_size": "400gb"
+        "rbd_image_size": "400GB"
       }
     }
   },

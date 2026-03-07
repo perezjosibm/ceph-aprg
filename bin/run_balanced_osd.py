@@ -332,7 +332,13 @@ class BalancedOSDRunner:
                             "-s", f"{cfg.rbd_image_size}" ]
         logger.info(f"Running cephmkrbd.sh with command: {' '.join(cmd)}")
         with open(test_run_log, "a") as log_file:
-            subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT)
+            result = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT)
+            logger.info(f"cephmkrbd.sh completed with return code {result.returncode}")
+            # if subprocess.run(["ceph", "osd", "ls"], capture_output=True).returncode != 0:
+            #     logger.error(f"{RED}== cephmkrbd.sh failed =={NC}")
+            #     return #sys.exit(1)
+            # else:
+            #     logger.info(f"{GREEN}== cephmkrbd.sh completed successfully =={NC}")
 
         # Build FIO options
         if fio_opts:
@@ -353,7 +359,7 @@ class BalancedOSDRunner:
         # Construct FIO command: this should be obtained from the perf_test_plan JSON
         # monitor all cores in the system: we might get this from the JSON produced by taskset_pid.py
         # We need to decouple the execution of the FIO and the monitoring
-        fio_cpu_cores = self.test_plan_data.benchmarks.librbdfio.fio_cpu_range 
+        fio_cpu_cores = self.test_plan_data.benchmarks.librbdfio.fio_cpu_range[0] 
         #if hasattr(self.test_plan_data, "fio_cpu_range") else self.fio_cpu_cores
         logger.info(f"FIO_CPU_CORES: {fio_cpu_cores}")
         cmd_parts = [
