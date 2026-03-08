@@ -341,9 +341,10 @@ class BalancedOSDRunner:
             "-p", self.vol_prefix,
             "-s", f"{cfg.rbd_image_size}",
         ]
-        logger.info(f"Running cephmkrbd.sh with command: {' '.join(cmd)}")
+        _cmd = " ".join(cmd)
+        logger.info(f"Running cephmkrbd.sh with command: {_cmd}")
         with open(test_run_log, "a") as log_file:
-            result = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT)
+            result = subprocess.run(_cmd, stdout=log_file, stderr=subprocess.STDOUT)
             logger.info(
                 f"cephmkrbd.sh completed with return code {result.returncode}"
             )
@@ -356,8 +357,8 @@ class BalancedOSDRunner:
         logger.info(f"FIO_CPU_CORES: {fio_cpu_cores}")
 
         # Create and configure a FioRunner (imported from run_fio)
-        fio_runner = FioRunner(self.script_dir)
-        fio_runner.run_dir = self.run_dir
+        fio_runner = FioRunner(self.script_dir, self.run_dir)
+        #fio_runner.run_dir = self.run_dir
         fio_runner.osd_type = cfg.osd_type
         fio_runner.osd_cores = "0-192"   # all CPU cores in the host
         fio_runner.fio_cores = fio_cpu_cores

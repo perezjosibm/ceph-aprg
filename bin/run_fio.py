@@ -42,12 +42,18 @@ import monitoring
 
 __author__ = "Jose J Palacios-Perez (translated from bash)"
 
+# We need to use the logging from a parent module to avoid duplicate logs when
+# run from run_balanced_osd.py, but we also want to configure it here for
+# standalone runs.
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# ANSI colour codes
+# ANSI colour codes: we might move them to common.py if we need them in
+# multiple places since run_balanced_osd.py will also want to print coloured
+# logs.
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
 NC = "\033[0m"  # No Colour
@@ -182,15 +188,18 @@ class FioRunner:
     SUCCESS = 0
     FAILURE = 1
 
-    def __init__(self, script_dir: str):
+    def __init__(self, script_dir: str, run_dir: str) -> None:
         """Initialise the runner with default configuration.
 
         Parameters
         ----------
         script_dir:
             Directory where the FIO job files and helper scripts live.
+        run_dir:
+            Directory where the FIO output files will be saved.
         """
         self.script_dir = script_dir
+        self.run_dir = run_dir
 
         # Default values (can be overridden via CLI args or direct assignment)
         self.fio_jobs: str = os.path.join(script_dir, "rbd_fio_examples/")
@@ -277,6 +286,7 @@ class FioRunner:
         self, test_name: str, cmd: str, outfile: str, end: str = ""
     ) -> None:
         """Run *cmd*, wrap the JSON output in a timestamped envelope and append to *outfile*.
+        We might deprecate this by concatenating the JSON files by loading them in Python and re-dumping.
 
         Parameters
         ----------
@@ -520,7 +530,12 @@ class FioRunner:
     # ------------------------------------------------------------------
 
     def set_osd_pids(self, test_prefix: str) -> None:
-        """Populate ``osd_id`` with OSD PIDs read from Ceph's build output."""
+        """
+        Populate ``osd_id`` with OSD PIDs read from Ceph's build output. We
+        need to deprecate this since we have a similar method in
+        run_balanced_osd.py that uses ``pidof``; but for now we want to
+        maintain the same PID discovery method as run_fio.sh.
+        """
         result = subprocess.run(
             ["pgrep", "-c", "osd"], capture_output=True, text=True
         )
@@ -559,6 +574,9 @@ class FioRunner:
 
     def watchdog_proc(self, proc_name: str, proc_pid: int) -> None:
         """Monitor *proc_pid*; clean up all FIO processes if it exits unexpectedly.
+        We might need to deprecate this since run_balanced_osd.py has a similar
+        watchdog that monitors both OSD and FIO processes; but for now we want
+        to maintain the same watchdog logic as run_fio.sh.
 
         Parameters
         ----------
@@ -671,14 +689,20 @@ class FioRunner:
                 }
             )
 
-            # FIO benchmark runs as a separate process
+            # FIO benchmark runs as a separate process: we might use a separate folder, so the fio-plot would be easier to run
+            fio_json = os.path.join(
+                self.run_dir, f"fio_{test_name}.json"
+            )
+            fio_err = os.path.join(
+                self.run_dir, f"fio_{test_name}.err"
+            )
             cmd = [
                 "taskset", "-ac", self.fio_cores,
                 "fio", fio_name,
-                f"--output=fio_{test_name}.json",
+                f"--output={fio_json}",
                 "--output-format=json",
             ]
-            with open(f"fio_{test_name}.err", "w") as err_f:
+            with open(fio_err, "w") as err_f:
                 proc = subprocess.Popen(cmd, env=env, stderr=err_f)
 
             last_fio_pid = proc.pid
@@ -1219,7 +1243,7 @@ def main() -> None:
         help="Run all four typical workloads (rr, rw, sr, sw)",
     )
     parser.add_argument("-c", "--osd-cores", help="Range of OSD CPU cores to monitor")
-    parser.add_argument("-d", "--run-dir", default="/tmp", help="Run directory")
+    parser.add_argument("-d", "--run_dir", default="/tmp", help="Run directory")
     parser.add_argument("-f", "--fio-cores", help="CPU cores to pin FIO processes to")
     parser.add_argument(
         "-j", "--multi-job-vol", action="store_true",
@@ -1274,7 +1298,7 @@ def main() -> None:
     args = parser.parse_args()
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    runner = FioRunner(script_dir)
+    runner = FioRunner(script_dir, run_dir=args.run_dir or "/tmp")
 
     if args.aio:
         runner.fio_job_spec = "aio_"

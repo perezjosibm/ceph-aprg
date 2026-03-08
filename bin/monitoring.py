@@ -22,6 +22,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+__author__ = "Jose J Palacios-Perez (translated from bash)"
+
+# This script path:
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Consider a better way of setting the top filter
 TOP_FILTER = "cores"
 
@@ -154,7 +159,7 @@ def mon_filter_top(
     if top_filter == "cores":
         subprocess.run(
             [
-                "/root/bin/tools/top_parser.py",
+                "${SCRIPT_DIR}/tools/top_parser.py",
                 "-t", "svg",
                 "-n", str(num_samples),
                 "-p", top_pid_json,
@@ -176,7 +181,7 @@ def mon_filter_top(
                 )
         subprocess.run(
             [
-                "python3", "/root/bin/parse-top.py",
+                "parse-top.py",
                 f"--config={top_json}",
                 f"--avg={cpu_avg_file}",
                 f"--pids={top_pid_json}",
@@ -211,7 +216,7 @@ def mon_filter_top_cpu(
     """
     subprocess.run(
         [
-            "/root/bin/tools/top_parser.py",
+            "${SCRIPT_DIR}/tools/top_parser.py",
             "-t", "svg",
             "-c", cpu_pid_json,
             "-o", cpu_avg_file,

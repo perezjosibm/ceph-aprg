@@ -84,10 +84,14 @@ class TestFioRunnerInit(unittest.TestCase):
 
     def setUp(self):
         self.script_dir = "/root/bin"
-        self.runner = FioRunner(self.script_dir)
+        self.run_dir = "/tmp"
+        self.runner = FioRunner(self.script_dir, self.run_dir)
 
     def test_script_dir_stored(self):
         self.assertEqual(self.runner.script_dir, self.script_dir)
+
+    def test_run_dir_stored(self):
+        self.assertEqual(self.runner.run_dir, self.run_dir)
 
     def test_default_osd_type(self):
         self.assertEqual(self.runner.osd_type, "crimson")
@@ -137,7 +141,7 @@ class TestOsdDumpHelpers(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.runner = FioRunner("/root/bin")
+        self.runner = FioRunner("/root/bin", "/tmp")
         self.runner.osd_type = "crimson"
 
     def tearDown(self):
@@ -197,7 +201,7 @@ class TestSetFioJobSpec(unittest.TestCase):
     """Tests for set_fio_job_spec()."""
 
     def setUp(self):
-        self.runner = FioRunner("/root/bin")
+        self.runner = FioRunner("/root/bin", "/tmp")
 
     def test_default_spec_unchanged(self):
         self.runner.set_fio_job_spec()
@@ -226,7 +230,7 @@ class TestSetGlobals(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.runner = FioRunner("/root/bin")
+        self.runner = FioRunner("/root/bin", "/tmp")
         self.orig_dir = os.getcwd()
         os.chdir(self.temp_dir)
 
@@ -295,7 +299,7 @@ class TestKillAllFio(unittest.TestCase):
     """Tests for kill_all_fio()."""
 
     def setUp(self):
-        self.runner = FioRunner("/root/bin")
+        self.runner = FioRunner("/root/bin", "/tmp")
 
     @patch("os.kill")
     def test_kills_all_tracked_pids(self, mock_kill):
@@ -327,7 +331,7 @@ class TestTidyup(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.runner = FioRunner("/root/bin")
+        self.runner = FioRunner("/root/bin", "/tmp")
         self.orig_dir = os.getcwd()
         os.chdir(self.temp_dir)
 
@@ -363,7 +367,7 @@ class TestSignalHandler(unittest.TestCase):
     """Tests for signal_handler()."""
 
     def setUp(self):
-        self.runner = FioRunner("/root/bin")
+        self.runner = FioRunner("/root/bin", "/tmp")
 
     @patch.object(FioRunner, "tidyup")
     @patch.object(FioRunner, "kill_all_fio")
@@ -385,7 +389,7 @@ class TestOsdDumpGeneric(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.runner = FioRunner("/root/bin")
+        self.runner = FioRunner("/root/bin", "/tmp")
         self.orig_dir = os.getcwd()
         os.chdir(self.temp_dir)
 
@@ -430,7 +434,7 @@ class TestRunWorkload(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.runner = FioRunner("/root/bin")
+        self.runner = FioRunner("/root/bin", "/tmp")
         self.runner.run_dir = self.temp_dir
         self.runner.single = True
         self.runner.with_flamegraphs = False
@@ -540,7 +544,7 @@ class TestRunWorkloadLoop(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.runner = FioRunner("/root/bin")
+        self.runner = FioRunner("/root/bin", "/tmp")
         self.runner.run_dir = self.temp_dir
         self.runner.skip_osd_mon = True
         self.runner.num_attempts = 1
@@ -591,7 +595,7 @@ class TestPostProcess(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.runner = FioRunner("/root/bin")
+        self.runner = FioRunner("/root/bin", "/tmp")
         self.runner.run_dir = self.temp_dir
         self.runner.response_curve = False
         self.runner.with_flamegraphs = False
@@ -649,7 +653,7 @@ class TestSetOsdPids(unittest.TestCase):
 
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.runner = FioRunner("/root/bin")
+        self.runner = FioRunner("/root/bin", "/tmp")
         self.runner.run_dir = self.temp_dir
 
     def tearDown(self):
@@ -698,8 +702,8 @@ class TestMainCli(unittest.TestCase):
         runner_instance = [None]
         original_init = FioRunner.__init__
 
-        def capturing_init(self_inner, script_dir):
-            original_init(self_inner, script_dir)
+        def capturing_init(self_inner, script_dir, run_dir="/tmp"):
+            original_init(self_inner, script_dir, run_dir)
             runner_instance[0] = self_inner
 
         with patch.object(FioRunner, "__init__", capturing_init):
