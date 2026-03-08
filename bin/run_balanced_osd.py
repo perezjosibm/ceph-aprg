@@ -344,7 +344,8 @@ class BalancedOSDRunner:
         _cmd = " ".join(cmd)
         logger.info(f"Running cephmkrbd.sh with command: {_cmd}")
         with open(test_run_log, "a") as log_file:
-            result = subprocess.run(_cmd, stdout=log_file, stderr=subprocess.STDOUT)
+            # Attempting as _cmd string  fails
+            result = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT)
             logger.info(
                 f"cephmkrbd.sh completed with return code {result.returncode}"
             )
@@ -368,6 +369,7 @@ class BalancedOSDRunner:
         fio_runner.runtime = runtime
         fio_runner.latency_target = self.latency_target
         fio_runner.multi_job_vol = self.multi_job_vol
+        fio_runner.log_name = os.path.join(self.run_dir, f"{test_name}_test_run.log")
 
         if fio_opts:
             # When explicit opts are provided store them for reference; the
@@ -502,6 +504,8 @@ class BalancedOSDRunner:
     def run_regen_fio_files(self):
         """Regenerate FIO job files"""
         self.log_color("== Regenerating FIO job files ==")
+        #test_run_log = os.path.join(self.run_dir, f"{test_name}_test_run.log")
+        #    with open(test_run_log, "a") as log_file:
 
         opts = ""
         if self.latency_target:
@@ -515,8 +519,16 @@ class BalancedOSDRunner:
             "-p", self.vol_prefix,
             "-d", os.path.join(self.script_dir, "rbd_fio_examples"),
         ]
-        logger.info(f"Generating FIO job files with command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        _cmd = " ".join(cmd)
+        logger.info(f"Generating FIO job files with command: {_cmd}")
+        # Try in a shell:
+        result = subprocess.run(_cmd, shell=True,
+                            #stdout=self.log_file,
+                            stderr=subprocess.STDOUT,
+                            capture_output=True, text=True)
+        #result = subprocess.run(cmd, capture_output=True, text=True)
+        result.stdout = result.stdout.strip()
+        logger.debug(f"gen_fio_job.sh output: {result.stdout}")
 
         if result.returncode == 0:
             self.log_color(f"== FIO job files generated in {self.fio_jobs} ==")

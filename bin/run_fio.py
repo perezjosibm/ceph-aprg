@@ -209,6 +209,7 @@ class FioRunner:
         self.num_procs: int = 8               # number of FIO processes
         self.test_prefix: str = "4cores_8img"
         self.run_dir: str = "/tmp"
+        self.log_name: str = "/tmp/fio_test.log"
         self.workload: Optional[str] = None   # workload shorthand (e.g. "rw")
 
         # Feature flags
@@ -521,7 +522,7 @@ class FioRunner:
             "disk_stat": self.disk_stat,
             "disk_out": self.disk_out,
         }
-        keymap_file = f"{test_prefix}_keymap.json"
+        keymap_file = os.path.join(self.run_dir, f"{test_prefix}_keymap.json")
         with open(keymap_file, "a") as f:
             f.write(json.dumps(keymap, indent=4) + "\n")
 
@@ -802,16 +803,18 @@ class FioRunner:
             f.write(result.stdout)
 
         # Filter stray FIO error lines from the JSON output
-        fio_json = f"fio_{self.test_name}.json"
+        fio_json = os.path.join(
+            self.run_dir, f"fio_{self.test_name}.json"
+        )
         if os.path.exists(fio_json):
-            subprocess.run(["sed", "-i", "/^fio: .*/d", fio_json])
+            subprocess.run(["sed", "-i", "/^fio: .*/d", fio_json], shell=True, capture_output=True, text=True)
 
         # Response-curve latency heuristic
         if self.response_curve and not self.rc_skip_heuristic:
             mop = WORKLOAD_MODE.get(workload, "write")
             result = subprocess.run(
                 f"jq '.jobs | .[] | .{mop}.clat_ns.mean/1000000'"
-                f" fio_{self.test_name}.json",
+                f" {fio_json}",
                 shell=True, capture_output=True, text=True,
             )
             try:
