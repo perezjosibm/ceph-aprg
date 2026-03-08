@@ -12,7 +12,8 @@
         "osd_type": "seastore",
         "osd_range": [ 1, 2, 4, 8 ],
         "store_devs": [ "/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1", "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1" ],
-        "reactor_core_range": [ 96, 48, 24, 12 ],
+        "reactor_core_range": [ 1, 4, 8 ],
+        "vstart_cpu_set": [ "0-95" ],
         "pool_type": "rbd",
         "num_rbd_images": 4,
         "rbd_image_size": "400gb"
@@ -21,7 +22,7 @@
         "osd_type": "classic",
         "osd_range": [ 1, 2, 4, 8 ],
         "store_devs": [ "/dev/nvme0n1", "/dev/nvme1n1", "/dev/nvme2n1", "/dev/nvme3n1", "/dev/nvme4n1", "/dev/nvme5n1", "/dev/nvme6n1", "/dev/nvme7n1" ],
-        "classic_cpu_set": [ "0-95" ],
+        "vstart_cpu_set": [ "0-95" ],
         "pool_type": "rbd",
         "num_rbd_images": 4,
         "rbd_image_size": "400gb"
@@ -32,7 +33,7 @@
     "librbdfio": {
       "cmd_path": "/ceph/build/fio",
       "invariant": {
-        "fio_cpu_range": [ "28-55,84-111" ],
+        "fio_cpu_range": [ "97-191" ],
         "fio_workload": [ "-j -w hockey -r -a -m" ],
         "runtime": 180
       }

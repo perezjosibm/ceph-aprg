@@ -33,7 +33,7 @@
     "librbdfio": {
       "cmd_path": "/ceph/build/fio",
       "invariant": {
-        "fio_cpu_range": [ "97-111" ],
+        "fio_cpu_range": [ "97-191" ],
         "fio_workload": [ "-j -w hockey -r -a -m" ],
         "runtime": 180
       }
