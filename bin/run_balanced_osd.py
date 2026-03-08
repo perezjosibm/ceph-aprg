@@ -19,11 +19,12 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 # from pathlib import Path
-from typing import Dict,  Optional
-# List,Tuple
+from typing import Dict, List, Optional
+# Tuple
 
 from perf_test_plan import (
     ClassicClusterConfiguration,
@@ -32,6 +33,8 @@ from perf_test_plan import (
     load_test_plan as _load_test_plan,
 )
 import taskset_pid
+from run_fio import FioRunner
+import monitoring
 
 __author__ = "Jose J Palacios-Perez (translated from bash)"
 
@@ -87,6 +90,10 @@ class BalancedOSDRunner:
         self.regen = True  # always regenerate the .fio jobs by default
         self.fio_pid = 0
         self.pid_watchdog = 0
+
+        # FioRunner instance and its execution thread (set by run_fio())
+        self._fio_runner: Optional[FioRunner] = None
+        self._fio_thread: Optional[threading.Thread] = None
 
         # Associative arrays: we might deprecate these
         self.test_table: Dict[str, str] = {}
@@ -305,14 +312,20 @@ class BalancedOSDRunner:
             self.validate_set(test_name)
 
     def run_fio(self, cfg, test_name: str) -> int:
-        """Run FIO benchmark"""
+        """Run FIO benchmark using :class:`~run_fio.FioRunner`.
+
+        Creates and configures a :class:`FioRunner` instance, then executes
+        the workload loop in a background thread.  Only the ``fio`` binary
+        itself runs as a separate OS process inside :class:`FioRunner`.
+
+        Returns
+        -------
+        int
+            Always 0 (process management is handled internally by
+            :class:`FioRunner`; use :attr:`_fio_thread` / :attr:`_fio_runner`
+            to interact with it).
+        """
         fio_opts = cfg.fio_opts if hasattr(cfg, "fio_opts") else ""
-        # Source environment if available
-        # user = os.environ['USER'] # example of how to access environment variables if needed
-        # os.environ["DEBUSSY"] = "1"
-        vstart_env = "f{CEPH_PATH}/vstart_environment.sh"
-        if os.path.exists(vstart_env):
-            logger.info(f"Sourcing {vstart_env}")
 
         test_run_log = os.path.join(self.run_dir, f"{test_name}_test_run.log")
 
@@ -321,66 +334,84 @@ class BalancedOSDRunner:
             ["cephlogoff.sh"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
 
-        # Run cephmkrbd.sh: this will create the RBD image(s) and export them
-        # as block devices, we can pass the number of images and size as
-        # parameters if needed. Need to set parameters as environment variables
-        # or pass them as arguments to the script, which we would need to
-        # modify to accept them.
-        cmd = ["cephmkrbd.sh", 
-                            "-n", f"{cfg.num_rbd_images}",
-                            "-p", self.vol_prefix,
-                            "-s", f"{cfg.rbd_image_size}" ]
+        # Run cephmkrbd.sh to create the RBD image(s)
+        cmd = [
+            "cephmkrbd.sh",
+            "-n", f"{cfg.num_rbd_images}",
+            "-p", self.vol_prefix,
+            "-s", f"{cfg.rbd_image_size}",
+        ]
         logger.info(f"Running cephmkrbd.sh with command: {' '.join(cmd)}")
         with open(test_run_log, "a") as log_file:
             result = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT)
-            logger.info(f"cephmkrbd.sh completed with return code {result.returncode}")
-            # if subprocess.run(["ceph", "osd", "ls"], capture_output=True).returncode != 0:
-            #     logger.error(f"{RED}== cephmkrbd.sh failed =={NC}")
-            #     return #sys.exit(1)
-            # else:
-            #     logger.info(f"{GREEN}== cephmkrbd.sh completed successfully =={NC}")
-
-        # Build FIO options
-        if fio_opts:
-            opts = fio_opts
-        else:
-            opts = ""
-            if self.multi_job_vol:
-                opts += "-j "
-
-            if self.latency_target:
-                opts += "-l "
-            else:
-                opts += "-w hockey -r -a "
-
-        runtime = self.test_plan_data.benchmarks.librbdfio.runtime #if hasattr(self.test_plan_data, "runtime") else 180
-        logger.info(f"FIO runtime: {runtime} seconds")
-        os.environ["RUNTIME"] = f"{runtime}"
-        # Construct FIO command: this should be obtained from the perf_test_plan JSON
-        # monitor all cores in the system: we might get this from the JSON produced by taskset_pid.py
-        # We need to decouple the execution of the FIO and the monitoring
-        fio_cpu_cores = self.test_plan_data.benchmarks.librbdfio.fio_cpu_range[0] 
-        #if hasattr(self.test_plan_data, "fio_cpu_range") else self.fio_cpu_cores
-        logger.info(f"FIO_CPU_CORES: {fio_cpu_cores}")
-        cmd_parts = [
-            "run_fio.sh", "-s", opts,
-            "-c", "0-192", # all CPU cores in the host
-            "-f", fio_cpu_cores,
-            "-p", test_name,
-            "-n", # no flamegraphs
-            "-d", self.run_dir,
-            "-t", cfg.osd_type,
-        ]
-        cmd = " ".join(cmd_parts)
-        logger.info(f"FIO command: {cmd}")
-        with open(test_run_log, "a") as log_file:
-            log_file.write(f"{cmd}\n")
-            # Run in background
-            process = subprocess.Popen(
-                cmd, shell=True, stdout=log_file, stderr=subprocess.STDOUT
+            logger.info(
+                f"cephmkrbd.sh completed with return code {result.returncode}"
             )
 
-        return process.pid
+        runtime = self.test_plan_data.benchmarks.librbdfio.runtime
+        logger.info(f"FIO runtime: {runtime} seconds")
+        os.environ["RUNTIME"] = f"{runtime}"
+
+        fio_cpu_cores = self.test_plan_data.benchmarks.librbdfio.fio_cpu_range[0]
+        logger.info(f"FIO_CPU_CORES: {fio_cpu_cores}")
+
+        # Create and configure a FioRunner (imported from run_fio)
+        fio_runner = FioRunner(self.script_dir)
+        fio_runner.run_dir = self.run_dir
+        fio_runner.osd_type = cfg.osd_type
+        fio_runner.osd_cores = "0-192"   # all CPU cores in the host
+        fio_runner.fio_cores = fio_cpu_cores
+        fio_runner.test_prefix = test_name
+        fio_runner.with_flamegraphs = False
+        fio_runner.single = True
+        fio_runner.runtime = runtime
+        fio_runner.latency_target = self.latency_target
+        fio_runner.multi_job_vol = self.multi_job_vol
+
+        if fio_opts:
+            # When explicit opts are provided store them for reference; the
+            # caller is expected to have pre-configured the runner accordingly.
+            logger.info(f"FIO custom opts: {fio_opts}")
+        else:
+            # Default: response-curve run over all workloads
+            fio_runner.response_curve = True
+            fio_runner.run_all = True
+            fio_runner.workload = "hockey"   # workload_name for response curves
+
+        # Log the equivalent command for audit purposes
+        cmd_desc = (
+            f"FioRunner(single=True, osd_type={cfg.osd_type},"
+            f" osd_cores=0-192, fio_cores={fio_cpu_cores},"
+            f" test_prefix={test_name}, no_flamegraphs=True,"
+            f" run_dir={self.run_dir})"
+        )
+        logger.info(f"FIO runner: {cmd_desc}")
+        with open(test_run_log, "a") as log_file:
+            log_file.write(f"{cmd_desc}\n")
+
+        self._fio_runner = fio_runner
+
+        # Run workload loop in a background thread; fio binary is the subprocess
+        def _fio_target() -> None:
+            workloads = (
+                ["rr", "rw", "sr", "sw"] if fio_runner.run_all else
+                ([fio_runner.workload] if fio_runner.workload else [])
+            )
+            workload_name = fio_runner.workload or ""
+            for wk in workloads:
+                fio_runner.run_workload_loop(
+                    wk,
+                    fio_runner.single,
+                    fio_runner.with_flamegraphs,
+                    fio_runner.test_prefix,
+                    workload_name,
+                )
+
+        fio_thread = threading.Thread(target=_fio_target, daemon=True)
+        fio_thread.start()
+        self._fio_thread = fio_thread
+
+        return 0
 
     def run_precond(self, test_name: str):
         """Run preconditioning"""
@@ -431,16 +462,20 @@ class BalancedOSDRunner:
         logger.info(f"{GREEN}== Diskstats diff saved to {self.run_dir} =={NC}")
 
     def stop_cluster(self, pid_fio: int = 0):
-        """Stop the cluster and kill the FIO process"""
+        """Stop the cluster and kill the FIO process(es)."""
         logger.info(
             f"{time.strftime('%Y-%m-%d %H:%M:%S')} == Stopping the cluster... =="
         )
 
         subprocess.run(["/ceph/src/stop.sh", "--crimson"])
 
-        if pid_fio != 0:
+        # Kill FIO via the runner if one is active
+        if self._fio_runner is not None:
+            self._fio_runner.kill_all_fio()
+        elif pid_fio != 0:
             logger.info(
-                f"{time.strftime('%Y-%m-%d %H:%M:%S')} == Killing FIO with pid {pid_fio}... =="
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')}"
+                f" == Killing FIO with pid {pid_fio}... =="
             )
             try:
                 os.kill(pid_fio, signal.SIGTERM)
@@ -542,12 +577,12 @@ class BalancedOSDRunner:
 
             # Start FIO
             logger.info(f"{time.strftime('%Y-%m-%d %H:%M:%S')} Starting FIO...")
-            # We might pass either the JSON with the OSD pid and threads, to
-            # monitor (or monitor them separately, which woul dbe better in the
-            # future since they normally run on separate hosts)
+            # run_fio() now uses FioRunner internally; the fio binary runs as
+            # subprocesses within that runner.  We store the thread in
+            # self._fio_thread for clean shutdown.
             self.fio_pid = self.run_fio(cfg, test_name)
             logger.info(
-                f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO {self.fio_pid} started: {test_name}"
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO started: {test_name}"
             )
 
             # Start watchdog
@@ -555,23 +590,20 @@ class BalancedOSDRunner:
                 f"{time.strftime('%Y-%m-%d %H:%M:%S')} Starting watchdog..."
             )
             self.watchdog_enabled = True
-            import threading
-
             watchdog_thread = threading.Thread(
                 target=self.watchdog, args=(self.fio_pid,)
             )
             watchdog_thread.daemon = True
             watchdog_thread.start()
 
-            # Wait for FIO to finish: we need to trigger the monitoring once
-            # the time ramp up has finished and the system is in steady state,
-            # we can improve this by monitoring the FIO output log and looking
-            # for specific patterns to trigger the monitoring, instead of
-            # waiting for the whole FIO run to finish
+            # Wait for FIO to finish via the background thread
             logger.info(
                 f"{time.strftime('%Y-%m-%d %H:%M:%S')} Waiting for FIO to complete..."
             )
-            os.waitpid(self.fio_pid, 0)
+            if self._fio_thread is not None:
+                self._fio_thread.join()
+            elif self.fio_pid != 0:
+                os.waitpid(self.fio_pid, 0)
 
             # Stop watchdog
             logger.info(

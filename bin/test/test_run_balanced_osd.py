@@ -136,33 +136,61 @@ class TestBalancedOSDRunner(unittest.TestCase):
         mock_run.assert_called()
 
     @patch('subprocess.run')
-    @patch('subprocess.Popen')
-    @patch('os.path.exists')
-    @pytest.mark.skip(reason="Broken due to refactor; needs new test plan data and adjustments to match new logic")
-    def test_run_fio(self, mock_exists, mock_popen, mock_run):
-        """Test run_fio creates proper command and runs FIO
-        Should be tested with a complete test_plan as below
+    @patch('run_fio.FioRunner.run_workload_loop')
+    def test_run_fio(self, mock_wl_loop, mock_run):
+        """Test run_fio uses FioRunner instead of run_fio.sh subprocess.
+
+        Verifies that:
+        - cephmkrbd.sh is called
+        - A FioRunner is created and configured
+        - run_workload_loop is called in a background thread
+        - The method returns 0 (no subprocess pid)
         """
-        mock_exists.return_value = False  # vstart_environment.sh doesn't exist
         mock_run.return_value = Mock(returncode=0)
-        mock_process = Mock()
-        mock_process.pid = 54321
-        mock_popen.return_value = mock_process
-        
+
         test_name = "test_fio"
         cfg = Mock()
         cfg.num_rbd_images = 2
         cfg.rbd_image_size = "200gb"
-        cfg.fio_opts= "--rw=randwrite --bs=4k"
-        cfg.benchmarks = {"librbdfio": {"cmd_path": "/usr/bin/fio"}}
-        
-        fio_pid = self.runner.run_fio(cfg,test_name)
-        
-        self.assertEqual(fio_pid, 54321)
-        
-        # Verify subprocess calls were made
-        self.assertTrue(mock_run.called)
-        self.assertTrue(mock_popen.called)
+        cfg.fio_opts = ""
+        cfg.osd_type = "crimson"
+
+        # Set up a minimal test_plan_data so run_fio can read runtime/cpu
+        from perf_test_plan import LibrbdFio, Benchmarks, Workload
+        librbdfio = LibrbdFio(
+            cmd_path="/usr/bin/fio",
+            fio_cpu_range=["28-55"],
+            fio_workload=["-w hockey"],
+            runtime=60,
+        )
+        benchmarks = Mock()
+        benchmarks.librbdfio = librbdfio
+        self.runner.test_plan_data = Mock()
+        self.runner.test_plan_data.benchmarks = benchmarks
+
+        fio_pid = self.runner.run_fio(cfg, test_name)
+
+        # Should return 0 (FioRunner manages processes internally)
+        self.assertEqual(fio_pid, 0)
+
+        # cephmkrbd.sh should have been called
+        cmds = [str(c[0][0]) for c in mock_run.call_args_list]
+        self.assertTrue(
+            any("cephmkrbd.sh" in cmd for cmd in cmds),
+            f"cephmkrbd.sh not called; calls: {cmds}",
+        )
+
+        # A FioRunner should have been set on the instance
+        self.assertIsNotNone(self.runner._fio_runner)
+        self.assertEqual(self.runner._fio_runner.osd_type, "crimson")
+        self.assertEqual(self.runner._fio_runner.fio_cores, "28-55")
+
+        # The FIO thread should have been created
+        self.assertIsNotNone(self.runner._fio_thread)
+
+        # Wait for the background thread to finish
+        if self.runner._fio_thread:
+            self.runner._fio_thread.join(timeout=2)
 
     @patch('subprocess.run')
     @patch('subprocess.Popen')
