@@ -211,6 +211,7 @@ class FioRunner:
         self.run_dir: str = "/tmp"
         self.log_name: str = "/tmp/fio_test.log"
         self.workload: Optional[str] = None   # workload shorthand (e.g. "rw")
+        self.vol_prefix = "fio_rbd_vol"
 
         # Feature flags
         self.skip_osd_mon: bool = False
@@ -683,7 +684,7 @@ class FioRunner:
             env.update(
                 {
                     "LOG_NAME": log_name,
-                    "RBD_NAME": f"fio_test_{i}",
+                    "RBD_NAME": self.vol_prefix, #f"fio_test_{i}",
                     "IO_DEPTH": str(io),
                     "NUM_JOBS": str(job),
                     "RUNTIME": str(self.runtime),

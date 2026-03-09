@@ -155,11 +155,14 @@ def mon_filter_top(
         Number of samples in the top output.
     top_filter:
         Either ``"cores"`` (default) or ``"threads"``.
+
+    We might import the module instead of executing the script.
     """
     if top_filter == "cores":
+        path = os.path.join(SCRIPT_DIR, "tools", "top_parser.py")
         subprocess.run(
             [
-                "${SCRIPT_DIR}/tools/top_parser.py",
+                f"{path}",
                 "-t", "svg",
                 "-n", str(num_samples),
                 "-p", top_pid_json,

@@ -83,7 +83,7 @@ class BalancedOSDRunner:
         self.multi_job_vol = False
         self.precond = False
         self.watchdog_enabled = False
-        self.vol_prefix = "fio_rbd_vol"
+        self.vol_prefix = "fio_rbd_vol" # Might need to pass to FioRunner as well
         # Need to load the plan from a .json instead of sourcing a .sh
         self.test_plan = os.path.join(script_dir, "tp_cmp_classic_seastore.json")
         self.skip_exec = False
@@ -266,7 +266,7 @@ class BalancedOSDRunner:
 
 
         self.log_color(
-            f"== Constructing list of threads and affinity for {test_prefix} =="
+            f"== Constructing list of threads and affinity for OSD {test_prefix} =="
         )
 
         # Count number of OSD processes
@@ -330,6 +330,7 @@ class BalancedOSDRunner:
         test_run_log = os.path.join(self.run_dir, f"{test_name}_test_run.log")
 
         # Run cephlogoff.sh
+        logger.info("Running cephlogoff.sh")
         subprocess.run(
             ["cephlogoff.sh"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
@@ -370,6 +371,7 @@ class BalancedOSDRunner:
         fio_runner.latency_target = self.latency_target
         fio_runner.multi_job_vol = self.multi_job_vol
         fio_runner.log_name = os.path.join(self.run_dir, f"{test_name}_test_run.log")
+        fio_runner.vol_prefix= self.vol_prefix
 
         if fio_opts:
             # When explicit opts are provided store them for reference; the
@@ -754,14 +756,15 @@ class BalancedOSDRunner:
         logger.info(f"{GREEN}== Loading test plan from {self.test_plan} =={NC}")
         self.load_test_plan(self.test_plan)
 
-        # Create run directory
+        # Create run directory and chdir to it
         os.makedirs(self.run_dir, exist_ok=True)
+        os.chdir(self.run_dir)
 
         # Save test plan
         # self.save_test_plan()
 
         # Change to build directory
-        os.chdir("/ceph/build/")
+        #os.chdir("/ceph/build/")
 
         # Regenerate FIO files if needed
         if self.regen:
@@ -823,7 +826,7 @@ def main():
         "-x", "--skip-exec", action="store_true", help="Skip execution (dry run)"
     )
     parser.add_argument("-z", "--cache-alg", help="Cache algorithm: LRU or 2Q")
-    parser.add_argument("-r", "--run-fio", help="Run FIO with given test name")
+    parser.add_argument("-r", "--run_fio", help="Run FIO with given test name")
     parser.add_argument("-s", "--show-grid", help="Show grid for given test name")
 
     args = parser.parse_args()
@@ -834,6 +837,8 @@ def main():
     # Handle special actions
     if args.run_fio:
         runner = BalancedOSDRunner(script_dir)
+        # TODO: it needs a cfg, we can load it from the test plan based on the
+        # test name, or we can pass a default one as an argument -- disabled atm
         runner.run_fio(args.run_fio)
         return
 
