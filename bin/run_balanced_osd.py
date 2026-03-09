@@ -758,13 +758,13 @@ class BalancedOSDRunner:
 
         # Create run directory and chdir to it
         os.makedirs(self.run_dir, exist_ok=True)
-        os.chdir(self.run_dir)
+        #os.chdir(self.run_dir)
 
         # Save test plan
         # self.save_test_plan()
 
-        # Change to build directory
-        #os.chdir("/ceph/build/")
+        # Change to build directory: this is needed by vstart (due to local dependencies)
+        os.chdir("/ceph/build/")
 
         # Regenerate FIO files if needed
         if self.regen:
