@@ -379,7 +379,7 @@ class Scrappy:
                 r"SIGABRT",
                 r"Assertion.*failed",
                 r"ceph::__ceph_abort",
-                r"abort",
+                r"abort(.*)",
             ],  # , r"Segmentation fault"
             "egrep_file": "",
             "report": {},
@@ -388,13 +388,14 @@ class Scrappy:
     }
     ISSUES_FILE = os.path.join(SCRIPT_PATH, "issues.json")
 
-    def __init__(self, issues_file, logdir, previous_report=False):
+    def __init__(self, issues_file, logdir, previous_report=False, exclude_issues=False):
         self.issues_file = issues_file
         self.logdir = logdir
         self.issues = load_issues(issues_file)
         logger.debug(f"Issues: {pp.pformat(self.issues)}")
         self.previous_report = previous_report
         self.failures = load_scrapper(os.path.join(logdir, "scrape.log"))
+        self.exclude_issues = exclude_issues
         logger.debug(f"Failures: {self.failures}")
 
     def prepare_egrep_files(self):
@@ -411,9 +412,10 @@ class Scrappy:
         """
         for log_type, log_info in self.LOG_TYPES.items():
             _patterns = log_info["patterns"]
-            for item in self.issues[log_type]:
-                for pattern in item["pattern"]:
-                    _patterns.append(pattern)
+            if not self.exclude_issues:
+                for item in self.issues[log_type]:
+                    for pattern in item["pattern"]:
+                        _patterns.append(pattern)
             egrep_file = prepare_egrep_file(_patterns)
             log_info["egrep_file"] = egrep_file
             logger.debug(f"Prepared _egrep file for {log_type}: {egrep_file}")
@@ -781,6 +783,14 @@ def parse_arguments(argv):
         help="True to only generate the report from the existing osd_report.json files, without scanning the logs again",
         default=False,
     )
+    parser.add_argument(
+        "-x",
+        "--exclude",
+        action="store_true",
+        help="True to exclude the list of issues from the grep file, use only the generic regex for th efirst pass",
+        default=False,
+    )
+
 
     return parser.parse_args(argv)
 
@@ -797,7 +807,7 @@ def main(argv):
             filename=tmpfile.name, encoding="utf-8", level=logLevel, format=FORMAT
         )
     logger.debug("Got options: {0}".format(args))
-    scrappy = Scrappy(args.issues, args.logdir, args.previous_report)
+    scrappy = Scrappy(args.issues, args.logdir, args.previous_report, args.exclude)
     scrappy.run()
     # We might need options to scan only specific types of logs,
     # or to scan the current directory for ,json produced by a previous run to generate a report without having to rescan the logs, etc.
