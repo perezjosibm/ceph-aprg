@@ -2,6 +2,42 @@
   "osd":
   [
     {
+      "tracker": "73314",
+      "pattern": [ "PeeringState::Crashed::Crashed.*abort(we got a bad state machine event)"],
+	"description": "",
+	"status": "open"
+    },
+    {
+      "tracker": "74504",
+      "pattern": [ "crimson::os::seastore::collection_manager::CollectionNode::create.*Assertion `inserted' failed..*"],
+	"description": "",
+	"status": "closed"
+    },
+    {
+      "tracker": "75333",
+      "pattern": [ "void SnapMapper::set_snaps.*ceph_assert.*"],
+	"description": "",
+	"status": "open"
+    },
+    {
+      "tracker": "71478",
+      "pattern": [ "constexpr typename std::add_lvalue_reference.*Assertion 'get() != pointer()' failed.*"],
+	"description": "",
+	"status": "open"
+    },
+    {
+      "tracker": "74017",
+      "pattern": [ "crimson::os::seastore::Cache::get_extent_viewable_by_trans.*Assertion `!extent->is_pending_io()' failed"],
+	"description": "",
+	"status": "open"
+    },
+    {
+      "tracker": "74982",
+      "pattern": [ "crimson::os::seastore::SeaStore::Shard::_do_transaction_step.*abort(unexpected enoent error)"],
+        "description": "",
+        "status": "open"
+    },
+    {
       "tracker": "73790",
       "pattern": [ "crimson::os::seastore::TransactionManager::pin_to_extent.*abort(abort() called)$"],
         "description": "",

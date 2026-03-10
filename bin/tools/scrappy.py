@@ -379,6 +379,7 @@ class Scrappy:
                 r"SIGABRT",
                 r"Assertion.*failed",
                 r"ceph::__ceph_abort",
+                r"abort",
             ],  # , r"Segmentation fault"
             "egrep_file": "",
             "report": {},
