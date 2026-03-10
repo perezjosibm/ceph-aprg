@@ -388,7 +388,9 @@ class Scrappy:
     }
     ISSUES_FILE = os.path.join(SCRIPT_PATH, "issues.json")
 
-    def __init__(self, issues_file, logdir, previous_report=False, exclude_issues=False):
+    def __init__(
+        self, issues_file, logdir, previous_report=False, exclude_issues=False
+    ):
         self.issues_file = issues_file
         self.logdir = logdir
         self.issues = load_issues(issues_file)
@@ -427,7 +429,8 @@ class Scrappy:
 
     def remove_empty_logs(self):
         """
-        Remove the temporary report files that are empty, as they don't contain any matches and we don't want to include them in the final report.
+        Remove the temporary report files that are empty, as they don't contain
+        any matches and we don't want to include them in the final report.
         """
         for log_type, log_info in self.LOG_TYPES.items():
             report = log_info["report"]
@@ -436,7 +439,6 @@ class Scrappy:
                 if os.path.isfile(report_tmp) and os.path.getsize(report_tmp) == 0:
                     logger.debug(f"Removing empty report file: {report_tmp}")
                     os.remove(report_tmp)
-
 
     def scan_logs(self, job: str, log_type: str, log_info: dict):
         """
@@ -528,7 +530,7 @@ class Scrappy:
         total_count = 0
         distribution = {}
         for pattern in issue["pattern"]:
-            #count = self._count_occurrences(log_file, pattern)
+            # count = self._count_occurrences(log_file, pattern)
             count = self._get_occurences(log_file, pattern)
             distribution[pattern] = count
             total_count += count
@@ -808,7 +810,6 @@ def parse_arguments(argv):
         help="True to exclude the list of issues from the grep file, use only the generic regex for th efirst pass",
         default=False,
     )
-
 
     return parser.parse_args(argv)
 
