@@ -83,3 +83,6 @@ ceph osd set nodeep-scrub
 ceph osd set noscrub
 # Turn off RBD coalescing
 ceph config set client rbd_io_scheduler none 
+# Show OSD type:
+# [ "$(ceph osd metadata 0 | jq -r '.osd_type')" == "crimson" ] || return 0
+echo $(ceph osd metadata 0 | jq -r '.osd_type')

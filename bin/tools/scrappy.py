@@ -67,7 +67,7 @@ def load_issues(issues_file):
             issues[log_type] = [
                 issue
                 for issue in issues[log_type]
-                if issue.get("state", "open") in ["open", "in_progress"]
+                if issue.get("status", "closed") in ["open", "in_progress"]
             ]
         return issues
 
@@ -379,7 +379,7 @@ class Scrappy:
                 r"SIGABRT",
                 r"Assertion.*failed",
                 r"ceph::__ceph_abort",
-                r"abort(.*)",
+                r"In function '.*', abort(.*)",
             ],  # , r"Segmentation fault"
             "egrep_file": "",
             "report": {},
@@ -425,9 +425,23 @@ class Scrappy:
     #     unzip_run_file(log_path, temp_dir)
     #     report = scan_logs(temp_dir, self.issues)
 
+    def remove_empty_logs(self):
+        """
+        Remove the temporary report files that are empty, as they don't contain any matches and we don't want to include them in the final report.
+        """
+        for log_type, log_info in self.LOG_TYPES.items():
+            report = log_info["report"]
+            for job, job_info in report.items():
+                report_tmp = job_info["log"]
+                if os.path.isfile(report_tmp) and os.path.getsize(report_tmp) == 0:
+                    logger.debug(f"Removing empty report file: {report_tmp}")
+                    os.remove(report_tmp)
+
+
     def scan_logs(self, job: str, log_type: str, log_info: dict):
         """
-        Scan the type of log.
+        Scan the type of log. This is the first pass, so for OSD the logs are normally compressed.
+
         grepper = {
             "egrep_file": self.LOG_TYPES[log_type]["egrep_file"],
             "compressed": self.LOG_TYPES[log_type]["compressed"],
@@ -514,9 +528,11 @@ class Scrappy:
         total_count = 0
         distribution = {}
         for pattern in issue["pattern"]:
-            count = self._count_occurrences(log_file, pattern)
+            #count = self._count_occurrences(log_file, pattern)
+            count = self._get_occurences(log_file, pattern)
             distribution[pattern] = count
             total_count += count
+
         if total_count > 0:
             if issue["tracker"] not in job_info["trackers"]:
                 logger.debug(
@@ -543,7 +559,8 @@ class Scrappy:
 
     def scan_reports(self):
         """
-        From the produced report, scan for the specific issues found and attribute them to the log file being scanned.
+        From the produced report, scan for the specific issues found and
+        attribute them to the log file being scanned.
         """
         for log_type, log_info in self.LOG_TYPES.items():
             # Construct an special issue representing the 'generic' pattern
@@ -751,6 +768,7 @@ class Scrappy:
                     logger.debug(f"Found {len(corefile_list)} core files for job {job}")
                     self.scan_logs(job, log_type, log_info)
 
+        self.remove_empty_logs()
         self.scan_reports()
         self.filter_reports()
         self.show_report()
@@ -810,7 +828,8 @@ def main(argv):
     scrappy = Scrappy(args.issues, args.logdir, args.previous_report, args.exclude)
     scrappy.run()
     # We might need options to scan only specific types of logs,
-    # or to scan the current directory for ,json produced by a previous run to generate a report without having to rescan the logs, etc.
+    # or to scan the current directory for ,json produced by a previous run to
+    # generate a report without having to rescan the logs, etc.
 
 
 if __name__ == "__main__":
