@@ -943,7 +943,7 @@ class FioRunner:
                 if os.path.exists(fio_json):
                     subprocess.run(["sed", "-i", "/^fio:/d", fio_json])
             result = subprocess.run(
-                f"python3 {self.script_dir}/fio-parse-jsons.py"
+                f"python3 {self.script_dir}/fio_parse_jsons.py"
                 f" -c {self.osd_test_list}"
                 f" -t {self.test_result}"
                 f" -a {self.osd_cpu_avg}",
@@ -1078,7 +1078,7 @@ class FioRunner:
                         if os.path.exists(fio_json):
                             subprocess.run(["sed", "-i", "/^fio:/d", fio_json])
                     result = subprocess.run(
-                        f"python3 {self.script_dir}/fio-parse-jsons.py"
+                        f"python3 {self.script_dir}/fio_parse_jsons.py"
                         f" -c {self.osd_test_list}"
                         f" -t {self.test_result}"
                         f" -a {self.osd_cpu_avg}",

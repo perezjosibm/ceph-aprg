@@ -618,7 +618,7 @@ fun_post_process() {
         for x in $(cat ${OSD_TEST_LIST}); do
             sed -i '/^fio:/d' $x
         done
-        python3 ${SCRIPT_DIR}/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
+        python3 ${SCRIPT_DIR}/fio_parse_jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
     fi
 
     # Post processing: OSD dump_metrics .json -- disabling this since we are no longer using it
@@ -810,7 +810,7 @@ fun_post_process_cold() {
       for x in $(cat ${OSD_TEST_LIST}); do
         sed -i '/^fio:/d' $x
       done
-      python3 ${SCRIPT_DIR}/fio-parse-jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} \
+      python3 ${SCRIPT_DIR}/fio_parse_jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} \
           -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
     fi
 

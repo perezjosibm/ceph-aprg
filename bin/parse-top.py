@@ -458,7 +458,7 @@ def main(argv):
     # Use that to produce the gnuplot charts:
     # parse-top.py -c _top.json -p _pids.json -u "0-111" -a _avg.json 
     # Use the _avg.json to combine in a FIO results table:
-    # fio-parse-jsons.py -c test_list -t test_title -a _avg.json 
+    # fio_parse_jsons.py -c test_list -t test_title -a _avg.json 
 
     """
     parser = argparse.ArgumentParser(

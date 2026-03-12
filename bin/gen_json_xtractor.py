@@ -1,5 +1,5 @@
 """
-Refactoring of the standalone tool fio-parse-jsons.py into modules that can be reused.
+Refactoring of the standalone tool fio_parse_jsons.py into modules that can be reused.
 """
 
 import os

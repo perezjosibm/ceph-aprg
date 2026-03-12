@@ -118,7 +118,7 @@ plot '{dat_name}' using 1 w lp, for [i=2:{self.NUMCOLS}] '' using i w lp
 
 class FioPlot(object):
     """
-    Class to abstract away the basic functionality for the gen_plot() method in fio-parse-jsons.py
+    Class to abstract away the basic functionality for the gen_plot() method in fio_parse_jsons.py
     """
     # We might extend this to a set of predefined profiles, esp.
     # cores:{user,sys,idle,wait}, mem:{pc,shr,res,free,cached}

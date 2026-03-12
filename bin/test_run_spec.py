@@ -116,7 +116,7 @@ class TestRunSpec(object):
 
     def get_test_run_filenames(self, test_result):
         """
-        Produce the list of corresponding filenames produced by the fio-parse-jsons.py script
+        Produce the list of corresponding filenames produced by the fio_parse_jsons.py script
         during postprocessing
         The keys are used to indicate which data to compare
 
@@ -133,7 +133,7 @@ class TestRunSpec(object):
             # params to parse-top.py:
             "top_pid_json": f"{test_result}_pid.json",
             "cpu_avg_json": f"{test_result}_cpu_avg.json",  # aka OSD_CPU_AVG
-            # params to fio-parse-jsons:
+            # params to fio_parse_jsons:
             "osd_test_list": f"{test_result}_list",
             "tr_table_json": f"{test_result}.json",  # source for comparison
             "disk_stat_json": f"{test_result}_diskstat.json",

@@ -11,7 +11,7 @@ The expected layout of the dir structure is:
     1osd_4reactor_32fio_sea_rc/
     1osd_8reactor_32fio_sea_rc/
     <TEST_RESULT>_<WORKLOAD>_d/
-    <TEST_RESULT>_<WORKLOAD>.dat - output from the fio-parse-jsons.py script (response curves)
+    <TEST_RESULT>_<WORKLOAD>.dat - output from the fio_parse_jsons.py script (response curves)
     <TEST_RESULT>_<WORKLOAD>.json - output from the perf_metrics.py script, aggregated from the .dat files
     <TEST_RESULT>_<WORKLOAD>_top_cpu.json - output from the parse-top.py script, aggregated from the top command output
     <TEST_RESULT>_<WORKLOAD>_rutil_conf.json - reactor utiil input config schema
@@ -712,7 +712,7 @@ class Reporter(object):
             """
             Recreate the benchmark run .json file from the given parameters.
             This is a helper function to recreate the benchmark run .json file if it does not exist.
-            This involves to run parse-top.py, fio-parse-jsons.py and perf_metrics.py
+            This involves to run parse-top.py, fio_parse_jsons.py and perf_metrics.py
             We assume that the benchmark file is named as <test_run>_<workload>.json
             """
             # We assume that the CPU average file is named as <test_run>_<workload>_cpu_avg.json
@@ -754,13 +754,13 @@ class Reporter(object):
                     f"Failed to recreate CPU average file {cpu_avg_name} in {dir_path}"
                 )
                 command = (
-                    f"fio-parse-jsons.py -d {dir_path} -c {list_name} -t {test_run} -v"
+                    f"fio_parse_jsons.py -d {dir_path} -c {list_name} -t {test_run} -v"
                 )
             else:
                 logger.info(
                     f"Recreated CPU average file {cpu_avg_name}"
                 )  # {cpu_avg_name} in {dir_path}")
-                command = f"fio-parse-jsons.py -d {dir_path} -c {list_name} -t {test_run} -a {cpu_avg_name} -v"
+                command = f"fio_parse_jsons.py -d {dir_path} -c {list_name} -t {test_run} -a {cpu_avg_name} -v"
 
             logger.info(f"Executing {command}")  # {cpu_avg_name} in {dir_path}")
             proc = subprocess.Popen(command, shell=True)

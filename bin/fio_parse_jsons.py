@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 #
-# fio-parse-jsons.py - script to parse workloads generation results produced by
+# fio_parse_jsons.py - script to parse workloads generation results produced by
 # FIO in JSON format
 #
 # Input parameters:
@@ -23,7 +23,7 @@
 # -m - flag to indicate whether the run is for MultiFIO
 #
 # Example:
-# python3 fio-parse-jsons.py -c \
+# python3 fio_parse_jsons.py -c \
 #  crimson4cores_200gb_1img_4k_1procs_randwrite_list -t \
 #  'Crimson 4k Random Write (Single 200GB OSD)' -a \
 #  crimson4cores_200gb_1img_4k_1procs_randwrite_avg.json
