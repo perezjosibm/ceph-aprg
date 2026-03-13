@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # fio_parse_jsons.py - script to parse workloads generation results produced by
 # FIO in JSON format
@@ -38,14 +38,17 @@ import math
 import logging
 import tempfile
 import functools
+#import time 
+from datetime import datetime
 from operator import add
+from typing import List
 
 __author__ = "Jose J Palacios-Perez"
 
 pp = pprint.PrettyPrinter(width=41, compact=True)
 logger = logging.getLogger(__name__)
 
-# Predefined dictionary of metrics (query paths on the ouput FIO .json) for typical workloads
+# Predefined query paths on the ouput FIO .json for typical workloads
 # Keys are metric names, vallues are the string path in the .json to seek
 # For MultiFIO JSON files, the jobname no neccessarily matches any of the predef_dict keys,
 # so we need instead to use a separate query:
@@ -89,6 +92,27 @@ predef_dict = {
         "sys_cpu": "sys_cpu",
     },
 }
+
+# Dictionary to produce a flat .csv from the JSON FIO output: fiels are
+# filename, timestamp, jobname, bs, size, nrfiles, iodepth, numjobs, rw,
+# Then, prefixed by the rw/jobname, (need a sep table to map the corresponding values, as we do now):
+# iops, bw, *clat_ms -- calculated from clat mean
+# usr_cpu, sys_cpu, job_runtime
+csv_dict = {}
+# Map of "rw" values to ewither "read", "write", "trim" etc. from the job:
+# This will produce just a single column for iops, bw and clat, we might add each of the combined colums per IO type (eg mix rw) if needed
+
+# Use the key in this dict when the value for "rw" matches the regex
+rw_map = {
+    "write":  re.compile(r".*write", re.IGNORECASE),
+    "read":  re.compile(r".*read", re.IGNORECASE),
+}
+
+generic_metrics = ["bw", "iops", "total_ios"]
+# We might use a slice of jobs to use for the response curve, so we need to map
+# the jobname to the rw type, which is the global "rw" attribute in the FIO
+# .json file. For example, for rae-yip samples we have three jobs, but we only
+# are interested in meaasuring the last [-1]
 
 # Global temporary -- could be replaced by a class attribute
 top_filter_type = "cores" # or "threads"
@@ -256,11 +280,94 @@ def get_jobs_type(job, jobname: str):
         query_dict = predef_dict[jobname]
     return query_dict
 
+def validate_json_file( jsondata):
+    valid = False
+    keysfound = 0 
+    minimumkeys = 2
+    validkeys = ["fio version", "global options", "client_stats", "jobs"]
+    for key in validkeys:
+        if key in jsondata.keys():
+            keysfound += 1
+    if keysfound >= minimumkeys:
+        valid = True
+    return valid
 
-def process_fio_json_file(json_file, json_tree_path):
+
+def process_fio_json_file(json_file:str) -> List[dict]:
     """
     Collect metrics from an individual JSON file, which might
     contain several entries, one per job
+    """
+    global_opts = {}
+    data_set = []
+    with open(json_file, "r") as json_data:
+        # check for empty file
+        f_info = os.fstat(json_data.fileno())
+        if f_info.st_size == 0:
+            logger.error(f"JSON input file {json_file} is empty")
+            return data_set
+        try:
+            data = json.load(json_data)
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON input file {json_file} invalid: {e}")
+            return data_set
+        if not validate_json_file(data):
+            logger.error(f"JSON input file {json_file} does not appear to be a valid fio json output file, skipping")
+            return data_set
+        # Extract the json timestamp: useful for matching same workloads from
+        # different FIO processes
+        global_opts["filename"] = json_file
+        global_opts["timestamp"] = datetime.fromtimestamp(data["timestamp"])
+        #data_set["iodepth"] = data["global options"]["iodepth"]
+        #data_set["jobname"] = data["global options"]["rw"]
+        # Get some global options for the table, which are common to all the jobs in the .json file
+        for k in ["bs", "size", "numjobs", "iodepth", "rw"]:
+            if k in data["global options"].keys():
+                global_opts[k] = data["global options"][k]
+            else:
+                logger.warning(f"Global option {k} not found in {json_file}")
+        # Use the jobname to index the predef_dict for the json query
+
+        # Traverse the jobs: we are going ot generate a row in the .csv per
+        # job, so the data_set has the same global options for all the jobs,
+        # but the metrics are going to be different for each job, so we need to
+        # merge the global options with the job options, and then we can use
+        # the job options to query the predef_dict for the metrics
+        jobs_list = data["jobs"]
+        logger.info(f"Num jobs: {len(jobs_list)}")
+
+        for job in jobs_list:
+            job_result = global_opts.copy()
+            job_result["jobname"] = job["jobname"]
+            job_result.update(job["job options"])
+            # Use "rw"as index for the metrics data
+            fio_job_type = job_result["rw"]
+            for k in rw_map:
+                if re.search(rw_map[k], fio_job_type):
+                    for metric in generic_metrics:
+                            job_result[metric] = job[k][metric]
+                    # For latency, we need to calculate the mean latency in ms from the clat_ns dict
+                    job_result["clat_ms"] = job[k]["clat_ns"]["mean"] / 1e6
+                    # std dev of latency in ms
+                    job_result["clat_stdev_ms"] = job[k]["clat_ns"]["stddev"] / 1e6
+            data_set.append(job_result)
+            logger.info(f"{job_result}")
+
+        return data_set
+            
+
+def _process_fio_json_file(json_file, json_tree_path):
+    """
+    Collect metrics from an individual JSON file, which might
+    contain several entries, one per job
+
+    if job["jobname"] != "All clients":
+                # Merging gloabl and job options
+                job["job options"] = {**job["job options"], **data["global options"]}
+                if "job options" not in job.keys():
+                    logger.error(f"Job options not found for job {job['jobname']} in {json_file}")
+                    return data_set
+
     """
     with open(json_file, "r") as json_data:
         result_dict = {}
@@ -270,20 +377,45 @@ def process_fio_json_file(json_file, json_tree_path):
             logger.error(f"JSON input file {json_file} is empty")
             return result_dict
         try:
-            node = json.load(json_data)
+            data = json.load(json_data)
         except json.JSONDecodeError as e:
             logger.error(f"JSON input file {json_file} invalid: {e}")
             return result_dict
+        if not validate_json_file(data):
+            logger.error(f"JSON input file {json_file} does not appear to be a valid fio json output file, skipping")
+            return result_dict
         # Extract the json timestamp: useful for matching same workloads from
         # different FIO processes
-        result_dict["timestamp"] = str(node["timestamp"])
-        result_dict["iodepth"] = node["global options"]["iodepth"]
-        result_dict["jobname"] = node["global options"]["rw"]
+        result_dict["timestamp"] = datetime.fromtimestamp(data["timestamp"])
+        #result_dict["iodepth"] = data["global options"]["iodepth"]
+        result_dict["jobname"] = data["global options"]["rw"]
+        # Get some global options for the table, which are common to all the jobs in the .json file
+        for k in ["bs", "size", "numjobs", "iodepth", "rw"]:
+            if k in data["global options"].keys():
+                result_dict[k] = data["global options"][k]
+            else:
+                logger.warning(f"Global option {k} not found in {json_file}")
         # Use the jobname to index the predef_dict for the json query
-        jobs_list = node["jobs"]
+
+        # Traverse the jobs: we are going ot generate a row in the .csv per
+        # job, so the result_dict has the same global options for all the jobs,
+        # but the metrics are going to be different for each job, so we need to
+        # merge the global options with the job options, and then we can use
+        # the job options to query the predef_dict for the metrics
+        jobs_list = data["jobs"]
         logger.info(f"Num jobs: {len(jobs_list)}")
         job_result = {}
+
+        for job in jobs_list:
+            if job["jobname"] != "All clients":
+                # Merging gloabl and job options
+                job["job options"] = {**job["job options"], **data["global options"]}
+                if "job options" not in job.keys():
+                    logger.error(f"Job options not found for job {job['jobname']} in {json_file}")
+                    return result_dict
+
         jobname = result_dict["jobname"]
+        jobname = jobname if jobname in predef_dict else data["global options"]["rw"]
         logger.info(f"Processing {json_file} as {jobname}")
         if jobname not in predef_dict:
             logger.error(f"Job name {jobname} not found in predef_dict")
@@ -307,14 +439,14 @@ def process_fio_json_file(json_file, json_tree_path):
         return merged
 
 
-def traverse_files(sdir, config, json_tree_path):
+def traverse_files(dir, config, json_tree_path) -> List[dict]:
     """
     Traverses the JSON files given in the config
     Returns a dictionary whose keys are the input .json file names, values
     are the (sub)dictionary of the metrics collected from the input .json file
     TODO: use the config.json instead of the text _list
     """
-    os.chdir(sdir)
+    os.chdir(dir)
     try:
         config_file = open(config, "r")
     except IOError as e:
@@ -324,15 +456,18 @@ def traverse_files(sdir, config, json_tree_path):
     config_file.close()
     logger.info(f"loading {len(json_files)} .json files ...")
     pp = pprint.PrettyPrinter(width=41, compact=True)
+
     dict_new = {}
+    data_set = []
     for fname in json_files:
         # Avoid duplicates!
         if fname not in dict_new:
-            node_list = process_fio_json_file(fname, json_tree_path)
-            dict_new[fname] = node_list
+            data_set = data_set + process_fio_json_file(fname)
+            #node_list = process_fio_json_file(fname, json_tree_path)
+            dict_new[fname] = 1 # node_list
             logger.info(f"== {fname} ==")
-            logger.info(pp.pprint(node_list))
-    return dict_new
+    logger.info(pp.pformat(data_set))
+    return data_set #dict_new
 
 
 def gen_plot(config: str, data: str, list_subtables, title: str, header_keys: dict):
@@ -803,20 +938,6 @@ def gen_table(dict_files, config: str, title: str, avg_cpu: dict, multi=False):
     logger.info("Done")
 
 
-def main(directory, config, json_query):
-    """
-    Entry point: an initial path is an inheritance of the original script from which this tool
-    evolved
-    """
-    if not bool(json_query):
-        json_query = "jobs/jobname=*"
-    json_tree_path = json_query.split("/")
-    dicto_files = traverse_files(directory, config, json_tree_path)
-    logger.info("Note: clat_ns has been converted to milliseconds")
-    logger.info("Note: bw has been converted to MiBs")
-    return dicto_files
-
-
 def load_avg_cpu_json(json_fname):
     """
     Load a .json file containing the CPU avg samples -- normally produced by the script
@@ -855,6 +976,20 @@ def load_avg_cpu_json(json_fname):
             return cpu_avg_list
     except IOError as e:
         raise argparse.ArgumentTypeError(str(e))
+
+
+def main(directory:str, config, json_query:str):
+    """
+    Entry point: an initial query path is an inheritance of the original script from which this tool
+    evolved
+    """
+    if not bool(json_query):
+        json_query = "jobs/jobname=*"
+    json_tree_path = json_query.split("/")
+    data_set = traverse_files(directory, config, json_tree_path)
+    logger.info("Note: clat_ns has been converted to milliseconds")
+    logger.info("Note: bw has been converted to MiBs")
+    return data_set
 
 
 def parse_args():
@@ -921,6 +1056,14 @@ def parse_args():
         help="True to enable verbose logging mode",
         default=False,
     )
+    parser.add_argument(
+        "-s",
+        "--csv",
+        action="store_true",
+        required=False,
+        help="Produce a .csv file with the table data, in addition to the .tex and .md files",
+        default=False,
+    )
 
     args = parser.parse_args()
     if args.verbose:
@@ -939,8 +1082,18 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-    dict_files = main(args.directory, args.config, args.query)
-    avg_cpu = load_avg_cpu_json(args.average)
+    data_set = main(args.directory, args.config, args.query)
     if args.cpu_core_avg:
+        avg_cpu = load_avg_cpu_json(args.average)
         avg_core_cpu = load_avg_cpu_json(args.cpu_core_avg)
-    gen_table(dict_files, args.config, args.title, avg_cpu, args.multi)
+        gen_table(data_set, args.config, args.title, avg_cpu, args.multi)
+    elif args.csv:
+        # Generate a .csv file with the table data
+        out_csv = args.config.replace("_list", ".csv")
+        with open(out_csv, "w", encoding="utf-8") as f:
+            # Write the header
+            f.write(",".join(data_set[0].keys()) + "\n")
+            # Write the data rows
+            for row in data_set:
+                f.write(",".join(str(row[k]) for k in row.keys()) + "\n")
+            f.close()
