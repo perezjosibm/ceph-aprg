@@ -2,7 +2,7 @@
 #
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
 cd /ceph/build/bin
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 #BLUESTORE_DEVS='/dev/sdc,/dev/sde,/dev/sdf'
 BLUESTORE_DEVS='/dev/sdf'
 BEST_NUM_FIO_CORES="8-15"

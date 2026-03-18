@@ -26,7 +26,7 @@ VSTART_CPU_CORES="0-13,56-69,28-41,84-97" # Latency target comparison vs Classic
 #VSTART_CPU_CORES="0-51,56-107" # inc HT
 FIO_CPU_CORES="14-27,70-83,42-55,98-111" # inc HT
 #FIO_CPU_CORES="52-55,108-111" # inc HT
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 FIO_SPEC="32fio" # 32 client/jobs
 OSD_TYPE=cyan
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!

@@ -10,7 +10,7 @@ set -x
 
 FIO_CORES="0-27,56-83"
 TEST_DIR=/tmp/build_785976e3179/cmp_aio_seastore_randwrite4k
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 TEST_TYPE=aio # aio or seastore 
 export RBD_SIZE=200G
 

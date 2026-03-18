@@ -4,7 +4,7 @@
 RUNTIME=120
 NUM_SAMPLES=24
 pid_fio=0
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 mydir=$(mktemp -d "${TMPDIR:-/tmp/}$(basename $0).XXXX")
 PERF_OP="default"
 

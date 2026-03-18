@@ -37,7 +37,7 @@ The description of the scripts follows:
 - run_hockey_crimson.sh
 - run_hockey_crimson_1osd.sh
 - run_multiple_fio.sh
-- rbd_fio_examples - directory with examples of predefined FIO workload definitions
+- fio_workloads - directory with examples of predefined FIO workload definitions
 - rg_template - templates for the report generator
 - ceph-aprg.docker - example for a container including all dependencies for the toolkit
 

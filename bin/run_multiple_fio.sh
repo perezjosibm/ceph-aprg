@@ -2,13 +2,13 @@
 #
 #Runs to compare the workloads across 8,4 cpu cores for FIO (Single OSD)
 #
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
 cd /ceph/build/
 #BLUESTORE_DEVS='/dev/sdc,/dev/sde,/dev/sdf'
 BLUESTORE_DEVS='/dev/sdf'
 export NUM_RBD_IMAGES=8
-FIO_JOBS="/root/bin/rbd_fio_examples/"
+FIO_JOBS="/root/bin/fio_workloads/"
 #########################################
 declare -A test_table
 declare -A test_row

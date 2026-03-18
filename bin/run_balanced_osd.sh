@@ -43,7 +43,7 @@ OSD_CPU=${VSTART_CPU_CORES} # Currently used for Classic only
 FIO_CPU_CORES="28-55,84-111" # inc HT
 #FIO_CPU_CORES="52-55,108-111" # inc HT
 #FIO_CPU_CORES="14-27,70-83,42-55,98-111" # inc HT
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 FIO_SPEC="32fio" # 32 client/jobs
 OSD_TYPE=cyan
 ALIEN_THREADS=8 # fixed- num alien threads per CPU core
@@ -388,7 +388,7 @@ fun_run_regen_fio_files(){
     if [ "$LATENCY_TARGET" = true ]; then
         OPTS="${OPTS} -l "
     fi
-    cmd="/root/bin/gen_fio_job.sh ${OPTS} -n ${NUM_RBD_IMAGES} -d /root/bin/rbd_fio_examples" #  -p fio_test
+    cmd="/root/bin/gen_fio_job.sh ${OPTS} -n ${NUM_RBD_IMAGES} -d /root/bin/fio_workloads" #  -p fio_test
     echo "${cmd}"
     eval "${cmd}"
     rc=$? 

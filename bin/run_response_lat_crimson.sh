@@ -5,7 +5,7 @@
 # 
 # Invariant: number of CPU cores for FIO
 FIO_CPU_CORES="48-55"
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
 BLUESTORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2,/dev/nvme2n1p2,/dev/nvme6n1p2,/dev/nvme3n1p2,/dev/nvme5n1p2,/dev/nvme0n1p2,/dev/nvme4n1p2'

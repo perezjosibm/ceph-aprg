@@ -68,7 +68,7 @@ class BalancedOSDRunner:
         self.vstart_cpu_cores = "0-27,56-83"  # inc HT -- highest performance
         self.osd_cpu = self.vstart_cpu_cores  # Currently used for Classic only
         self.fio_cpu_cores = "28-55,84-111"  # inc HT
-        self.fio_jobs = "rbd_fio_examples/"
+        self.fio_jobs = "fio_workloads/"
         self.fio_spec = "32fio"  # 32 client/jobs
         self.osd_type = "cyan"
         self.alien_threads = 8  # fixed- num alien threads per CPU core
@@ -519,7 +519,7 @@ class BalancedOSDRunner:
             opts,
             "-n", str(self.num_rbd_images),
             "-p", self.vol_prefix,
-            "-d", os.path.join(self.script_dir, "rbd_fio_examples"),
+            "-d", os.path.join(self.script_dir, "fio_workloads"),
         ]
         _cmd = " ".join(cmd)
         logger.info(f"Generating FIO job files with command: {_cmd}")

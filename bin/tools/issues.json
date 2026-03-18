@@ -2,64 +2,100 @@
   "osd":
   [
     {
+      "tracker": "75521",
+      "pattern": [ "LogManager::omap_set_keys(.*Assertion `ret Transaction::get_extent_ret::PRESENT' failed.*"],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "75522",
+      "pattern": [ "PGMeta::load(.*: Assertion `big_info' failed.*"],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "75523",
+      "pattern": [ "crimson::osd::PG::on_active_actmap.*ceph_assert.*"],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "75526",
+      "pattern": [ "void pg_log_t::copy_after(.*)', ceph_assert(i->version > other.tail)"],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "75528",
+      "pattern": [ "PGMeta::get_epoch.*: Assertion `epoch' failed"],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "75533",
+      "pattern": [ "crimson::os::seastore::lba::BtreeLBAManager::reserve_region.*ceph_assert(inserted)"],
+        "description": "",
+        "status": "open"
+    },
+    {
       "tracker": "73314",
       "pattern": [ "PeeringState::Crashed::Crashed.*abort(we got a bad state machine event)"],
-	"description": "",
-	"status": "open"
+      "description": "",
+      "status": "open"
     },
     {
       "tracker": "74504",
       "pattern": [ "crimson::os::seastore::collection_manager::CollectionNode::create.*Assertion `inserted' failed..*"],
-	"description": "",
-	"status": "closed"
+      "description": "",
+      "status": "closed"
     },
     {
       "tracker": "75333",
       "pattern": [ "void SnapMapper::set_snaps.*ceph_assert.*"],
-	"description": "",
-	"status": "open"
+      "description": "",
+      "status": "open"
     },
     {
       "tracker": "71478",
       "pattern": [ "constexpr typename std::add_lvalue_reference.*Assertion 'get() != pointer()' failed.*"],
-	"description": "",
-	"status": "open"
+      "description": "",
+      "status": "open"
     },
     {
       "tracker": "74017",
       "pattern": [ "crimson::os::seastore::Cache::get_extent_viewable_by_trans.*Assertion `!extent->is_pending_io()' failed"],
-	"description": "",
-	"status": "open"
+      "description": "",
+      "status": "open"
     },
     {
       "tracker": "74982",
       "pattern": [ "crimson::os::seastore::SeaStore::Shard::_do_transaction_step.*abort(unexpected enoent error)"],
-        "description": "",
-        "status": "open"
+      "description": "",
+      "status": "open"
     },
     {
       "tracker": "73790",
       "pattern": [ "crimson::os::seastore::TransactionManager::pin_to_extent.*abort(abort() called)$"],
-        "description": "",
-        "status": "open"
+      "description": "",
+      "status": "open"
     },
     {
       "tracker": "74797",
       "pattern": [ "crimson::os::seastore::SegmentCleaner::clean_space().*abort(abort() called)$"],
-        "description": "",
-        "status": "open"
+      "description": "",
+      "status": "open"
     },
     {
       "tracker": "74798",
       "pattern": [ "crimson::os::seastore::SegmentCleaner::.*Assertion.*failed"],
-        "description": "",
-        "status": "open"
+      "description": "",
+      "status": "open"
     },
     {
       "tracker": "74801",
       "pattern": [ "TransactionManager::_remove_indirect_mapping.*ceph_assert"],
-        "description": "",
-        "status": "open"
+      "description": "",
+      "status": "open"
     },
     {
       "tracker": "70501",

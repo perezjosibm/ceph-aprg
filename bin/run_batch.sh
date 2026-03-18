@@ -2,7 +2,7 @@
 #
 cd /ceph/build/
 
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 echo "== 1 OSD 4 reactor 2 alien core manual =="
 MDS=0 MON=1 OSD=1  MGR=1 ../src/vstart.sh --new -x --localhost --without-dashboard --bluestore --redirect-output --bluestore-devs /dev/sdd,/dev/sde,/dev/sdf --crimson --crimson-smp 4 --crimson-alien-num-cores 2 --no-restart # Crimson 1osd 4 reactor manual 2 aliencore
 

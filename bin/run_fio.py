@@ -202,7 +202,7 @@ class FioRunner:
         self.run_dir = run_dir
 
         # Default values (can be overridden via CLI args or direct assignment)
-        self.fio_jobs: str = os.path.join(script_dir, "rbd_fio_examples/")
+        self.fio_jobs: str = os.path.join(script_dir, "fio_workloads/")
         self.fio_cores: str = "0-31"          # CPU cores for FIO processes
         self.fio_job_spec: str = "rbd_"       # FIO job-file prefix
         self.osd_cores: str = "0-31"          # CPU cores to monitor

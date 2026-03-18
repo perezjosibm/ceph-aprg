@@ -2,7 +2,7 @@
 #
 #Runs to collect response curves for Classic OSD
 #
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
 cd /ceph/build/
 #BLUESTORE_DEVS='/dev/sdc,/dev/sde,/dev/sdf'

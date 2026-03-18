@@ -2,7 +2,7 @@
 #
 # Runs to compare the workloads across unrest, 8,4,1 cpu cores for FIO (Two OSD)
 #
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 # ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
 cd /ceph/build/
 #BLUESTORE_DEVS='/dev/sdc,/dev/sde,/dev/sdf'

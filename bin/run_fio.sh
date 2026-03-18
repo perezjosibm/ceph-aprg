@@ -76,7 +76,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # Default values that can be changed via arg options
 # Or even betterm via test_plan.json
-FIO_JOBS=${SCRIPT_DIR}/rbd_fio_examples/
+FIO_JOBS=${SCRIPT_DIR}/fio_workloads/
 FIO_CORES="0-31" # unrestricted
 FIO_JOB_SPEC="rbd_"
 OSD_CORES="0-31" # range of CPU cores to monitor

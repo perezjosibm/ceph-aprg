@@ -9,7 +9,7 @@ NC='\033[0m' # No Color
 # Invariant: number of CPU cores for FIO
 # Might try disable HT as well: so we can have the same test running on the two cases, which means that the FIO has two cases
 FIO_CPU_CORES="48-55" # inc HT
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
 #BLUESTORE_DEVS='/dev/sdc,/dev/sde,/dev/sdf'
 BLUESTORE_DEVS='/dev/nvme9n1p2,/dev/nvme8n1p2,/dev/nvme2n1p2,/dev/nvme6n1p2,/dev/nvme3n1p2,/dev/nvme5n1p2,/dev/nvme0n1p2,/dev/nvme4n1p2'

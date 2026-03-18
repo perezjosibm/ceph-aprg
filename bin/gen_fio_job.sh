@@ -27,7 +27,7 @@ NUM_VOLUMES=32
 VOLNAME_PREFIX="fio_test"
 BLOCK_SIZE="64k" # for preconditioning
 LATENCY_TARGET=false
-OUT_DIR="${SCRIPT_DIR}/rbd_fio_examples"
+OUT_DIR="${SCRIPT_DIR}/fio_workloads"
 
 while getopts 'ln:p:d:' option; do
   case "$option" in

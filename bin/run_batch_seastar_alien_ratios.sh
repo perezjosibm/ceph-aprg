@@ -2,7 +2,7 @@
 #
 #Runs to compare the workloads across the seastar/alien core ratios -- I can't try these since using 8-15 for FIO
 # so would need to think an alternative
-FIO_JOBS=/root/bin/rbd_fio_examples/
+FIO_JOBS=/root/bin/fio_workloads/
 #4 : 28 (0-3,4-31);8 : 24 (0-7,8-31); 12 : 20 (0-11, 12-31); 16 : 16 (0-15,16-31) = alien all HT siblings
 #
 #ALAS: ALWAYS LOOK AT lsblk after reboot the machine!
