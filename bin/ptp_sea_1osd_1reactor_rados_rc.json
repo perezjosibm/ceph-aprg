@@ -1,0 +1,48 @@
+{
+  "cluster": {
+    "name": "ceph",
+    "user": "root",
+    "head": "localhost",
+    "ceph_conf": "/etc/ceph/ceph.conf",
+    "ceph_keyring": "/etc/ceph/ceph.client.admin.keyring",
+    "clients": [ "localhost" ],
+    "osds": [ "localhost" ],
+    "configurations": {
+      "sea_1osd_1reactor_rados_rc": {
+        "osd_type": "crimson",
+        "osd_backend": "seastore",
+        "balance_strategy": "default",
+        "osd_range": [ 1 ],
+        "store_devs": [ "/dev/nvme0n1" ],
+        "reactor_range": [ 1 ],
+        "vstart_cpu_set": [ "0-95" ],
+        "pool_type": "rados"
+      },
+      "blue_1osd_rados_rc": {
+        "osd_type": "crimson",
+        "osd_backend": "bluestore",
+        "osd_range": [ 1 ],
+        "store_devs": [ "/dev/nvme0n1"],
+        "vstart_cpu_set": [ "0-95" ],
+        "pool_type": "rados"
+      }
+    }
+  },
+  "benchmarks": {
+    "rados": {
+      "cmd_path": "/ceph/build/fio",
+      "fio_cpu_set": [ "97-191" ],
+      "workloads": {
+        "rados_rae-yip": {
+          "fio_name": "rados_rae-yio.fio",
+          "iodepth": [ 1, 2, 4, 8, 16, 32, 64 ],
+          "numjobs": [ 10 ],
+          "rw": "randrw",
+          "rwmixread": 70,
+          "bs": "4k",
+          "runtime": 180
+        }
+      }
+    }
+  }
+}

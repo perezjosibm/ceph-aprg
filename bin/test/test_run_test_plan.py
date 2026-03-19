@@ -19,7 +19,7 @@ import pytest
 # Add parent directory to path to import the module
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from run_balanced_osd import BalancedOSDRunner
+from run_test_plan import BalancedOSDRunner
 
 
 class TestBalancedOSDRunner(unittest.TestCase):
@@ -417,8 +417,8 @@ class TestLoadTestPlanRefactored(unittest.TestCase):
         "benchmarks": {
             "librbdfio": {
                 "cmd_path": "/usr/bin/fio",
-                "invariant": {
-                    "fio_cpu_range": ["0-7"],
+                "common": {
+                    "fio_cpu_set": ["0-7"],
                     "fio_workload": ["-w hockey"],
                     "runtime": 60,
                 },

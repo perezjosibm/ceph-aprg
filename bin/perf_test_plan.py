@@ -43,20 +43,21 @@ from typing import Dict, List, Optional, Type
 @dataclass
 class BaseClusterConfiguration:
     """Shared fields for every cluster configuration entry."""
-    osd_type: str
+    osd_type: str # classic or crimson
+    osd_backend: str # default bluestore for classic, bluestore or seastore for crimson
     osd_range: List[int]
     store_devs: List[str]
-    pool_type: str
-    num_rbd_images: int
-    rbd_image_size: str
     vstart_cpu_set: List[str]
+    pool_type: str # rados, or rdb
+    rbd_num_images: int
+    rbd_image_size: str
 
 
 @dataclass
-class SeastoreClusterConfiguration(BaseClusterConfiguration):
-    """Seastore-specific configuration (crimson OSD)."""
-    # JSON key is ``reactor_core_range``; exposed as ``reactor_range``
+class CrimsonClusterConfiguration(BaseClusterConfiguration):
+    """Crimson OSD -specific configuration."""
     reactor_range: List[int] = field(default_factory=list)
+    balance_strategy: Optional[str] = "default"
 
 
 @dataclass
@@ -70,31 +71,41 @@ class ClassicClusterConfiguration(BaseClusterConfiguration):
 # ---------------------------------------------------------------------------
 
 @dataclass
-class Workload:
-    """A single FIO workload definition."""
-    name: str
+class FioWorkload:
+    """
+    A single FIO workload definition.
+    Attributes are parameters that will be passed to FIO when running the
+    workload. The fio_name attribute is optional and can be used to specify a
+    custom name for the .fio workload when running FIO. The fio_catalog is a
+    string for arguments to the run_fio.py modules, which executes the four
+    typical workloads: randread4k, randwrite4k, seqwrite64k and seqread64k. At
+    least one must be provided.
+    """
     rw: str
     bs: str
+    runtime: int
+    iodepth: List[int]
+    numjobs: List[int]
     rwmixread: Optional[int] = None
+    fio_name: Optional[str] = None
+    fio_catalog: Optional[List[str]] = None
 
 
 @dataclass
-class LibrbdFio:
+class FioEngine:
     """
-    Librbdfio benchmark engine parameters.
-    We might extend for furthe FIO engines, like AIO, etc.
+    Librbdfio|RADOS benchmark engine parameters.
+    We might extend further for FIO engines, like AIO, etc.
     """
     cmd_path: str
-    fio_cpu_range: List[str]
-    fio_workload: List[str]
-    runtime: int
+    fio_cpu_set: List[str]
+    workloads: Dict[str, FioWorkload]
 
 
 @dataclass
 class Benchmarks:
     """All benchmark specifications for a test plan."""
-    librbdfio: LibrbdFio
-    workloads: Dict[str, Workload]
+    benchmarks: Dict[str,FioEngine]
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +145,7 @@ def factory(osd_type: str) -> Type[BaseClusterConfiguration]:
         When *osd_type* is not recognised.
     """
     mapping: Dict[str, Type[BaseClusterConfiguration]] = {
-        "seastore": SeastoreClusterConfiguration,
+        "crimson": CrimsonClusterConfiguration,
         "classic":  ClassicClusterConfiguration,
     }
     if osd_type not in mapping:
@@ -155,6 +166,10 @@ def _parse_configuration(
 ) -> BaseClusterConfiguration:
     """Parse one entry from ``cluster.configurations`` and return the
     appropriate :class:`BaseClusterConfiguration` subclass instance.
+    TODO: refactor to select the pool details (eg. rbd, rados) and pass to the
+    configuration, instead of hardcoding rbd details in the configuration. This
+    will allow us to support more pool types and decouple the pool details from
+    the cluster configuration.
     """
     osd_type = raw.get("osd_type", "")
     cls = factory(osd_type)
@@ -163,20 +178,23 @@ def _parse_configuration(
         osd_type=osd_type,
         osd_range=raw["osd_range"],
         store_devs=raw["store_devs"],
-        pool_type=raw["pool_type"],
-        num_rbd_images=raw["num_rbd_images"],
-        rbd_image_size=raw["rbd_image_size"],
         vstart_cpu_set=raw["vstart_cpu_set"],
+        pool_type=raw["pool_type"], # rbd or rados
+        rbd_num_images=raw["rbd_num_images"],
+        rbd_image_size=raw["rbd_image_size"],
     )
 
-    if cls is SeastoreClusterConfiguration:
-        return SeastoreClusterConfiguration(
+    if cls is CrimsonClusterConfiguration:
+        return CrimsonClusterConfiguration(
             **base_kwargs,
-            reactor_range=raw["reactor_core_range"],
+            reactor_range=raw["reactor_range"],
+            osd_backend=raw.get("osd_backend", "seastore"),
+            balance_strategy=raw.get("balance_strategy", "default"),
         )
     # ClassicClusterConfiguration
     return ClassicClusterConfiguration(
         **base_kwargs,
+        osd_backend=raw.get("osd_backend", "bluestore")
         #classic_cpu_set=raw.get("classic_cpu_set", []),
     )
 
@@ -199,28 +217,34 @@ def _parse_cluster(raw: dict) -> Cluster:
     )
 
 
+def _parse_fio_engines(raw: dict) -> Dict[str, FioEngine]:
+    """Parse the FIO engine definitions from the benchmarks section."""
+    engines: Dict[str, FioEngine] = {}
+    for engine_name, engine_data in raw.items():
+        workloads = {
+            wl_name: FioWorkload(
+                rw=wl_data["rw"],
+                bs=wl_data["bs"],
+                runtime=wl_data["runtime"],
+                iodepth=wl_data["iodepth"],
+                numjobs=wl_data["numjobs"],
+                rwmixread=wl_data.get("rwmixread"),
+                fio_name=wl_data.get("fio_name"),
+                fio_catalog=wl_data.get("fio_catalog"),
+            )
+            for wl_name, wl_data in engine_data.get("workloads", {}).items()
+        }
+        engines[engine_name] = FioEngine(
+            cmd_path=engine_data["cmd_path"],
+            fio_cpu_set=engine_data["fio_cpu_set"],
+            workloads=workloads,
+        )
+    return engines
+
+
 def _parse_benchmarks(raw: dict) -> Benchmarks:
     """Parse the ``benchmarks`` section of the JSON."""
-    librbdfio_raw = raw["librbdfio"]
-    invariant = librbdfio_raw.get("invariant", {})
-    librbdfio = LibrbdFio(
-        cmd_path=librbdfio_raw["cmd_path"],
-        fio_cpu_range=invariant.get("fio_cpu_range", []),
-        fio_workload=invariant.get("fio_workload", []),
-        runtime=invariant.get("runtime", 180),
-    )
-
-    workloads: Dict[str, Workload] = {
-        wl_name: Workload(
-            name=wl_data["name"],
-            rw=wl_data["rw"],
-            bs=wl_data["bs"],
-            rwmixread=wl_data.get("rwmixread"),
-        )
-        for wl_name, wl_data in raw.get("workloads", {}).items()
-    }
-
-    return Benchmarks(librbdfio=librbdfio, workloads=workloads)
+    return Benchmarks(benchmarks=_parse_fio_engines(raw))
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +276,7 @@ def validate_plan(plan: PerfTestPlan) -> None:
             raise ValueError(
                 f"Configuration '{cfg_name}': osd_range must contain integers"
             )
-        if isinstance(cfg, SeastoreClusterConfiguration):
+        if isinstance(cfg, CrimsonClusterConfiguration):
             if not cfg.reactor_range:
                 raise ValueError(
                     f"Configuration '{cfg_name}': reactor_range must not be empty"
@@ -264,8 +288,8 @@ def validate_plan(plan: PerfTestPlan) -> None:
         #elif isinstance(cfg, ClassicClusterConfiguration):
 
     # Benchmarks
-    if not plan.benchmarks.workloads:
-        raise ValueError("TestPlan.benchmarks.workloads must not be empty")
+    if not plan.benchmarks:
+        raise ValueError("TestPlan.benchmarks must not be empty")
 
 
 # ---------------------------------------------------------------------------

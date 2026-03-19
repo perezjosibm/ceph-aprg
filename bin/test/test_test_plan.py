@@ -15,14 +15,14 @@ import unittest
 # Allow importing from the parent directory
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from test_plan import (
+from perf_test_plan import (
     Benchmarks,
     BaseClusterConfiguration,
     ClassicClusterConfiguration,
     Cluster,
     LibrbdFio,
     SeastoreClusterConfiguration,
-    TestPlan,
+    PerfTestPlan,
     Workload,
     factory,
     load_test_plan,
@@ -45,7 +45,8 @@ MINIMAL_PLAN = {
         "osds": ["localhost"],
         "configurations": {
             "sea_cfg": {
-                "osd_type": "seastore",
+                "osd_type": "crimson",
+                "osd_backend": "seastore",
                 "osd_range": [1, 2],
                 "store_devs": ["/dev/nvme0n1"],
                 "reactor_core_range": [8, 16],
@@ -55,6 +56,7 @@ MINIMAL_PLAN = {
             },
             "classic_cfg": {
                 "osd_type": "classic",
+                "osd_backend": "bluestore",
                 "osd_range": [1, 2],
                 "store_devs": ["/dev/nvme0n1"],
                 "classic_cpu_set": ["0-23"],
@@ -67,19 +69,19 @@ MINIMAL_PLAN = {
     "benchmarks": {
         "librbdfio": {
             "cmd_path": "/usr/bin/fio",
-            "invariant": {
+            "common": {
                 "fio_cpu_range": ["0-7"],
                 "fio_workload": ["-w hockey"],
                 "runtime": 60,
             },
-        },
-        "workloads": {
-            "randwrite": {"name": "rw_4k", "rw": "randwrite", "bs": "4k"},
-            "randread": {
-                "name": "rr_4k",
-                "rw": "randread",
-                "bs": "4k",
-                "rwmixread": 100,
+            "workloads": {
+                "randwrite": {"name": "rw_4k", "rw": "randwrite", "bs": "4k"},
+                "randread": {
+                    "name": "rr_4k",
+                    "rw": "randread",
+                    "bs": "4k",
+                    "rwmixread": 100,
+                },
             },
         },
     },

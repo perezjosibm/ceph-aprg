@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 Translated from run_balanced_osd.sh
-Run test plans to compare Classic vs Crimson OSD with balanced vs default CPU core/reactor distribution.
+Run performance test plans to compare Classic vs Crimson OSD with balanced vs default CPU core/reactor distribution.
 
-Usage: ./run_balanced_osd.py [-t <osd-be-type>] [-d rundir] [-b balance_strategy]
+Usage: ./run_test_plan.py [-t <test-plan>] [-d rundir]
 
 -d : indicate the run directory cd to
 -t : OSD backend type: classic, cyan, blue, sea. Runs all the balanced vs default CPU core/reactor

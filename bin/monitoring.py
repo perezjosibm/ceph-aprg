@@ -29,6 +29,10 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Consider a better way of setting the top filter
 TOP_FILTER = "cores"
+# Global options: number of samples in terms of delay between samples and runtimne
+RUNTIME = 60 #NUM_SAMPLES * DELAY_SAMPLES
+DELAY_SAMPLES = 5 # each 5 secs
+NUM_SAMPLES = RUNTIME / DELAY_SAMPLES #12 #30
 
 # TBC: select which perf options to use via test_plan.json
 PERF_OPTIONS = {
@@ -97,7 +101,7 @@ def mon_measure(
     test_out: str,
     test_top_out_list: str,
     num_samples: int = 30,
-    delay_samples: int = 1,
+    delay_samples: int = 5,
 ) -> None:
     """Record CPU and thread utilization with top.
 

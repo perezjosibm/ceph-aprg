@@ -9,17 +9,20 @@
     "osds": [ "localhost" ],
     "configurations": {
       "sea_1osd_1reactor_1x400GB_rc": {
-        "osd_type": "seastore",
+        "osd_type": "crimson",
+        "osd_backend": "seastore",
+        "balance_strategy": "default",
         "osd_range": [ 1 ],
         "store_devs": [ "/dev/nvme0n1" ],
         "reactor_core_range": [ 1 ],
         "vstart_cpu_set": [ "0-95" ],
         "pool_type": "rbd",
-        "num_rbd_images": 1,
+        "rbd_num_images": 1,
         "rbd_image_size": "400GB"
       },
-      "classic_1-8osd_4x400GB_rc": {
+      "classic_1osd_4x400GB_rc": {
         "osd_type": "classic",
+        "osd_backend": "bluestore",
         "osd_range": [ 1 ],
         "store_devs": [ "/dev/nvme0n1"],
         "vstart_cpu_set": [ "0-95" ],
