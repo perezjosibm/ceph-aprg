@@ -35,39 +35,37 @@
   "benchmarks": {
     "librbdfio": {
       "cmd_path": "/ceph/build/fio",
-      "invariant": {
-        "fio_cpu_range": [ "97-191" ],
-        "fio_workload": [ "-j -w hockey -r -a -m" ],
-        "runtime": 180
-      }
-    },
-    "workloads": {
-      "precondition": {
-        "name": "randrw_70_4k",
-        "rw": "randrw",
-        "rwmixread": 70,
-        "bs": "4k"
-      },
-      "randwrite": {
-        "name": "randrw_70_4k",
-        "rw": "randrw",
-        "rwmixread": 70,
-        "bs": "4k"
-      },
-      "randread": {
-        "name": "randrd_70_4k",
-        "rw": "randread",
-        "bs": "4k"
-      },
-      "seqwrite": {
-        "name": "randrw_70_64k",
-        "rw": "write",
-        "bs": "64k"
-      },
-      "seqread": {
-        "name": "read_64k",
-        "rw": "read",
-        "bs": "64k"
+      "fio_cpu_range": [ "97-191" ],
+      "workloads": {
+        "precondition": {
+          "fio_catalog": [ "-j -w hockey -r -a -m" ],
+          "name": "randrw_70_4k",
+          "rw": "randrw",
+          "rwmixread": 70,
+          "bs": "4k",
+          "runtime": 180
+        },
+        "randwrite": {
+          "name": "randrw_70_4k",
+          "rw": "randrw",
+          "rwmixread": 70,
+          "bs": "4k"
+        },
+        "randread": {
+          "name": "randrd_70_4k",
+          "rw": "randread",
+          "bs": "4k"
+        },
+        "seqwrite": {
+          "name": "randrw_70_64k",
+          "rw": "write",
+          "bs": "64k"
+        },
+        "seqread": {
+          "name": "read_64k",
+          "rw": "read",
+          "bs": "64k"
+        }
       }
     }
   }

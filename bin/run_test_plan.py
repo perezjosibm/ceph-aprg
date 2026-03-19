@@ -6,10 +6,7 @@ Run performance test plans to compare Classic vs Crimson OSD with balanced vs de
 Usage: ./run_test_plan.py [-t <test-plan>] [-d rundir]
 
 -d : indicate the run directory cd to
--t : OSD backend type: classic, cyan, blue, sea. Runs all the balanced vs default CPU core/reactor
-     distribution tests for the given OSD backend type, 'all' for the three of them.
--b : Run a single balanced CPU core/reactor distribution tests for all the OSD backend types
-
+-t : test plan describing the cluster configurations to try, and the banchmark details
 """
 
 import argparse
@@ -28,7 +25,7 @@ from typing import Dict, List, Optional
 
 from perf_test_plan import (
     ClassicClusterConfiguration,
-    SeastoreClusterConfiguration,
+    CrimsonClusterConfiguration,
     PerfTestPlan,
     load_test_plan as _load_test_plan,
 )
@@ -43,7 +40,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ANSI color codes
+# ANSI color codes: move them to common
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"
 NC = "\033[0m"  # No Color
@@ -58,8 +55,8 @@ class BalancedOSDRunner:
     """Main class for running balanced OSD tests"""
 
     def __init__(self, script_dir: str):
-        """Initialize the runner with default configuration"""
-        self.script_dir = script_dir
+        """
+        Initialize the runner with default configuration
 
         # Default values for the test plan
         self.cache_alg = "LRU"  # LRU or 2Q
@@ -76,7 +73,6 @@ class BalancedOSDRunner:
         self.num_cpu_sockets = 2  # Hardcoded since NUMA has two sockets
         self.max_num_phys_cpus_per_socket = 24
         self.max_num_ht_cpus_per_socket = 52
-        self.numa_nodes_out = "/tmp/numa_nodes.json"
 
         # Globals
         self.latency_target = False
@@ -85,12 +81,21 @@ class BalancedOSDRunner:
         self.watchdog_enabled = False
         self.vol_prefix = "fio_rbd_vol" # Might need to pass to FioRunner as well
         # Need to load the plan from a .json instead of sourcing a .sh
+        self.num_cpus: Dict[str, int] = {
+            "enable_ht": self.max_num_ht_cpus_per_socket,
+            "disable_ht": self.max_num_phys_cpus_per_socket,
+        }
+
+        """
+        self.script_dir = script_dir
         self.test_plan = os.path.join(script_dir, "tp_cmp_classic_seastore.json")
+        self.test_plan_data: PerfTestPlan #= PerfTestPlan()  # will be loaded from JSON
         self.skip_exec = False
         self.regen = True  # always regenerate the .fio jobs by default
         self.fio_pid = 0
         self.pid_watchdog = 0
 
+        self.numa_nodes_out = "/tmp/numa_nodes.json"
         # FioRunner instance and its execution thread (set by run_fio())
         self._fio_runner: Optional[FioRunner] = None
         self._fio_thread: Optional[threading.Thread] = None
@@ -98,10 +103,6 @@ class BalancedOSDRunner:
         # Associative arrays: we might deprecate these
         self.test_table: Dict[str, str] = {}
         self.test_row: Dict[str, str] = {}
-        self.num_cpus: Dict[str, int] = {
-            "enable_ht": self.max_num_ht_cpus_per_socket,
-            "disable_ht": self.max_num_phys_cpus_per_socket,
-        }
         self.osd_id: Dict[str, Dict] = {}
 
         # CPU allocation strategies
@@ -123,24 +124,19 @@ class BalancedOSDRunner:
         # Default options
         self.balance = "all"
         self.store_devs = ""
-        self.num_rbd_images = 1
+        self.rbd_num_images = 1
         self.rbd_size = "400gb"
-        self.test_plan_data = {}
         self.test_name = ""
+
 
     def log_color(self, message: str, color: str = GREEN):
         """Log a message with color"""
         logger.info(f"{color}{message}{NC}")
 
     def load_test_plan(self, test_plan_path: Optional[str] = None):
-        """Load test plan configuration from JSON file using the test_plan module."""
-        test_plan_path = (
-            os.path.join(self.script_dir, "test_plan.json")
-            if test_plan_path is None
-            else test_plan_path
-        )
-        if os.path.exists(test_plan_path):
-            plan: PerfTestPlan = _load_test_plan(test_plan_path)
+        """
+            Load test plan configuration from JSON file using the test_plan module.
+
             # Iterate cluster configurations and set runner state based on
             # the requested osd_type.  CLI value "sea" maps to JSON value
             # "seastore"; "all" iterates every configuration.
@@ -156,10 +152,10 @@ class BalancedOSDRunner:
                 # Common fields: we might simplify remove self fields and use the config directly in the test execution
                 self.store_devs = ",".join(cfg.store_devs)
                 self.osd_range = " ".join(map(str, cfg.osd_range))
-                self.num_rbd_images = cfg.num_rbd_images
+                self.rbd_num_images = cfg.rbd_num_images
                 self.rbd_size = cfg.rbd_image_size
                 # Type-specific fields
-                if isinstance(cfg, SeastoreClusterConfiguration):
+                if isinstance(cfg, CrimsonClusterConfiguration):
                     self.reactor_range = " ".join(map(str, cfg.reactor_range))
                 # elif isinstance(cfg, ClassicClusterConfiguration):
                 #     if cfg.classic_cpu_set:
@@ -168,45 +164,18 @@ class BalancedOSDRunner:
                 # all of them
                 self.osd_cpu = cfg.vstart_cpu_set[0]
 
-            # Expose the full plan for advanced consumers
-            self.test_plan_data = plan
+        """
+        test_plan_path = (
+            os.path.join(self.script_dir, "test_plan.json")
+            if test_plan_path is None
+            else test_plan_path
+        )
+        if os.path.exists(test_plan_path):
+            self.test_plan_data : PerfTestPlan = _load_test_plan(test_plan_path)
         else:
             logger.warning(
                 f"{RED}== Test plan file {test_plan_path} not found, using defaults =={NC}"
             )
-
-    def save_test_plan(self):
-        """Save test plan configuration to JSON file
-        Simply serialise the object as JSON -- TBC"""
-        test_plan_data = {
-            "VSTART_CPU_CORES": self.vstart_cpu_cores,
-            "OSD_CPU": self.osd_cpu,
-            "FIO_CPU_CORES": self.fio_cpu_cores,
-            "FIO_JOBS": self.fio_jobs,
-            "FIO_SPEC": self.fio_spec,
-            "OSD_TYPE": self.osd_type,
-            "STORE_DEVS": self.store_devs,
-            "NUM_RBD_IMAGES": self.num_rbd_images,
-            "RBD_SIZE": self.rbd_size,
-            "OSD_RANGE": self.osd_range,
-            "REACTOR_RANGE": self.reactor_range,
-            "CACHE_ALG": self.cache_alg,
-            "TEST_PLAN": self.test_plan,
-        }
-
-        self.log_color(f"== Saving test plan to {self.run_dir}/test_plan.json ==")
-
-        # Save test table
-        test_table_path = os.path.join(self.run_dir, "test_table.json")
-        with open(test_table_path, "w") as f:
-            json.dump(self.test_table, f, indent=2)
-
-        # Save test plan
-        test_plan_path = os.path.join(self.run_dir, "test_plan.json")
-        with open(test_plan_path, "w") as f:
-            json.dump(test_plan_data, f, indent=2)
-
-        self.log_color(f"== Test plan saved to {test_plan_path} ==")
 
     def set_osd_pids(self, test_prefix: str) -> Optional[str]:
         """
@@ -539,6 +508,60 @@ class BalancedOSDRunner:
                 f"{RED}== Error generating FIO job files in {self.fio_jobs} =={NC}"
             )
 
+    # For both cases (Classic and Seastore) we willuse up to number of OSD for storage devices (slice)
+    def run_crimson_config(self, cfg, num_osd):
+        """
+        Run Crimson tests for a given configuration and number of OSDs,
+        iterating over the specified number of reactors.  The test name is
+        constructed based on the parameters for logging and result organization
+        purposes.
+        """
+        for num_reactors in cfg.reactor_range:
+            store_devs = cfg.store_devs[:num_osd]
+            osd_type = cfg.osd_type
+            bal_key = cfg.balance_strategy
+            logger.info(
+                f"{GREEN}== Running {cfg.osd_backend} test: {num_osd} OSD, {osd_type}, {bal_key}, {num_reactors} reactors =={NC}"
+            )
+            title = f"({osd_type}) {num_osd} OSD crimson, {num_reactors} reactor"
+            cmd = (
+                f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{cfg.vstart_cpu_set}' "
+                f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
+                f"--redirect-output {self.osd_be_table[osd_type]} "
+                f"--seastore-devs {','.join(store_devs)} "
+                f"--crimson {self.bal_ops_table[bal_key]} --crimson-smp {num_reactors} --no-restart"
+            )
+            # TODO: method that constructs the test name based on the parameters
+            test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{bal_key}"
+            #test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{self.fio_spec}_{bal_key}_{suffix}"
+
+            if cfg.osd_backend == "bluestore":
+                num_alien_threads = 4 * int(num_osd) * num_reactors
+                title += f" alien_num_threads={num_alien_threads}"
+                cmd += f" --crimson-alien-num-threads {num_alien_threads}"
+                test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{num_alien_threads}at_{bal_key}"
+                #test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{num_alien_threads}at_{self.fio_spec}_{bal_key}_{suffix}"
+            self.test_name = test_name
+            _run_body(cfg, title, test_name, cmd)
+
+
+        def _run_classic(cfg, num_osd, osd_type, bal_key, suffix):
+            logger.info(
+                f"{GREEN}== Running Classic test: {num_osd} OSD, {osd_type}, {bal_key}, {suffix} =={NC}"
+            )
+            title = f"({osd_type}) {num_osd} OSD classic, fixed {self.fio_spec}"
+            # Slice cfg.store_devs to use up to num_osd devices
+            store_devs = cfg.store_devs[:num_osd]
+            cmd = (
+                f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.osd_cpu}' "
+                f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
+                f"--redirect-output {self.osd_be_table['blue']} {','.join(store_devs)} --no-restart"
+            )
+            test_name = f"{osd_type}_{num_osd}osd_{self.fio_spec}_{suffix}"
+            self.test_name = test_name
+            _run_body(cfg, title, test_name, cmd)
+
+
     def run_fixed_bal_tests(self, bal_key: str, osd_type: str):
         """
         Run balanced vs default CPU core/reactor distribution tests
@@ -635,60 +658,17 @@ class BalancedOSDRunner:
             time.sleep(30)
             return True
 
-        # For both cases (Classic and Seastore) we willuse up to number of OSD for storage devices (slice)
-        def _run_seastore(cfg, num_osd, osd_type, bal_key, suffix):
-            for num_reactors in cfg.reactor_range:
-                logger.info(
-                    f"{GREEN}== Running Seastore test: {num_osd} OSD, {osd_type}, {bal_key}, {suffix}, {num_reactors} reactors =={NC}"
-                )
-                title = f"({osd_type}) {num_osd} OSD crimson, {num_reactors} reactor, fixed {self.fio_spec}"
-                store_devs = cfg.store_devs[:num_osd]
-                cmd = (
-                    f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.osd_cpu}' "
-                    f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
-                    f"--redirect-output {self.osd_be_table[osd_type]} "
-                    f"--seastore-devs {','.join(store_devs)} "
-                    f"--crimson {self.bal_ops_table[bal_key]} --crimson-smp {num_reactors} --no-restart"
-                )
-                # TODO: method that constructs the test name based on the parameters
-                test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{self.fio_spec}_{bal_key}_{suffix}"
-
-                if osd_type == "blue":
-                    num_alien_threads = 4 * int(num_osd) * num_reactors
-                    title += f" alien_num_threads={num_alien_threads}"
-                    cmd += f" --crimson-alien-num-threads {num_alien_threads}"
-                    test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{num_alien_threads}at_{self.fio_spec}_{bal_key}_{suffix}"
-                self.test_name = test_name
-                _run_body(cfg, title, test_name, cmd)
-
-
-        def _run_classic(cfg, num_osd, osd_type, bal_key, suffix):
-            logger.info(
-                f"{GREEN}== Running Classic test: {num_osd} OSD, {osd_type}, {bal_key}, {suffix} =={NC}"
-            )
-            title = f"({osd_type}) {num_osd} OSD classic, fixed {self.fio_spec}"
-            # Slice cfg.store_devs to use up to num_osd devices
-            store_devs = cfg.store_devs[:num_osd]
-            cmd = (
-                f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.osd_cpu}' "
-                f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
-                f"--redirect-output {self.osd_be_table['blue']} {','.join(store_devs)} --no-restart"
-            )
-            test_name = f"{osd_type}_{num_osd}osd_{self.fio_spec}_{suffix}"
-            self.test_name = test_name
-            _run_body(cfg, title, test_name, cmd)
-
-
         logger.info(f"{GREEN}== OSD type: {osd_type} =={NC}")
         suffix = "lt" if self.latency_target else "rc"
         # Sort keys
         # sorted_keys = sorted(
         #     self.test_table.keys(), key=lambda x: int(x) if x.isdigit() else 0
         # )
+
         for cfg_name, cfg in self.test_plan_data.cluster.configurations.items():
             for num_osd in cfg.osd_range:
                 logger.info(f"{GREEN}== {cfg_name} =={NC}")
-                if isinstance(cfg, SeastoreClusterConfiguration):
+                if isinstance(cfg, CrimsonClusterConfiguration):
                     _run_seastore(cfg, num_osd, osd_type, bal_key, suffix)
                 elif isinstance(cfg, ClassicClusterConfiguration):
                     _run_classic(cfg, num_osd, osd_type, bal_key, suffix)
@@ -709,22 +689,16 @@ class BalancedOSDRunner:
     def signal_handler(self, signum, frame):
         """Handle interrupt signals"""
         logger.info(
-            f"{time.strftime('%Y-%m-%d %H:%M:%S')} == INT received, exiting... =="
+            f"{time.strftime('%Y-%m-%d %H:%M:%S')} == INT:{signum} received, frame:{frame} exiting... =="
         )
         self.stop_cluster(self.fio_pid)
         sys.exit(1)
 
     def run(self, args):
-        """Main entry point"""
-        # Set up signal handlers
-        signal.signal(signal.SIGINT, self.signal_handler)
-        signal.signal(signal.SIGTERM, self.signal_handler)
-        signal.signal(signal.SIGHUP, self.signal_handler)
-
-        # Parse arguments: we might use the perf_test_plan JSON for these instead
-        self.osd_type = args.osd_type
-        self.balance = args.balance
-        self.run_dir = args.run_dir
+        """
+        Main entry point for running the test plan.  Parses arguments, loads
+        the test plan, and executes the tests according to the specified
+        configuration.
 
         if args.osd_cpu:
             self.osd_cpu = args.osd_cpu
@@ -745,8 +719,14 @@ class BalancedOSDRunner:
                 )
                 sys.exit(1)
             self.cache_alg = args.cache_alg
+        """
+        # Set up signal handlers
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+        signal.signal(signal.SIGHUP, self.signal_handler)
 
-        logger.info(f"{GREEN}== OSD_TYPE {self.osd_type} BALANCE {self.balance} =={NC}")
+        self.run_dir = args.run_dir
+        #logger.info(f"{GREEN}== OSD_TYPE {self.osd_type} BALANCE {self.balance} =={NC}")
 
         if args.test_plan and os.path.exists(
             os.path.join(self.script_dir, args.test_plan)
@@ -760,43 +740,56 @@ class BalancedOSDRunner:
         os.makedirs(self.run_dir, exist_ok=True)
         #os.chdir(self.run_dir)
 
-        # Save test plan
-        # self.save_test_plan()
-
         # Change to build directory: this is needed by vstart (due to local dependencies)
         os.chdir("/ceph/build/")
 
-        # Regenerate FIO files if needed
-        if self.regen:
-            self.run_regen_fio_files()
+        for cfg_name, cfg in self.test_plan_data.cluster.configurations.items():
+            logger.info(
+                f"Processing cluster configuration: {cfg_name} (OSD type: {cfg.osd_type})"
+            )
+            for num_osd in cfg.osd_range:
+                logger.info(f"{GREEN}== {cfg_name} =={NC}")
+                if isinstance(cfg.osd_type, CrimsonClusterConfiguration):
+                    self.run_crimson_config(cfg, num_osd)
+                elif isinstance(cfg.osd_type, ClassicClusterConfiguration):
+                    self.run_classic_config(cfg, num_osd)
+            # Compress log for this configuration
+            test_run_log = os.path.join(self.run_dir, f"{self.test_name}_test_run.log")
+            subprocess.run(["gzip", "-9fq", test_run_log])
 
-        # Run preconditioning if needed
-        if self.precond:
-            self.run_precond("precond")
 
+        # Regenerate FIO files if needed - we might want to move this to the
+        # test plan loading phase, or have a separate method that prepares the
+        # environment based on the test plan configuration, which can include
+        # regenerating FIO files, creating RBD images, etc.
+        # if self.regen:
+        #     self.run_regen_fio_files()
+        #
+        # # Run preconditioning if needed
+        # if self.precond:
+        #     self.run_precond("precond")
+        #
         # Run tests: cluster config in terms of osd_type, we can run all
         # balance strategies for a given osd_type, or a single balance strategy
         # for all osd_types, which are ignored for Classic, we can be defined
         # in the test plan or passed as arguments
-        if self.osd_type == "all":
-            for osd_type in ["classic", "sea"]:  # cyan, blue
-                self.run_bal_vs_default_tests(osd_type, self.balance)
-        else:
-            logger.info(
-                f"{GREEN}==fun_run_bal_vs_default_tests: OSD_TYPE {self.osd_type} BALANCE {self.balance} =={NC}"
-            )
-            self.run_bal_vs_default_tests(self.osd_type, self.balance)
-
+        # if self.osd_type == "all":
+        #     for osd_type in ["classic", "sea"]:  # cyan, blue
+        #         self.run_bal_vs_default_tests(osd_type, self.balance)
+        # else:
+        #     logger.info(
+        #         f"{GREEN}==fun_run_bal_vs_default_tests: OSD_TYPE {self.osd_type} BALANCE {self.balance} =={NC}"
+        #     )
+        #     self.run_bal_vs_default_tests(self.osd_type, self.balance)
 
 def main():
-    """Main entry point"""
-    parser = argparse.ArgumentParser(
-        description="Run test plans to compare Classic vs Crimson OSD",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+    """Main entry point
+    Parses command-line arguments and runs the test plan accordingly
+    Options have been moved as attributes of the PerfTestPlan:
+    OSD backend type: classic, cyan, blue, sea. Runs all the balanced vs default CPU core/reactor
+     distribution tests for the given OSD backend type, 'all' for the three of them.
+    -b : Run a single balanced CPU core/reactor distribution tests for all the OSD backend types
 
-    parser.add_argument(
-        "-t",
         "--osd-type",
         default="cyan",
         help="OSD backend type: classic, cyan, blue, sea, all",
@@ -807,7 +800,6 @@ def main():
         default="all",
         help="Balance strategy: default, bal_osd, bal_socket, all",
     )
-    parser.add_argument("-d", "--run-dir", default="/tmp", help="Run directory")
     parser.add_argument("-c", "--osd-cpu", help="CPU cores for OSD (Classic only)")
     parser.add_argument("-e", "--test-plan", help="Test plan script to load")
     parser.add_argument(
@@ -827,13 +819,6 @@ def main():
     )
     parser.add_argument("-z", "--cache-alg", help="Cache algorithm: LRU or 2Q")
     parser.add_argument("-r", "--run_fio", help="Run FIO with given test name")
-    parser.add_argument("-s", "--show-grid", help="Show grid for given test name")
-
-    args = parser.parse_args()
-
-    # Get script directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-
     # Handle special actions
     if args.run_fio:
         runner = BalancedOSDRunner(script_dir)
@@ -841,6 +826,27 @@ def main():
         # test name, or we can pass a default one as an argument -- disabled atm
         runner.run_fio(args.run_fio)
         return
+
+    """
+    parser = argparse.ArgumentParser(
+        description="Run test plans to compare Classic vs Crimson OSD",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+
+    parser.add_argument(
+        "-t",
+        "--test_plan",
+        default="", # TODO: define a default .json test plan file
+        help="Performance test plan",
+    )
+    parser.add_argument("-d", "--run-dir", default="/tmp", help="Run directory")
+    parser.add_argument("-s", "--show-grid", action="store_true",default=False,
+                        help="Show grid for given test name")
+
+    args = parser.parse_args()
+
+    # Get script directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
     if args.show_grid:
         runner = BalancedOSDRunner(script_dir)
