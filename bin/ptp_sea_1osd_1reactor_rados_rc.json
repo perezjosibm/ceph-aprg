@@ -16,7 +16,8 @@
         "store_devs": [ "/dev/nvme0n1" ],
         "reactor_range": [ 1 ],
         "vstart_cpu_set": [ "0-95" ],
-        "pool_type": "rados"
+        "pool_name": "rados",
+        "pool_size": "128"
       },
       "blue_1osd_rados_rc": {
         "osd_type": "crimson",
@@ -24,7 +25,8 @@
         "osd_range": [ 1 ],
         "store_devs": [ "/dev/nvme0n1"],
         "vstart_cpu_set": [ "0-95" ],
-        "pool_type": "rados"
+        "pool_size": "128",
+        "pool_name": "rados"
       }
     }
   },
@@ -40,7 +42,7 @@
           "rw": "randrw",
           "rwmixread": 70,
           "bs": "4k",
-          "runtime": 180
+          "runtime": 60
         }
       }
     }

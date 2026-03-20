@@ -4,6 +4,12 @@ Python translation of run_fio.sh
 FIO driver for Ceph – orchestrates I/O performance testing of a Ceph cluster
 with configurable workloads.
 
+Originally designed to run catalog/predefined traditional workloads (randread,
+randwrite, seqread, seqwrite) with a range of iodepth and numjobs values, but
+has been extended to support custom workloads (based on FIO job files) and
+additional features (e.g. latency-targeted runs, response-curve runs, OSD
+metrics dump with perf or ceph tell, FlameGraphs, memory profiles).
+
 Usage: ./run_fio.py [-a] [-c <osd-cpu-cores>] [-k] [-j] [-d rundir]
           -w {workload} [-n] -p <test_prefix>, e.g. "4cores_8img_16io_2job_8proc"
 
@@ -36,7 +42,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Any, Optional
 
 import monitoring
 
@@ -176,6 +182,54 @@ PACK_DIR = "/packages/"
 # ---------------------------------------------------------------------------
 # FioRunner class
 # ---------------------------------------------------------------------------
+class FioRunnerCustom:
+    """Custom FIO runner for specific workloads (e.g. rados_rae-yip.fio)."""
+
+    def __init__(self, ctx: Dict[str, Any]) -> None:
+        for key, value in ctx.items():
+            setattr(self, key, value)
+        # Additional initialization as needed for custom workloads
+
+    def run(self) -> int:
+        # Implement custom logic for running the workload: will return the pid
+        # of the FIO process launched, and the caller will monitor it with the
+        # watchdog
+        logger.info(f"Running custom FIO workload with context: {self.__dict__}")
+
+        pool_name = getattr(
+            self, "cfg"
+        ).pool_type  # self.cfg.pool_type, #f"fio_test_{i}",
+        iodepth = getattr(self, "cfg").iodepth  # str(self.iodepth)
+        numjobs = getattr(self, "numjobs")  # str(self.num_jobs)
+        runtime = getattr(self, "runtime")  # str(self.runtime)
+        env = os.environ.copy()
+        env.update(
+            {
+                # "LOG_NAME": log_name,
+                "pool_name": pool_name,
+                "iodepth": str(iodepth),
+                "num_jobs": str(numjobs if numjobs else 1),
+                "runtime": str(runtime),
+            }
+        )
+
+        # FIO benchmark runs as a separate process: we might use a separate folder, so the fio-plot would be easier to run
+        fio_json = os.path.join(self.run_dir, f"fio_{self.test_name}.json")
+        fio_err = os.path.join(self.run_dir, f"fio_{self.test_name}.err")
+        cmd = [
+            "taskset",
+            "-ac",
+            self.benchmark.fio_cpu_set,
+            self.benchmark.cmd_path,
+            os.path.join(self.script_dir, self.workload.fio_name),
+            # "fio", fio_name,
+            f"--output={fio_json}",
+            "--output-format=json",
+        ]
+        with open(fio_err, "w") as err_f:
+            proc = subprocess.Popen(cmd, env=env, stderr=err_f)
+
+        return proc.pid
 
 
 class FioRunner:
@@ -203,14 +257,14 @@ class FioRunner:
 
         # Default values (can be overridden via CLI args or direct assignment)
         self.fio_jobs: str = os.path.join(script_dir, "fio_workloads/")
-        self.fio_cores: str = "0-31"          # CPU cores for FIO processes
-        self.fio_job_spec: str = "rbd_"       # FIO job-file prefix
-        self.osd_cores: str = "0-31"          # CPU cores to monitor
-        self.num_procs: int = 8               # number of FIO processes
+        self.fio_cores: str = "0-31"  # CPU cores for FIO processes
+        self.fio_job_spec: str = "rbd_"  # FIO job-file prefix
+        self.osd_cores: str = "0-31"  # CPU cores to monitor
+        self.num_procs: int = 8  # number of FIO processes
         self.test_prefix: str = "4cores_8img"
         self.run_dir: str = "/tmp"
         self.log_name: str = "/tmp/fio_test.log"
-        self.workload: Optional[str] = None   # workload shorthand (e.g. "rw")
+        self.workload: Optional[str] = None  # workload shorthand (e.g. "rw")
         self.vol_prefix = "fio_rbd_vol"
 
         # Feature flags
@@ -227,11 +281,11 @@ class FioRunner:
         self.with_mem_profile: bool = False
 
         # Tunable parameters
-        self.max_latency: int = 20          # ms; threshold for RC heuristic
+        self.max_latency: int = 20  # ms; threshold for RC heuristic
         self.num_attempts: int = 3
-        self.runtime: int = 60              # seconds; overridden from test plan
-        self.num_samples: int = 30          # for top measurements
-        self.delay_samples: int = 1         # seconds between top samples
+        self.runtime: int = 60  # seconds; overridden from test plan
+        self.num_samples: int = 30  # for top measurements
+        self.delay_samples: int = 1  # seconds between top samples
 
         # Runtime state (populated by set_globals / run_workload)
         self.osd_id: Dict[str, int] = {}
@@ -256,6 +310,7 @@ class FioRunner:
 
     # ------------------------------------------------------------------
     # OSD dump helpers
+    # would deprecate these in favour of using monitoring methods
     # ------------------------------------------------------------------
 
     def osd_dump_start(self, outfile: str) -> None:
@@ -372,9 +427,7 @@ class FioRunner:
         end: str = "",
     ) -> None:
         """Collect OSD perf dump / metrics dump (no metrics filter)."""
-        self.osd_dump_generic(
-            test_name, num_samples, sleep_secs, outfile, "none", end
-        )
+        self.osd_dump_generic(test_name, num_samples, sleep_secs, outfile, "none", end)
 
     def osd_dump_metrics(
         self,
@@ -406,9 +459,7 @@ class FioRunner:
             logger.warning("crimson-osd not found; skipping mem profile")
             return
         ts = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        gdb_cmd = (
-            f"gdb -p {osd_pid} --batch -d {self.script_dir}/tools -x run_scylla"
-        )
+        gdb_cmd = f"gdb -p {osd_pid} --batch -d {self.script_dir}/tools -x run_scylla"
         with open(outfile, "a") as f:
             f.write(f'{{ "timestamp": "{ts}" ,\n')
             f.write(' "mem_profile": \n')
@@ -428,8 +479,7 @@ class FioRunner:
             data_str = result.stdout.strip() or "null"
 
         entry = (
-            f'{{ "timestamp": "{ts}", "label": "{test_name}",'
-            f' "data": {data_str} }}\n'
+            f'{{ "timestamp": "{ts}", "label": "{test_name}", "data": {data_str} }}\n'
         )
         with open(outfile, "a") as f:
             f.write(entry)
@@ -538,9 +588,7 @@ class FioRunner:
         run_balanced_osd.py that uses ``pidof``; but for now we want to
         maintain the same PID discovery method as run_fio.sh.
         """
-        result = subprocess.run(
-            ["pgrep", "-c", "osd"], capture_output=True, text=True
-        )
+        result = subprocess.run(["pgrep", "-c", "osd"], capture_output=True, text=True)
         try:
             num_osd = int(result.stdout.strip())
         except ValueError:
@@ -559,7 +607,8 @@ class FioRunner:
                 )
                 ps_result = subprocess.run(
                     ["ps", "-p", pid, "-L", "-o", "pid,tid,comm,psr", "--no-headers"],
-                    capture_output=True, text=True,
+                    capture_output=True,
+                    text=True,
                 )
                 taskset_result = subprocess.run(
                     ["taskset", "-acp", pid], capture_output=True, text=True
@@ -615,9 +664,7 @@ class FioRunner:
             )
             return
 
-        logger.error(
-            f"== Watchdog: Process {proc_name} (pid: {proc_pid}) FAILED! =="
-        )
+        logger.error(f"== Watchdog: Process {proc_name} (pid: {proc_pid}) FAILED! ==")
         self.kill_all_fio()
         self.tidyup(self.test_result)
         sys.exit(1)
@@ -684,7 +731,7 @@ class FioRunner:
             env.update(
                 {
                     "LOG_NAME": log_name,
-                    "RBD_NAME": self.vol_prefix, #f"fio_test_{i}",
+                    "RBD_NAME": self.vol_prefix,  # f"fio_test_{i}",
                     "IO_DEPTH": str(io),
                     "NUM_JOBS": str(job),
                     "RUNTIME": str(self.runtime),
@@ -692,15 +739,14 @@ class FioRunner:
             )
 
             # FIO benchmark runs as a separate process: we might use a separate folder, so the fio-plot would be easier to run
-            fio_json = os.path.join(
-                self.run_dir, f"fio_{test_name}.json"
-            )
-            fio_err = os.path.join(
-                self.run_dir, f"fio_{test_name}.err"
-            )
+            fio_json = os.path.join(self.run_dir, f"fio_{test_name}.json")
+            fio_err = os.path.join(self.run_dir, f"fio_{test_name}.err")
             cmd = [
-                "taskset", "-ac", self.fio_cores,
-                "fio", fio_name,
+                "taskset",
+                "-ac",
+                self.fio_cores,
+                "fio",
+                fio_name,
                 f"--output={fio_json}",
                 "--output-format=json",
             ]
@@ -780,9 +826,7 @@ class FioRunner:
                     args=(self.test_name, self.test_result),
                     daemon=True,
                 ).start()
-            self.get_diskstats(
-                self.test_name, f"{self.test_result}_diskstats.json"
-            )
+            self.get_diskstats(self.test_name, f"{self.test_result}_diskstats.json")
 
         # Wait for the last FIO process
         last_pid = fio_pids[-1]
@@ -798,32 +842,37 @@ class FioRunner:
         result = subprocess.run(
             f"jc --pretty /proc/diskstats"
             f" | python3 {self.script_dir}/diskstat_diff.py -a {self.disk_stat}",
-            shell=True, capture_output=True, text=True,
+            shell=True,
+            capture_output=True,
+            text=True,
         )
         with open(self.disk_out, "a") as f:
             f.write(result.stdout)
 
         # Filter stray FIO error lines from the JSON output
-        fio_json = os.path.join(
-            self.run_dir, f"fio_{self.test_name}.json"
-        )
+        fio_json = os.path.join(self.run_dir, f"fio_{self.test_name}.json")
         if os.path.exists(fio_json):
-            subprocess.run(["sed", "-i", "/^fio: .*/d", fio_json], shell=True, capture_output=True, text=True)
+            subprocess.run(
+                ["sed", "-i", "/^fio: .*/d", fio_json],
+                shell=True,
+                capture_output=True,
+                text=True,
+            )
 
         # Response-curve latency heuristic
         if self.response_curve and not self.rc_skip_heuristic:
             mop = WORKLOAD_MODE.get(workload, "write")
             result = subprocess.run(
-                f"jq '.jobs | .[] | .{mop}.clat_ns.mean/1000000'"
-                f" {fio_json}",
-                shell=True, capture_output=True, text=True,
+                f"jq '.jobs | .[] | .{mop}.clat_ns.mean/1000000' {fio_json}",
+                shell=True,
+                capture_output=True,
+                text=True,
             )
             try:
                 latency = float(result.stdout.strip())
                 if latency > self.max_latency:
                     logger.warning(
-                        f"== Latency: {latency}(ms) too high,"
-                        " failing this attempt =="
+                        f"== Latency: {latency}(ms) too high, failing this attempt =="
                     )
                     return self.FAILURE
             except (ValueError, TypeError):
@@ -868,8 +917,13 @@ class FioRunner:
                         f" with io depth {io} =="
                     )
                     rc = self.run_workload(
-                        workload, single, with_flamegraphs, test_prefix,
-                        workload_name, int(job), int(io),
+                        workload,
+                        single,
+                        with_flamegraphs,
+                        test_prefix,
+                        workload_name,
+                        int(job),
+                        int(io),
                     )
                     if rc == self.FAILURE:
                         logger.warning(
@@ -883,8 +937,11 @@ class FioRunner:
                         if not self.skip_osd_mon:
                             end = "end" if io == iodepth_list[-1] else "notyet"
                             self.osd_dump(
-                                self.test_name, 1, 1,
-                                f"{self.test_result}_dump.json", end,
+                                self.test_name,
+                                1,
+                                1,
+                                f"{self.test_result}_dump.json",
+                                end,
                             )
                 if rc == self.FAILURE:
                     logger.error(
@@ -947,7 +1004,9 @@ class FioRunner:
                 f" -c {self.osd_test_list}"
                 f" -t {self.test_result}"
                 f" -a {self.osd_cpu_avg}",
-                shell=True, capture_output=True, text=True,
+                shell=True,
+                capture_output=True,
+                text=True,
             )
             with open(f"{self.test_result}_json.out", "w") as f:
                 f.write(result.stdout)
@@ -1020,7 +1079,9 @@ class FioRunner:
         # Archive FIO err files
         subprocess.run(
             f"zip -9mqj fio_{test_result}_err.zip *.err",
-            shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         # Archive all results
         subprocess.run(
@@ -1030,7 +1091,9 @@ class FioRunner:
             f" {self.top_out_list}"
             f" osd*_threads.out *_list {self.top_pid_list}"
             f" numa_args*.out *_diskstat.out",
-            shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
     # ------------------------------------------------------------------
@@ -1062,7 +1125,8 @@ class FioRunner:
                 if os.path.exists(top_json):
                     subprocess.run(
                         [
-                            "python3", "/root/bin/parse-top.py",
+                            "python3",
+                            "/root/bin/parse-top.py",
                             f"--config={top_json}",
                             f"--cpu={self.osd_cores}",
                             f"--avg={self.osd_cpu_avg}",
@@ -1082,7 +1146,9 @@ class FioRunner:
                         f" -c {self.osd_test_list}"
                         f" -t {self.test_result}"
                         f" -a {self.osd_cpu_avg}",
-                        shell=True, capture_output=True, text=True,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
                     )
                     with open(f"{self.test_result}_json.out", "w") as f:
                         f.write(result.stdout)
@@ -1101,6 +1167,7 @@ class FioRunner:
             finally:
                 os.chdir(orig_dir)
                 import shutil
+
                 shutil.rmtree(extract_dir, ignore_errors=True)
 
     # ------------------------------------------------------------------
@@ -1111,9 +1178,7 @@ class FioRunner:
         """Sort matching ``*.png`` files numerically and rename to ``NNN.png``."""
         files = sorted(
             glob.glob(f"{prefix}*{postfix}"),
-            key=lambda p: [
-                int(t) if t.isdigit() else t for t in p.split("_")
-            ],
+            key=lambda p: [int(t) if t.isdigit() else t for t in p.split("_")],
         )
         for idx, src in enumerate(files):
             dst = os.path.join(out_dir, f"{idx:03d}.png")
@@ -1127,12 +1192,20 @@ class FioRunner:
         os.chdir("animate")
         try:
             subprocess.run(
-                ["convert", "-delay", "100", "-loop", "0", "*.png",
-                 f"../{output_name}.gif"],
+                [
+                    "convert",
+                    "-delay",
+                    "100",
+                    "-loop",
+                    "0",
+                    "*.png",
+                    f"../{output_name}.gif",
+                ],
             )
         finally:
             os.chdir(orig)
             import shutil
+
             shutil.rmtree("animate", ignore_errors=True)
 
     def coalesce_charts(self, test_prefix: str, test_result: str = "") -> None:
@@ -1155,9 +1228,7 @@ class FioRunner:
 
     def signal_handler(self, signum, frame) -> None:
         """Handle SIGINT / SIGTERM / SIGHUP: kill FIO and archive results."""
-        logger.info(
-            f"run_fio == Got signal {signum} from parent, quitting =="
-        )
+        logger.info(f"run_fio == Got signal {signum} from parent, quitting ==")
         self.kill_all_fio()
         self.tidyup(self.test_result, "_failed")
         sys.exit(1)
@@ -1209,20 +1280,29 @@ class FioRunner:
                 for wk in WORKLOADS_ORDER:
                     if self.post_proc:
                         self.post_process_cold(
-                            wk, single_procs, self.with_flamegraphs,
-                            self.test_prefix, self.workload or "",
+                            wk,
+                            single_procs,
+                            self.with_flamegraphs,
+                            self.test_prefix,
+                            self.workload or "",
                         )
                     else:
                         self.run_workload_loop(
-                            wk, single_procs, self.with_flamegraphs,
-                            self.test_prefix, self.workload or "",
+                            wk,
+                            single_procs,
+                            self.with_flamegraphs,
+                            self.test_prefix,
+                            self.workload or "",
                         )
         else:
             if not self.workload:
                 logger.error("Workload must be specified when -a is not used")
                 sys.exit(1)
             self.run_workload_loop(
-                self.workload, self.single, self.with_flamegraphs, self.test_prefix,
+                self.workload,
+                self.single,
+                self.with_flamegraphs,
+                self.test_prefix,
             )
 
         logger.info(
@@ -1243,59 +1323,86 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "-a", "--run-all", action="store_true",
+        "-a",
+        "--run-all",
+        action="store_true",
         help="Run all four typical workloads (rr, rw, sr, sw)",
     )
     parser.add_argument("-c", "--osd-cores", help="Range of OSD CPU cores to monitor")
     parser.add_argument("-d", "--run_dir", default="/tmp", help="Run directory")
     parser.add_argument("-f", "--fio-cores", help="CPU cores to pin FIO processes to")
     parser.add_argument(
-        "-j", "--multi-job-vol", action="store_true",
+        "-j",
+        "--multi-job-vol",
+        action="store_true",
         help="Use multi-job-per-volume FIO profile",
     )
     parser.add_argument(
-        "-k", "--skip-osd-mon", action="store_true",
+        "-k",
+        "--skip-osd-mon",
+        action="store_true",
         help="Skip OSD dump_metrics collection",
     )
     parser.add_argument(
-        "-l", "--latency-target", action="store_true",
+        "-l",
+        "--latency-target",
+        action="store_true",
         help="Use latency_target FIO profile",
     )
     parser.add_argument(
-        "-m", "--with-mem-profile", action="store_true",
+        "-m",
+        "--with-mem-profile",
+        action="store_true",
         help="Collect memory profile (non-classic OSDs)",
     )
     parser.add_argument(
-        "-n", "--no-flamegraphs", action="store_true",
+        "-n",
+        "--no-flamegraphs",
+        action="store_true",
         help="Disable perf flamegraph collection",
     )
-    parser.add_argument("-p", "--test-prefix", default="4cores_8img", help="Test prefix")
     parser.add_argument(
-        "-r", "--response-curve", action="store_true",
+        "-p", "--test-prefix", default="4cores_8img", help="Test prefix"
+    )
+    parser.add_argument(
+        "-r",
+        "--response-curve",
+        action="store_true",
         help="Collect data for response latency curves",
     )
     parser.add_argument(
-        "-g", "--post-proc", action="store_true",
+        "-g",
+        "--post-proc",
+        action="store_true",
         help="Post-process existing archived results (requires -p)",
     )
     parser.add_argument(
-        "-s", "--single", action="store_true",
+        "-s",
+        "--single",
+        action="store_true",
         help="Use a single FIO process (instead of NUM_PROCS)",
     )
     parser.add_argument(
-        "-t", "--osd-type", default="crimson",
+        "-t",
+        "--osd-type",
+        default="crimson",
         help="OSD type: classic or crimson (default)",
     )
     parser.add_argument(
-        "-w", "--workload",
+        "-w",
+        "--workload",
         help="Workload key: rw, rr, sw, sr, hockey, …",
     )
     parser.add_argument(
-        "-x", "--rc-skip-heuristic", action="store_true",
+        "-x",
+        "--rc-skip-heuristic",
+        action="store_true",
         help="Skip the latency heuristic check for response curves",
     )
     parser.add_argument(
-        "-z", "--aio", action="store_true",
+        "-z",
+        "--aio",
+        action="store_true",
         help="Use AIO FIO job spec (no Ceph cluster)",
     )
 

@@ -20,8 +20,8 @@ import threading
 import time
 
 # from pathlib import Path
-from typing import Dict, List, Optional
-# Tuple
+from typing import Dict, Any, Optional
+# Tuple, List, Optional, Union
 
 from perf_test_plan import (
     ClassicClusterConfiguration,
@@ -30,8 +30,8 @@ from perf_test_plan import (
     load_test_plan as _load_test_plan,
 )
 import taskset_pid
-from run_fio import FioRunner
-import monitoring
+from run_fio import FioRunner, FioRunnerCustom
+# import monitoring
 
 __author__ = "Jose J Palacios-Perez (translated from bash)"
 
@@ -48,7 +48,7 @@ NC = "\033[0m"  # No Color
 # SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Remove all hardcoded script paths: check they are in PATH
-CEPH_PATH="/ceph/build/"
+CEPH_PATH = "/ceph/build/"
 
 
 class BalancedOSDRunner:
@@ -65,7 +65,6 @@ class BalancedOSDRunner:
         self.vstart_cpu_cores = "0-27,56-83"  # inc HT -- highest performance
         self.osd_cpu = self.vstart_cpu_cores  # Currently used for Classic only
         self.fio_cpu_cores = "28-55,84-111"  # inc HT
-        self.fio_jobs = "fio_workloads/"
         self.fio_spec = "32fio"  # 32 client/jobs
         self.osd_type = "cyan"
         self.alien_threads = 8  # fixed- num alien threads per CPU core
@@ -74,7 +73,7 @@ class BalancedOSDRunner:
         self.max_num_phys_cpus_per_socket = 24
         self.max_num_ht_cpus_per_socket = 52
 
-        # Globals
+        # Globals: legacy used only on FIO catalog workloads
         self.latency_target = False
         self.multi_job_vol = False
         self.precond = False
@@ -88,14 +87,19 @@ class BalancedOSDRunner:
 
         """
         self.script_dir = script_dir
+        # TODO: Define a default folder in ceph-aprg/ to store the performance test plans
         self.test_plan = os.path.join(script_dir, "tp_cmp_classic_seastore.json")
-        self.test_plan_data: PerfTestPlan #= PerfTestPlan()  # will be loaded from JSON
-        self.skip_exec = False
+        self.test_plan_data: (
+            PerfTestPlan  # = PerfTestPlan()  # will be loaded from JSON
+        )
+        self.dry_run = False
         self.regen = True  # always regenerate the .fio jobs by default
         self.fio_pid = 0
         self.pid_watchdog = 0
 
         self.numa_nodes_out = "/tmp/numa_nodes.json"
+        # Default location folder of FIO job files
+        self.fio_jobs = os.path.join(script_dir, "fio_workloads/")
         # FioRunner instance and its execution thread (set by run_fio())
         self._fio_runner: Optional[FioRunner] = None
         self._fio_thread: Optional[threading.Thread] = None
@@ -116,9 +120,9 @@ class BalancedOSDRunner:
         # CLI for the OSD backend
         self.osd_be_table = {
             "cyan": "--cyanstore",
-            "blue": "--bluestore --bluestore-devs ",
-            #"sea": '--seastore --osd-args "--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=',
-            "sea": '--seastore --osd-args "--seastore_max_concurrent_transactions=128"', 
+            "bluestore": "--bluestore --bluestore-devs ",
+            # "sea": '--seastore --osd-args "--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=',
+            "seastore": '--seastore --osd-args "--seastore_max_concurrent_transactions=128"',
         }
 
         # Default options
@@ -128,41 +132,40 @@ class BalancedOSDRunner:
         self.rbd_size = "400gb"
         self.test_name = ""
 
-
     def log_color(self, message: str, color: str = GREEN):
         """Log a message with color"""
         logger.info(f"{color}{message}{NC}")
 
     def load_test_plan(self, test_plan_path: Optional[str] = None):
         """
-            Load test plan configuration from JSON file using the test_plan module.
+        Load test plan configuration from JSON file using the test_plan module.
 
-            # Iterate cluster configurations and set runner state based on
-            # the requested osd_type.  CLI value "sea" maps to JSON value
-            # "seastore"; "all" iterates every configuration.
-            osd_type_map = {"sea": "seastore"}
-            requested = osd_type_map.get(self.osd_type, self.osd_type)
+        # Iterate cluster configurations and set runner state based on
+        # the requested osd_type.  CLI value "sea" maps to JSON value
+        # "seastore"; "all" iterates every configuration.
+        osd_type_map = {"sea": "seastore"}
+        requested = osd_type_map.get(self.osd_type, self.osd_type)
 
-            for cfg_name, cfg in plan.cluster.configurations.items():
-                logger.info(
-                    f"Processing cluster configuration: {cfg_name} (OSD type: {cfg.osd_type})"
-                )
-                if requested != "all" and cfg.osd_type != requested:
-                    continue
-                # Common fields: we might simplify remove self fields and use the config directly in the test execution
-                self.store_devs = ",".join(cfg.store_devs)
-                self.osd_range = " ".join(map(str, cfg.osd_range))
-                self.rbd_num_images = cfg.rbd_num_images
-                self.rbd_size = cfg.rbd_image_size
-                # Type-specific fields
-                if isinstance(cfg, CrimsonClusterConfiguration):
-                    self.reactor_range = " ".join(map(str, cfg.reactor_range))
-                # elif isinstance(cfg, ClassicClusterConfiguration):
-                #     if cfg.classic_cpu_set:
-                # We might decide whether each OSD config set has its own CPU
-                # set defined in the JSON, or we just use the same field for
-                # all of them
-                self.osd_cpu = cfg.vstart_cpu_set[0]
+        for cfg_name, cfg in plan.cluster.configurations.items():
+            logger.info(
+                f"Processing cluster configuration: {cfg_name} (OSD type: {cfg.osd_type})"
+            )
+            if requested != "all" and cfg.osd_type != requested:
+                continue
+            # Common fields: we might simplify remove self fields and use the config directly in the test execution
+            self.store_devs = ",".join(cfg.store_devs)
+            self.osd_range = " ".join(map(str, cfg.osd_range))
+            self.rbd_num_images = cfg.rbd_num_images
+            self.rbd_size = cfg.rbd_image_size
+            # Type-specific fields
+            if isinstance(cfg, CrimsonClusterConfiguration):
+                self.reactor_range = " ".join(map(str, cfg.reactor_range))
+            # elif isinstance(cfg, ClassicClusterConfiguration):
+            #     if cfg.classic_cpu_set:
+            # We might decide whether each OSD config set has its own CPU
+            # set defined in the JSON, or we just use the same field for
+            # all of them
+            self.osd_cpu = cfg.vstart_cpu_set[0]
 
         """
         test_plan_path = (
@@ -171,7 +174,7 @@ class BalancedOSDRunner:
             else test_plan_path
         )
         if os.path.exists(test_plan_path):
-            self.test_plan_data : PerfTestPlan = _load_test_plan(test_plan_path)
+            self.test_plan_data: PerfTestPlan = _load_test_plan(test_plan_path)
         else:
             logger.warning(
                 f"{RED}== Test plan file {test_plan_path} not found, using defaults =={NC}"
@@ -186,6 +189,7 @@ class BalancedOSDRunner:
         the future, and also include other processes like MONs and MGRs if
         needed
         """
+
         def _update_osd_id_mapping(i: int, threads_out_file: str):
             """Helper function to update the osd_id mapping with thread information"""
 
@@ -196,7 +200,7 @@ class BalancedOSDRunner:
                 self.log_color(f"== osd{i} pid: {pid} ==")
                 osd_id = f"osd.{i}"
                 if osd_id not in self.osd_id:
-                    self.osd_id[osd_id] = { "pid": int(pid), "threads": {} }
+                    self.osd_id[osd_id] = {"pid": int(pid), "threads": {}}
 
                 # Get thread information
                 ps_result = subprocess.run(
@@ -217,7 +221,7 @@ class BalancedOSDRunner:
                     for ps_line, taskset_line in zip(ps_lines, taskset_lines):
                         f.write(f"{ps_line} {taskset_line}\n")
                         # Each line is of the form:
-                        # PID TID COMM PSR PID: CPU list 
+                        # PID TID COMM PSR PID: CPU list
                         # 2655380 2655380 crimson-osd       0     pid 2655380's current affinity list: 0-27,56-83
                         parts = ps_line.split()
                         if len(parts) >= 4:
@@ -225,14 +229,15 @@ class BalancedOSDRunner:
                             self.osd_id[osd_id]["threads"][tid] = {
                                 "comm": comm,
                                 "psr": psr,
-                                "affinity": taskset_line.split(":", 1)[-1].strip() if "pid" in taskset_line else "",
+                                "affinity": taskset_line.split(":", 1)[-1].strip()
+                                if "pid" in taskset_line
+                                else "",
                             }
                 # Add to threads list
                 with open(threads_list_path, "a") as f:
                     f.write(f"osd_{i}_{test_prefix}_threads.out\n")
             else:
                 logger.error(f"{RED}== osd.{i} not found =={NC}")
-
 
         self.log_color(
             f"== Constructing list of threads and affinity for OSD {test_prefix} =="
@@ -263,15 +268,18 @@ class BalancedOSDRunner:
 
         return threads_list_path
 
-
     def validate_set(self, test_name: str):
         """Validate the CPU set using tasksetcpu.py"""
         logger.info(f"== Validating CPU set for {test_name} ==")
         if not os.path.exists(self.numa_nodes_out):
             subprocess.run(["lscpu", "--json"], stdout=open(self.numa_nodes_out, "w"))
         for osd_id, info in self.osd_id.items():
-            logger.info(f"OSD ID: {osd_id}, PID: {info['pid']}, Threads: {len(info['threads'])}")
-            ts = taskset_pid.TasksetPid(pid=info['pid'], lscpu_json=self.numa_nodes_out, proc_grp=self.osd_id)
+            logger.info(
+                f"OSD ID: {osd_id}, PID: {info['pid']}, Threads: {len(info['threads'])}"
+            )
+            ts = taskset_pid.TasksetPid(
+                pid=info["pid"], lscpu_json=self.numa_nodes_out, proc_grp=self.osd_id
+            )
             ts.run()
 
     def show_grid(self, test_name: str):
@@ -280,7 +288,84 @@ class BalancedOSDRunner:
         if threads_list:
             self.validate_set(test_name)
 
-    def run_fio(self, cfg, test_name: str) -> int:
+    def wait_for_fio(self):
+        """
+        Wait for FIO to finish via the background thread
+        """
+        # Start watchdog
+        logger.info(f"{time.strftime('%Y-%m-%d %H:%M:%S')} Starting watchdog...")
+        self.watchdog_enabled = True
+        watchdog_thread = threading.Thread(target=self.watchdog, args=(self.fio_pid,))
+        watchdog_thread.daemon = True
+        watchdog_thread.start()
+        logger.info(
+            f"{time.strftime('%Y-%m-%d %H:%M:%S')} Waiting for FIO to complete..."
+        )
+        if self._fio_thread is not None:
+            self._fio_thread.join()
+        elif self.fio_pid != 0:
+            os.waitpid(self.fio_pid, 0)
+
+        # Stop watchdog
+        logger.info(
+            f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO completed, stopping watchdog..."
+        )
+        self.watchdog_enabled = False
+
+    def run_fio_custom(self, bench, workload, cfg, test_name: str) -> None:
+        """
+        Run FIO benchmark for a given benchmark configuration and cluster
+        configuration, using the FIO workload form the predefined "custom" workload
+        files.
+        Normally, these type of files already trigger monitoring.
+        """
+        # Traverse over num of jobs and iodepths if specified in
+        # the test plan, otherwise just run with the default .fio
+        # file
+        for iodepth in workload.iodepths:
+            for numjobs in workload.numjobs:
+                logger.info(f"Running FIO with numjobs={numjobs}, iodepth={iodepth}...")
+                # fio_opts = f"--numjobs={numjobs} --iodepth={iodepth}"
+                ctx = {
+                    "benchmark": bench,
+                    "workload": workload,
+                    "cfg": cfg,
+                    "test_name": f"{test_name}_{numjobs}nj_{iodepth}iodepth",
+                    "numjobs": numjobs,
+                    "iodepth": iodepth,
+                    "script_dir": self.script_dir,
+                    "run_dir": self.run_dir,
+                }
+                # self.fio_pid = self.run_fio_bench(bench, workload, cfg, test_name, fio_opts)
+                # Create and configure a FioRunner (imported from run_fio)
+                fio_runner = FioRunnerCustom(ctx)
+                self.fio_pid = fio_runner.run()
+                logger.info(
+                    f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO custom started: {test_name}, pid: {self.fio_pid} =="
+                )
+                self.wait_for_fio()
+
+    def mk_pool(self, pool_name: str, pool_size: int, replica_size: int = 1):
+        """
+        Create a pool_type pool using ceph
+        Always set replica size to 1
+        # ceph osd pool create crimsonpool 1024 ; ceph status; ceph osd pool ls; rados df; ceph osd pool set noautoscale
+        """
+        logger.info(f"Creating pool: {pool_name}")
+        result = subprocess.run(
+            # ["ceph", "osd", "pool", "create", pool_name, f"{pool_size}", "--size", f"{replica_size}", "--no-autoscale"],
+            ["ceph", "osd", "pool", "create", pool_name, f"{pool_size}"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            logger.error(f"{RED}== Failed to create pool {pool_name} =={NC}")
+            logger.error(f"Error output: {result.stderr}")
+            sys.exit(1)
+        else:
+            logger.info(f"Pool {pool_name} created successfully")
+
+    def run_fio_catalog(self, cfg, test_name: str) -> int:
         """Run FIO benchmark using :class:`~run_fio.FioRunner`.
 
         Creates and configures a :class:`FioRunner` instance, then executes
@@ -297,28 +382,24 @@ class BalancedOSDRunner:
         fio_opts = cfg.fio_opts if hasattr(cfg, "fio_opts") else ""
 
         test_run_log = os.path.join(self.run_dir, f"{test_name}_test_run.log")
-
-        # Run cephlogoff.sh
-        logger.info("Running cephlogoff.sh")
-        subprocess.run(
-            ["cephlogoff.sh"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-
+        # Sync this value with the one used in gen_fio_job.sh to generate the .fio files, or better pass
+        self.rbd_vol_prefix = f"rbd_{test_name}"
         # Run cephmkrbd.sh to create the RBD image(s)
         cmd = [
             "cephmkrbd.sh",
-            "-n", f"{cfg.num_rbd_images}",
-            "-p", self.vol_prefix,
-            "-s", f"{cfg.rbd_image_size}",
+            "-n",
+            f"{cfg.num_rbd_images}",
+            "-p",
+            self.rbd_vol_prefix,
+            "-s",
+            f"{cfg.rbd_image_size}",
         ]
         _cmd = " ".join(cmd)
         logger.info(f"Running cephmkrbd.sh with command: {_cmd}")
-        with open(test_run_log, "a") as log_file:
+        with open(self.test_run_log, "a") as log_file:
             # Attempting as _cmd string  fails
             result = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT)
-            logger.info(
-                f"cephmkrbd.sh completed with return code {result.returncode}"
-            )
+            logger.info(f"cephmkrbd.sh completed with return code {result.returncode}")
 
         runtime = self.test_plan_data.benchmarks.librbdfio.runtime
         logger.info(f"FIO runtime: {runtime} seconds")
@@ -329,9 +410,9 @@ class BalancedOSDRunner:
 
         # Create and configure a FioRunner (imported from run_fio)
         fio_runner = FioRunner(self.script_dir, self.run_dir)
-        #fio_runner.run_dir = self.run_dir
+        # fio_runner.run_dir = self.run_dir
         fio_runner.osd_type = cfg.osd_type
-        fio_runner.osd_cores = "0-192"   # all CPU cores in the host
+        fio_runner.osd_cores = "0-192"  # all CPU cores in the host
         fio_runner.fio_cores = fio_cpu_cores
         fio_runner.test_prefix = test_name
         fio_runner.with_flamegraphs = False
@@ -340,7 +421,7 @@ class BalancedOSDRunner:
         fio_runner.latency_target = self.latency_target
         fio_runner.multi_job_vol = self.multi_job_vol
         fio_runner.log_name = os.path.join(self.run_dir, f"{test_name}_test_run.log")
-        fio_runner.vol_prefix= self.vol_prefix
+        fio_runner.vol_prefix = self.vol_prefix
 
         if fio_opts:
             # When explicit opts are provided store them for reference; the
@@ -350,7 +431,7 @@ class BalancedOSDRunner:
             # Default: response-curve run over all workloads
             fio_runner.response_curve = True
             fio_runner.run_all = True
-            fio_runner.workload = "hockey"   # workload_name for response curves
+            fio_runner.workload = "hockey"  # workload_name for response curves
 
         # Log the equivalent command for audit purposes
         cmd_desc = (
@@ -368,8 +449,9 @@ class BalancedOSDRunner:
         # Run workload loop in a background thread; fio binary is the subprocess
         def _fio_target() -> None:
             workloads = (
-                ["rr", "rw", "sr", "sw"] if fio_runner.run_all else
-                ([fio_runner.workload] if fio_runner.workload else [])
+                ["rr", "rw", "sr", "sw"]
+                if fio_runner.run_all
+                else ([fio_runner.workload] if fio_runner.workload else [])
             )
             workload_name = fio_runner.workload or ""
             for wk in workloads:
@@ -475,7 +557,7 @@ class BalancedOSDRunner:
     def run_regen_fio_files(self):
         """Regenerate FIO job files"""
         self.log_color("== Regenerating FIO job files ==")
-        #test_run_log = os.path.join(self.run_dir, f"{test_name}_test_run.log")
+        # test_run_log = os.path.join(self.run_dir, f"{test_name}_test_run.log")
         #    with open(test_run_log, "a") as log_file:
 
         opts = ""
@@ -486,18 +568,25 @@ class BalancedOSDRunner:
         cmd = [
             "gen_fio_job.sh",
             opts,
-            "-n", str(self.num_rbd_images),
-            "-p", self.vol_prefix,
-            "-d", os.path.join(self.script_dir, "fio_workloads"),
+            "-n",
+            str(self.num_rbd_images),
+            "-p",
+            self.vol_prefix,
+            "-d",
+            os.path.join(self.script_dir, "fio_workloads"),
         ]
         _cmd = " ".join(cmd)
         logger.info(f"Generating FIO job files with command: {_cmd}")
         # Try in a shell:
-        result = subprocess.run(_cmd, shell=True,
-                            #stdout=self.log_file,
-                            stderr=subprocess.STDOUT,
-                            capture_output=True, text=True)
-        #result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(
+            _cmd,
+            shell=True,
+            # stdout=self.log_file,
+            stderr=subprocess.STDOUT,
+            capture_output=True,
+            text=True,
+        )
+        # result = subprocess.run(cmd, capture_output=True, text=True)
         result.stdout = result.stdout.strip()
         logger.debug(f"gen_fio_job.sh output: {result.stdout}")
 
@@ -533,158 +622,164 @@ class BalancedOSDRunner:
             )
             # TODO: method that constructs the test name based on the parameters
             test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{bal_key}"
-            #test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{self.fio_spec}_{bal_key}_{suffix}"
 
             if cfg.osd_backend == "bluestore":
                 num_alien_threads = 4 * int(num_osd) * num_reactors
                 title += f" alien_num_threads={num_alien_threads}"
                 cmd += f" --crimson-alien-num-threads {num_alien_threads}"
                 test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{num_alien_threads}at_{bal_key}"
-                #test_name = f"{osd_type}_{num_osd}osd_{num_reactors}reactor_{num_alien_threads}at_{self.fio_spec}_{bal_key}_{suffix}"
             self.test_name = test_name
-            _run_body(cfg, title, test_name, cmd)
+            self.run_body(cfg, title, test_name, cmd)
 
-
-        def _run_classic(cfg, num_osd, osd_type, bal_key, suffix):
-            logger.info(
-                f"{GREEN}== Running Classic test: {num_osd} OSD, {osd_type}, {bal_key}, {suffix} =={NC}"
-            )
-            title = f"({osd_type}) {num_osd} OSD classic, fixed {self.fio_spec}"
-            # Slice cfg.store_devs to use up to num_osd devices
-            store_devs = cfg.store_devs[:num_osd]
-            cmd = (
-                f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{self.osd_cpu}' "
-                f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
-                f"--redirect-output {self.osd_be_table['blue']} {','.join(store_devs)} --no-restart"
-            )
-            test_name = f"{osd_type}_{num_osd}osd_{self.fio_spec}_{suffix}"
-            self.test_name = test_name
-            _run_body(cfg, title, test_name, cmd)
-
-
-    def run_fixed_bal_tests(self, bal_key: str, osd_type: str):
+    def run_classic_config(self, cfg, num_osd):
         """
-        Run balanced vs default CPU core/reactor distribution tests
+        Run Classic tests for a given configuration and number of OSDs.
         """
-        def _run_body(cfg, title, test_name, cmd) -> bool:
-            """Run the test body for a given configuration and parameters"""
+        logger.info(
+            f"{GREEN}== Running Classic test: {num_osd} OSD, {cfg.osd_backend} =={NC}"
+        )
+        title = f"({cfg.osd_type}) {num_osd} OSD classic"
+        # Slice cfg.store_devs to use up to num_osd devices
+        store_devs = cfg.store_devs[:num_osd]
+        cmd = (
+            f"MDS=1 MON=1 OSD={num_osd} MGR=1 taskset -ac '{cfg.vstart_cpu_set}' "
+            f"/ceph/src/vstart.sh --new -x --localhost --without-dashboard "
+            f"--redirect-output {self.osd_be_table['blue']} {','.join(store_devs)} --no-restart"
+        )
+        test_name = f"{cfg.osd_type}_{num_osd}osd_"
+        self.test_name = test_name
+        self.run_body(cfg, title, test_name, cmd)
 
-            self.log_color(f"== Title: {title} Test name: {test_name} ==")
+    def run_body(self, cfg, title, test_name, cmd) -> bool:
+        """
+        Run the test body for a given configuration and parameters
+        """
+        self.log_color(f"== Title: {title} Test name: {test_name} ==")
 
-            test_run_log = os.path.join(self.run_dir, f"{test_name}_test_run.log")
-            with open(test_run_log, "a") as f:
-                f.write(f"{cmd}\n")
+        # if not self.test_run_log:
+        #     self.test_run_log = os.path.join(self.run_dir, f"{test_name}_test_run.log")
+        with open(self.test_run_log, "a") as f:
+            f.write(f"{cmd}\n")
 
-            if self.skip_exec:
-                logger.info(f"Test: {test_name}")
-                logger.info(f"Command: {cmd}")
-                return False #continue
+        if self.dry_run:
+            logger.info(f"Test: {test_name}")
+            logger.info(f"Command: {cmd}")
+            return False  # continue
 
-            # Execute command
-            logger.info(f"Executing command: {cmd}")
-            with open(test_run_log, "a") as log_file:
-                result = subprocess.run(
-                    cmd, shell=True, stdout=log_file, stderr=subprocess.STDOUT
-                )
-            if result.returncode != 0:
-                logger.error(f"{RED}== Command failed: {cmd} =={NC}")
-                return False
-
-            if isinstance(cfg, ClassicClusterConfiguration): #osd_type == "classic":
-                # Set OSD process affinity
-                pgrep_result = subprocess.run(
-                    ["pgrep", "osd"], capture_output=True, text=True
-                )
-                osd_pid = pgrep_result.stdout.strip()
-                if osd_pid:
-                    taskset_cmd = f"taskset -a -c -p {self.osd_cpu} {osd_pid}"
-                    with open(test_run_log, "a") as log_file:
-                        subprocess.run(
-                            taskset_cmd,
-                            shell=True,
-                            stdout=log_file,
-                            stderr=subprocess.STDOUT,
-                        )
-
-            logger.info(
-                f"{time.strftime('%Y-%m-%d %H:%M:%S')} Sleeping for 20 secs..."
+        # Execute vstart.sh command
+        logger.info(f"Executing command: {cmd}")
+        with open(self.test_run_log, "a") as log_file:
+            result = subprocess.run(
+                cmd, shell=True, stdout=log_file, stderr=subprocess.STDOUT
             )
-            time.sleep(20)
+        if result.returncode != 0:
+            logger.error(f"{RED}== Command failed: {cmd} =={NC}")
+            return False
 
-            self.show_grid(test_name)
+        if isinstance(cfg, ClassicClusterConfiguration):
+            # Set OSD process affinity
+            pgrep_result = subprocess.run(
+                ["pgrep", "osd"], capture_output=True, text=True
+            )
+            osd_pid = pgrep_result.stdout.strip()
+            if osd_pid:
+                taskset_cmd = f"taskset -a -c -p {cfg.vstart_cpu_set} {osd_pid}"
+                with open(self.test_run_log, "a") as log_file:
+                    subprocess.run(
+                        taskset_cmd,
+                        shell=True,
+                        stdout=log_file,
+                        stderr=subprocess.STDOUT,
+                    )
 
-            # Start FIO
-            logger.info(f"{time.strftime('%Y-%m-%d %H:%M:%S')} Starting FIO...")
+        logger.info(f"{time.strftime('%Y-%m-%d %H:%M:%S')} Sleeping for 20 secs...")
+        time.sleep(20)
+
+        # Run cephlogoff.sh
+        logger.info("Running cephlogoff.sh")
+        subprocess.run(
+            ["cephlogoff.sh"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+
+        self.show_grid(test_name)
+
+        # Create pool, ensure RBD image(s) exist, and generate FIO job
+        # files if needed.  This is needed for both Classic and Crimson
+        # since the FIO execution is handled by the FioRunner in both
+        # cases, and we want to keep the same workloads across them.
+        if cfg.pool_name == "rados":
+            self.mk_pool(cfg.pool_name, cfg.pool_size, replica_size=1)
+            # self.mk_pool(f"{self.vol_prefix}_pool", 1024)
+            # For RBD, might call cephmkrbd.sh to create the image(s) as well
+
+        # Start FIO: traverse the workloads
+        for bench_name, bench_data in self.test_plan_data.benchmarks.items():
+            logger.info(
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')} Starting FIO for benchmark: {bench_name}..."
+            )
+
             # run_fio() now uses FioRunner internally; the fio binary runs as
             # subprocesses within that runner.  We store the thread in
             # self._fio_thread for clean shutdown.
-            self.fio_pid = self.run_fio(cfg, test_name)
-            logger.info(
-                f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO started: {test_name}"
-            )
+            for wk, wk_data in bench_data.workloads.items():
+                logger.info(f"Workload: {wk}, data: {wk_data}")
+                # Find out the "type" of benchmark ( ie. "custom" or "catalog")
+                # and pass the corresponding configuration to run_fio()
+                wp = os.path.join(self.script_dir, wk_data.fio_name)
+                if os.path.exists(wp):
+                    logger.info(f"FIO job file for workload {wk} found: {wp}")
+                    # Check the cmd_path exists in the .fio file, if not we might want to skip or log an error
+                    if os.path.exists(wk_data.cmd_path) and os.access(
+                        wk_data.cmd_path, os.X_OK
+                    ):
+                        logger.info(
+                            f"FIO cmd path for workload {wk} found: {wk_data.cmd_path}"
+                        )
+                        self.run_fio_custom(bench_data, wk_data, cfg, test_name)
+                    else:
+                        logger.error(
+                            f"{RED}== FIO cmd path for workload {wk} not found: {wk_data.cmd_path} =={NC}"
+                        )
+                else:
+                    logger.error(
+                        f"{RED}== FIO job file for workload {wk} not found: {wp} =={NC}"
+                    )
+                if os.path.exists(os.path.join(self.script_dir, wk_data.fio_catalog)):
+                    logger.info(
+                        f"FIO catalog file for workload {wk} found: {wk_data.fio_catalog}"
+                    )
+                    self.fio_pid = self.run_fio_catalog(cfg, f"{test_name}_{wk}")
+                    logger.info(
+                        f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO catalog started: {test_name}, pid: {self.fio_pid} =="
+                    )
+                    self.wait_for_fio()
 
-            # Start watchdog
-            logger.info(
-                f"{time.strftime('%Y-%m-%d %H:%M:%S')} Starting watchdog..."
-            )
-            self.watchdog_enabled = True
-            watchdog_thread = threading.Thread(
-                target=self.watchdog, args=(self.fio_pid,)
-            )
-            watchdog_thread.daemon = True
-            watchdog_thread.start()
+        # Stop cluster
+        if isinstance(cfg, ClassicClusterConfiguration):
+            subprocess.run(["/ceph/src/stop.sh"])
+        else:
+            subprocess.run(["/ceph/src/stop.sh", "--crimson"])
 
-            # Wait for FIO to finish via the background thread
-            logger.info(
-                f"{time.strftime('%Y-%m-%d %H:%M:%S')} Waiting for FIO to complete..."
-            )
-            if self._fio_thread is not None:
-                self._fio_thread.join()
-            elif self.fio_pid != 0:
-                os.waitpid(self.fio_pid, 0)
+        time.sleep(30)
+        return True
 
-            # Stop watchdog
-            logger.info(
-                f"{time.strftime('%Y-%m-%d %H:%M:%S')} FIO completed, stopping watchdog..."
-            )
-            self.watchdog_enabled = False
-
-            # Stop cluster
-            if isinstance(cfg, ClassicClusterConfiguration): #cfg.osd_type == "classic":
-                subprocess.run(["/ceph/src/stop.sh"])
-            else:
-                subprocess.run(["/ceph/src/stop.sh", "--crimson"])
-
-            time.sleep(30)
-            return True
-
-        logger.info(f"{GREEN}== OSD type: {osd_type} =={NC}")
-        suffix = "lt" if self.latency_target else "rc"
+        # logger.info(f"{GREEN}== OSD type: {osd_type} =={NC}")
+        # suffix = "lt" if self.latency_target else "rc"
         # Sort keys
         # sorted_keys = sorted(
         #     self.test_table.keys(), key=lambda x: int(x) if x.isdigit() else 0
         # )
 
-        for cfg_name, cfg in self.test_plan_data.cluster.configurations.items():
-            for num_osd in cfg.osd_range:
-                logger.info(f"{GREEN}== {cfg_name} =={NC}")
-                if isinstance(cfg, CrimsonClusterConfiguration):
-                    _run_seastore(cfg, num_osd, osd_type, bal_key, suffix)
-                elif isinstance(cfg, ClassicClusterConfiguration):
-                    _run_classic(cfg, num_osd, osd_type, bal_key, suffix)
-            # Compress log for this configuration
-            test_run_log = os.path.join(self.run_dir, f"{self.test_name}_test_run.log")
-            subprocess.run(["gzip", "-9fq", test_run_log])
-
-    def run_bal_vs_default_tests(self, osd_type: str, bal: str):
-        """Run balanced vs default tests for given OSD type"""
-        self.log_color(f"== Balanced: {bal} ==")
-
-        if bal == "all":
-            for key in self.bal_ops_table.keys():
-                self.run_fixed_bal_tests(key, osd_type)
-        else:
-            self.run_fixed_bal_tests(bal, osd_type)
+        # for cfg_name, cfg in self.test_plan_data.cluster.configurations.items():
+        #     for num_osd in cfg.osd_range:
+        #         logger.info(f"{GREEN}== {cfg_name} =={NC}")
+        #         if isinstance(cfg, CrimsonClusterConfiguration):
+        #             _run_seastore(cfg, num_osd, osd_type, bal_key, suffix)
+        #         elif isinstance(cfg, ClassicClusterConfiguration):
+        #             _run_classic(cfg, num_osd, osd_type, bal_key, suffix)
+        #     # Compress log for this configuration
+        #     test_run_log = os.path.join(self.run_dir, f"{self.test_name}_test_run.log")
+        #     subprocess.run(["gzip", "-9fq", test_run_log])
 
     def signal_handler(self, signum, frame):
         """Handle interrupt signals"""
@@ -708,8 +803,6 @@ class BalancedOSDRunner:
             self.multi_job_vol = True
         if args.precond:
             self.precond = True
-        if args.skip_exec:
-            self.skip_exec = True
         if args.no_regen:
             self.regen = False
         if args.cache_alg:
@@ -726,8 +819,10 @@ class BalancedOSDRunner:
         signal.signal(signal.SIGHUP, self.signal_handler)
 
         self.run_dir = args.run_dir
-        #logger.info(f"{GREEN}== OSD_TYPE {self.osd_type} BALANCE {self.balance} =={NC}")
+        # logger.info(f"{GREEN}== OSD_TYPE {self.osd_type} BALANCE {self.balance} =={NC}")
 
+        if args.dry_run:
+            self.dry_run = True
         if args.test_plan and os.path.exists(
             os.path.join(self.script_dir, args.test_plan)
         ):
@@ -738,7 +833,7 @@ class BalancedOSDRunner:
 
         # Create run directory and chdir to it
         os.makedirs(self.run_dir, exist_ok=True)
-        #os.chdir(self.run_dir)
+        # os.chdir(self.run_dir)
 
         # Change to build directory: this is needed by vstart (due to local dependencies)
         os.chdir("/ceph/build/")
@@ -747,6 +842,7 @@ class BalancedOSDRunner:
             logger.info(
                 f"Processing cluster configuration: {cfg_name} (OSD type: {cfg.osd_type})"
             )
+            self.test_run_log = os.path.join(self.run_dir, f"{cfg_name}_test_run.log")
             for num_osd in cfg.osd_range:
                 logger.info(f"{GREEN}== {cfg_name} =={NC}")
                 if isinstance(cfg.osd_type, CrimsonClusterConfiguration):
@@ -754,9 +850,7 @@ class BalancedOSDRunner:
                 elif isinstance(cfg.osd_type, ClassicClusterConfiguration):
                     self.run_classic_config(cfg, num_osd)
             # Compress log for this configuration
-            test_run_log = os.path.join(self.run_dir, f"{self.test_name}_test_run.log")
-            subprocess.run(["gzip", "-9fq", test_run_log])
-
+            subprocess.run(["gzip", "-9fq", self.test_run_log])
 
         # Regenerate FIO files if needed - we might want to move this to the
         # test plan loading phase, or have a separate method that prepares the
@@ -781,6 +875,7 @@ class BalancedOSDRunner:
         #         f"{GREEN}==fun_run_bal_vs_default_tests: OSD_TYPE {self.osd_type} BALANCE {self.balance} =={NC}"
         #     )
         #     self.run_bal_vs_default_tests(self.osd_type, self.balance)
+
 
 def main():
     """Main entry point
@@ -814,9 +909,6 @@ def main():
     parser.add_argument(
         "-g", "--no-regen", action="store_true", help="Do not regenerate FIO files"
     )
-    parser.add_argument(
-        "-x", "--skip-exec", action="store_true", help="Skip execution (dry run)"
-    )
     parser.add_argument("-z", "--cache-alg", help="Cache algorithm: LRU or 2Q")
     parser.add_argument("-r", "--run_fio", help="Run FIO with given test name")
     # Handle special actions
@@ -836,12 +928,20 @@ def main():
     parser.add_argument(
         "-t",
         "--test_plan",
-        default="", # TODO: define a default .json test plan file
+        default="",  # TODO: define a default .json test plan file
         help="Performance test plan",
     )
     parser.add_argument("-d", "--run-dir", default="/tmp", help="Run directory")
-    parser.add_argument("-s", "--show-grid", action="store_true",default=False,
-                        help="Show grid for given test name")
+    parser.add_argument(
+        "-s",
+        "--show-grid",
+        action="store_true",
+        default=False,
+        help="Show grid for given test name",
+    )
+    parser.add_argument(
+        "--dry_run", action="store_true", help="Skip execution (dry run)"
+    )
 
     args = parser.parse_args()
 

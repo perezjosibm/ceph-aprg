@@ -40,15 +40,18 @@ from typing import Dict, List, Optional, Type
 # Cluster configuration hierarchy
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BaseClusterConfiguration:
     """Shared fields for every cluster configuration entry."""
-    osd_type: str # classic or crimson
-    osd_backend: str # default bluestore for classic, bluestore or seastore for crimson
+
+    osd_type: str  # classic or crimson
+    osd_backend: str  # default bluestore for classic, bluestore or seastore for crimson
     osd_range: List[int]
     store_devs: List[str]
     vstart_cpu_set: List[str]
-    pool_type: str # rados, or rdb
+    pool_name: str  # rados, or rdb
+    pool_size: int
     rbd_num_images: int
     rbd_image_size: str
 
@@ -56,6 +59,7 @@ class BaseClusterConfiguration:
 @dataclass
 class CrimsonClusterConfiguration(BaseClusterConfiguration):
     """Crimson OSD -specific configuration."""
+
     reactor_range: List[int] = field(default_factory=list)
     balance_strategy: Optional[str] = "default"
 
@@ -63,12 +67,14 @@ class CrimsonClusterConfiguration(BaseClusterConfiguration):
 @dataclass
 class ClassicClusterConfiguration(BaseClusterConfiguration):
     """Classic (BlueStore) OSD configuration."""
-    #classic_cpu_set: List[str] = field(default_factory=list)
+
+    # classic_cpu_set: List[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
 # Benchmark types
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class FioWorkload:
@@ -81,6 +87,7 @@ class FioWorkload:
     typical workloads: randread4k, randwrite4k, seqwrite64k and seqread64k. At
     least one must be provided.
     """
+
     rw: str
     bs: str
     runtime: int
@@ -97,6 +104,7 @@ class FioEngine:
     Librbdfio|RADOS benchmark engine parameters.
     We might extend further for FIO engines, like AIO, etc.
     """
+
     cmd_path: str
     fio_cpu_set: List[str]
     workloads: Dict[str, FioWorkload]
@@ -105,16 +113,19 @@ class FioEngine:
 @dataclass
 class Benchmarks:
     """All benchmark specifications for a test plan."""
-    benchmarks: Dict[str,FioEngine]
+
+    benchmarks: Dict[str, FioEngine]
 
 
 # ---------------------------------------------------------------------------
 # Cluster and top-level TestPlan
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Cluster:
     """Cluster-level metadata and per-OSD-type configurations."""
+
     name: str
     user: str
     head: str
@@ -128,6 +139,7 @@ class Cluster:
 @dataclass
 class PerfTestPlan:
     """Root dataclass representing a complete performance test plan."""
+
     cluster: Cluster
     benchmarks: Benchmarks
 
@@ -135,6 +147,7 @@ class PerfTestPlan:
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
+
 
 def factory(osd_type: str) -> Type[BaseClusterConfiguration]:
     """Return the configuration class that matches *osd_type*.
@@ -146,12 +159,11 @@ def factory(osd_type: str) -> Type[BaseClusterConfiguration]:
     """
     mapping: Dict[str, Type[BaseClusterConfiguration]] = {
         "crimson": CrimsonClusterConfiguration,
-        "classic":  ClassicClusterConfiguration,
+        "classic": ClassicClusterConfiguration,
     }
     if osd_type not in mapping:
         raise ValueError(
-            f"Unknown osd_type '{osd_type}'. "
-            f"Expected one of: {sorted(mapping)}"
+            f"Unknown osd_type '{osd_type}'. Expected one of: {sorted(mapping)}"
         )
     return mapping[osd_type]
 
@@ -159,6 +171,7 @@ def factory(osd_type: str) -> Type[BaseClusterConfiguration]:
 # ---------------------------------------------------------------------------
 # Parsing helpers
 # ---------------------------------------------------------------------------
+
 
 def _parse_configuration(
     name: str,
@@ -179,7 +192,8 @@ def _parse_configuration(
         osd_range=raw["osd_range"],
         store_devs=raw["store_devs"],
         vstart_cpu_set=raw["vstart_cpu_set"],
-        pool_type=raw["pool_type"], # rbd or rados
+        pool_name=raw["pool_name"],  # rbd or rados
+        pool_size=raw["pool_size"],
         rbd_num_images=raw["rbd_num_images"],
         rbd_image_size=raw["rbd_image_size"],
     )
@@ -194,8 +208,8 @@ def _parse_configuration(
     # ClassicClusterConfiguration
     return ClassicClusterConfiguration(
         **base_kwargs,
-        osd_backend=raw.get("osd_backend", "bluestore")
-        #classic_cpu_set=raw.get("classic_cpu_set", []),
+        osd_backend=raw.get("osd_backend", "bluestore"),
+        # classic_cpu_set=raw.get("classic_cpu_set", []),
     )
 
 
@@ -251,6 +265,7 @@ def _parse_benchmarks(raw: dict) -> Benchmarks:
 # Validation
 # ---------------------------------------------------------------------------
 
+
 def validate_plan(plan: PerfTestPlan) -> None:
     """Validate a :class:`PerfTestPlan` instance.
 
@@ -265,9 +280,7 @@ def validate_plan(plan: PerfTestPlan) -> None:
 
     for cfg_name, cfg in plan.cluster.configurations.items():
         if not cfg.osd_range:
-            raise ValueError(
-                f"Configuration '{cfg_name}': osd_range must not be empty"
-            )
+            raise ValueError(f"Configuration '{cfg_name}': osd_range must not be empty")
         if not cfg.vstart_cpu_set:
             raise ValueError(
                 f"Configuration '{cfg_name}': vstart_cpu_set must not be empty"
@@ -285,7 +298,7 @@ def validate_plan(plan: PerfTestPlan) -> None:
                 raise ValueError(
                     f"Configuration '{cfg_name}': reactor_range must contain integers"
                 )
-        #elif isinstance(cfg, ClassicClusterConfiguration):
+        # elif isinstance(cfg, ClassicClusterConfiguration):
 
     # Benchmarks
     if not plan.benchmarks:
@@ -295,6 +308,7 @@ def validate_plan(plan: PerfTestPlan) -> None:
 # ---------------------------------------------------------------------------
 # Public loader
 # ---------------------------------------------------------------------------
+
 
 def load_test_plan(json_file: str) -> PerfTestPlan:
     """Read *json_file* and return a fully populated :class:`PerfTestPlan`.
@@ -319,4 +333,3 @@ def load_test_plan(json_file: str) -> PerfTestPlan:
     plan = PerfTestPlan(cluster=cluster, benchmarks=benchmarks)
     validate_plan(plan)
     return plan
-
