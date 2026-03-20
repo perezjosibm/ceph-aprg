@@ -194,14 +194,17 @@ def _parse_configuration(
         vstart_cpu_set=raw["vstart_cpu_set"],
         pool_name=raw["pool_name"],  # rbd or rados
         pool_size=raw["pool_size"],
-        rbd_num_images=raw["rbd_num_images"],
-        rbd_image_size=raw["rbd_image_size"],
+        # We need a subclass tha tuses RBD to support RBD-specific parameters
+        # like num_images and image_size, but for now we can just include them
+        # in the base class and ignore them for non-RBD configurations.
+        rbd_num_images=raw.get("rbd_num_images", 0),
+        rbd_image_size=raw.get("rbd_image_size", "0G"),
     )
 
     if cls is CrimsonClusterConfiguration:
         return CrimsonClusterConfiguration(
             **base_kwargs,
-            reactor_range=raw["reactor_range"],
+            reactor_range=raw.get("reactor_range", []),
             osd_backend=raw.get("osd_backend", "seastore"),
             balance_strategy=raw.get("balance_strategy", "default"),
         )
