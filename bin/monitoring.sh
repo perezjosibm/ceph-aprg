@@ -64,11 +64,11 @@ mon_filter_top() {
 
     if [ "${TOP_FILTER}" == "cores" ]; then
         # We might produce both of threads based CPU util and cores based, but only use core based for now
-        /root/bin/tools/top_parser.py -t svg -n ${NUM_SAMPLES} -p ${TOP_PID_JSON} -o ${CPU_AVG_FILE} ${TOP_FILE}  2>&1 > /dev/null
+        ${SCRIPT_DIR}/tools/top_parser.py -t svg -n ${NUM_SAMPLES} -p ${TOP_PID_JSON} -o ${CPU_AVG_FILE} ${TOP_FILE}  2>&1 > /dev/null
     else
         # Disabling termporarily
         cat ${TOP_FILE} | jc --top --pretty > ${TEST_RESULT}_top.json
-        python3 /root/bin/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${CPU_AVG_FILE} \
+        python3 ${SCRIPT_DIR}/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" --avg=${CPU_AVG_FILE} \
             --pids=${TOP_PID_JSON} 2>&1 > /dev/null
         # Remove the top.json file to save space
         rm -f ${TEST_RESULT}_top.json
@@ -80,7 +80,7 @@ mon_filter_top_cpu() {
     local CPU_AVG_FILE=$2 
     local CPU_PID_JSON=$3
 
-    /root/bin/tools/top_parser.py -t svg -n ${NUM_SAMPLES} -c ${CPU_PID_JSON} -o ${CPU_AVG_FILE} ${TOP_FILE} 2>&1 > /dev/null
+   ${SCRIPT_DIR}/tools/top_parser.py -t svg -n ${NUM_SAMPLES} -c ${CPU_PID_JSON} -o ${CPU_AVG_FILE} ${TOP_FILE} 2>&1 > /dev/null
 }
 
 
@@ -99,3 +99,131 @@ mon_diskstats() {
   done
 }
 
+
+#############################################################################################
+# Probably best to refactor this to use shift and $@ instead of the fixed number of args 
+fun_osd_dump_start() {
+    local OUTFILE=$1
+    echo "[" > ${OUTFILE}
+}
+
+fun_osd_dump_stats_start() {
+    local OUTFILE=$1
+    if [ "${OSD_TYPE}" != "classic" ]; then
+        for dmp_stats in "dump_tcmalloc_stats" "dump_seastar_stats"; do
+            local outfile=${OUTFILE/_dump.json}_${dmp_stats}.json
+            echo "[" > ${outfile}
+        done
+    fi
+}
+
+fun_osd_dump_end() {
+    local OUTFILE=$1
+    echo "]" >> ${OUTFILE}
+}
+
+fun_osd_dump_stats_end() {
+    local OUTFILE=$1
+    if [ "${OSD_TYPE}" != "classic" ]; then
+        for dmp_stats in "dump_tcmalloc_stats" "dump_seastar_stats"; do
+            local outfile=${OUTFILE/_dump.json}_${dmp_stats}.json
+            echo "]" >> ${outfile}
+        done
+    fi
+}
+
+fun_osd_mem_profile() {
+    local OUTFILE=$1
+    if [ "${OSD_TYPE}" != "classic" ]; then
+        # Attach to osd.0 only with gdb and get the mem profile 
+        # Assuming osd.0 is the one we monitor 
+        # --ex 'attach \"${osdpid}\"' \
+        #--ex 'call ceph::OSD::SeastarMemProfiler::write_profile_to_file(\"${OUTFILE}\")' \
+        # --ex 'detach' --ex 'quit'"
+        local osdpid=$(pidof crimson-osd | awk '{print $1}')
+        local timestamp=$(date +'%Y-%m-%dT%H:%M:%S')
+        echo "{ \"timestamp\": \"$timestamp\" ," >> ${OUTFILE}
+        echo " \"mem_profile\": " >> ${OUTFILE}
+        local cmd="gdb -p ${osdpid} --batch \
+            -d ${SCRIPT_DIR}/tools -x run_scylla"
+        $cmd 2>&1 >> ${OUTFILE}
+        echo "}" >> ${OUTFILE}
+    fi
+}
+#for oid in ${!osd_id[@]}; do
+#timestamp=$(date +'%Y-%m-%dT%H:%M:%S') 
+#echo "{ \"timestamp\": \"$timestamp\" }," >> ${oid}_${TEST_NAME}_dump_${LABEL}.json
+#eval "$cmd" >> ${TEST_NAME}_${LABEL}.json
+#$cmd >> ${TEST_NAME}_${LABEL}.json
+#local start=$(! [ $i -eq 0 ]; echo $? )
+#local end=$(! [ $i -eq $((NUM_SAMPLES-1)) ]; echo $? )
+#done
+
+fun_osd_dump_generic() {
+    local TEST_NAME=$1
+    local NUM_SAMPLES=$2
+    local SLEEP_SECS=$3
+    #local osd_type=$4
+    local OUTFILE=$4
+    local METRICS=$5 #"reactor_utilization" 
+    local end=$6 #|| "end"
+
+    [ "$METRICS" == "none" ] && METRICS=""
+    if [ "${OSD_TYPE}" == "classic" ]; then
+        cmd="/ceph/build/bin/ceph tell osd.0 perf dump"
+    else
+        cmd="/ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS}"
+    fi
+
+    echo -e "${GREEN}== OSD type: ${OSD_TYPE}: num_samples: ${NUM_SAMPLES}: cmd:${cmd} ==${NC}"
+    for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
+        # Use only osd.0 always
+        # If $end is not given, determine it here
+        if [ -z "${end}" ]; then
+            #end=$( [ $i -eq $((NUM_SAMPLES-1)) ] && echo "end" || echo "" )
+            [ $i -eq $(( NUM_SAMPLES-1 )) ] && end="end" || end="notyet"
+        fi
+        fun_get_json_from_cmd "${TEST_NAME}" "${cmd}" ${OUTFILE} $end
+
+        if [ "${OSD_TYPE}" != "classic" ] && [ -z "${METRICS}" ]; then
+            for dmp_stats in "dump_tcmalloc_stats" "dump_seastar_stats"; do
+                local lcmd="/ceph/build/bin/ceph tell osd.0 ${dmp_stats}"
+                local outfile=${OUTFILE/_dump.json}_${dmp_stats}.json
+                fun_get_json_from_cmd "${TEST_NAME}" "${lcmd}" ${outfile} $end
+            done
+        fi
+        sleep ${SLEEP_SECS};
+    done
+}
+
+fun_osd_dump() {
+    local TEST_NAME=$1
+    local NUM_SAMPLES=$2
+    local SLEEP_SECS=$3
+    local OUTFILE=$4
+    local end=$5 
+
+    fun_osd_dump_generic ${TEST_NAME} ${NUM_SAMPLES} ${SLEEP_SECS} ${OUTFILE} "none" ${end}
+}
+
+fun_osd_dump_metrics() {
+    local TEST_NAME=$1
+    local NUM_SAMPLES=$2
+    local SLEEP_SECS=$3
+    local OUTFILE=$4
+    local METRICS=$5 #"reactor_utilization" 
+
+    fun_osd_dump_generic ${TEST_NAME} ${NUM_SAMPLES} ${SLEEP_SECS} ${OUTFILE} ${METRICS}
+}
+
+#############################################################################################
+# Get reactor utilisation: fixed to ten samples each 10 secs apart
+fun_get_reactor_util() {
+    local TEST_NAME=$1
+    local TEST_RESULT=$2
+    #local OUTFILE=$2
+    #fun_get_json_from "${TEST_NAME}" "/ceph/build/bin/ceph tell osd.0 dump_metrics reactor_utilization" ${OUTFILE}
+    fun_osd_dump_start ${TEST_RESULT}_rutil.json
+    fun_osd_dump_metrics ${TEST_NAME} 10 10  ${TEST_RESULT}_rutil.json "reactor_utilization"
+    fun_osd_dump_end ${TEST_RESULT}_rutil.json 
+}

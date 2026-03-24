@@ -288,10 +288,19 @@ def validate_plan(plan: PerfTestPlan) -> None:
             raise ValueError(
                 f"Configuration '{cfg_name}': vstart_cpu_set must not be empty"
             )
+        if not cfg.store_devs:
+            raise ValueError(
+                f"Configuration '{cfg_name}': store_devs must not be empty"
+            )
         if not all(isinstance(n, int) for n in cfg.osd_range):
             raise ValueError(
                 f"Configuration '{cfg_name}': osd_range must contain integers"
             )
+        if not cfg.pool_name:
+            raise ValueError(
+                f"Configuration '{cfg_name}': pool_name must not be empty"
+            )
+
         if isinstance(cfg, CrimsonClusterConfiguration):
             if not cfg.reactor_range:
                 raise ValueError(

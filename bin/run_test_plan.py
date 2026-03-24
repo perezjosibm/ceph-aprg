@@ -836,7 +836,8 @@ class BalancedOSDRunner:
         # os.chdir(self.run_dir)
 
         # Change to build directory: this is needed by vstart (due to local dependencies)
-        os.chdir("/ceph/build/")
+        if not self.dry_run:
+            os.chdir("/ceph/build/")
 
         for cfg_name, cfg in self.test_plan_data.cluster.configurations.items():
             logger.info(

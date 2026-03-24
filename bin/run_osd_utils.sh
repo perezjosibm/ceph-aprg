@@ -1,28 +1,7 @@
 #!/usr/bin/env bash
+# Utils for run_balanced_osd.hs and can be shared for other scripts
 
-# ! Usage: ./run_balanced_osd.sh [-t <osd-be-type>] [-d rundir]
-# !		 
-# ! Run test plans to compare Classic vs Crimson OSD
-# ! -d : indicate the run directory cd to
-# ! -t :  OSD backend type: classic, cyan, blue, sea. 
-# !  Runs all the balanced vs default CPU core/reactor
-# !    distribution tests for the given OSD backend type, 'all' for the three of them.
-# ! -b : Run a single balanced CPU core/reactor distribution tests for all the OSD backend types
-
-# Test plan experiment to compare the effect of balanced vs unbalanced CPU core distribution for the Seastar
-# reactor threads -- using a pure reactor env cyanstore -- extended for Bluestore as well
-#
-# get the CPU distribution for the 2 general cases: 24 physical vs 52 inc. HT
-
-# Redirect to stdout/stderr to a log file
-# exec 3>&1 4>&2
-# trap 'exec 2>&4 1>&3' 0 1 2 3
-# exec 1>/tmp/run_balanced_osd.log 2>&1
-#############################################################################################
-
-
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-source ${SCRIPT_DIR}/common.sh
+[ -z "${SCRIPT_DIR}" ] && SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 #############################################################################################
 # Default values for the test plan, can be overridden by a .json file or command line args
@@ -243,6 +222,7 @@ fun_run_fio(){
 
 #########################################
 # Run balanced vs default CPU core/reactor distribution in Crimson using either Cyan, Seastore or  Bluestore
+# Cluster creation iterating over the number of OSDs and reactors
 fun_run_fixed_bal_tests() {
     local BAL_KEY=$1
     local OSD_TYPE=$2
@@ -324,7 +304,8 @@ fun_run_fixed_bal_tests() {
 
           [ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
           /root/bin/cephlogoff.sh 2>&1 > /dev/null && \
-              # Preliminary: simply collect the threads from OSD to verify its as expected
+          # Preliminary: simply collect the threads from OSD to verify its as expected
+          # TODO: m,ak eit agnostic of pool details, so can run for RADOs as well as RBD
           /root/bin/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_test_run.log 
               #&& \/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
 
@@ -451,79 +432,3 @@ fun_watchdog() {
     fi 
 }
 
-#########################################
-# Main:
-#
-trap 'echo "$(date)== INT received, exiting... =="; fun_stop ${fio_pid}; exit 1' SIGINT SIGTERM SIGHUP
-
-# DEfine some FIO options, or a .json test plan instead
-while getopts 'ab:c:d:e:g:t:s:r:jlpxz:' option; do
-  case "$option" in
-    a) fun_show_all_tests
-       exit
-        ;;
-    c) OSD_CPU=$OPTARG
-        ;;
-    b) BALANCE=$OPTARG
-        ;;
-    d) RUN_DIR=$OPTARG
-        ;;
-    e) if [ ! -z "${OPTARG}" ] && [ -f "${SCRIPT_DIR}/${OPTARG}" ]; then
-        TEST_PLAN="${SCRIPT_DIR}/${OPTARG}"
-       fi
-        ;;
-    r) fun_run_fio $OPTARG
-       exit
-        ;;
-    s) fun_show_grid $OPTARG
-       exit
-        ;;
-    t) OSD_TYPE=$OPTARG
-        ;;
-    j) MULTI_JOB_VOL=true
-        ;;
-    l) LATENCY_TARGET=true
-        ;;
-    p) PRECOND=true
-        ;;
-    g) REGEN=false
-        ;;
-    z) CACHE_ALG=$OPTARG
-       if [ "$CACHE_ALG" != "LRU" ] && [ "$CACHE_ALG" != "2Q" ]; then
-         echo -e "${RED}== Invalid cache algorithm: ${CACHE_ALG} ==${NC}"
-         exit 1
-       fi
-       ;;
-   x) SKIP_EXEC=true
-       ;;
-    :) printf "missing argument for -%s\n" "$OPTARG" >&2
-       usage >&2
-       exit 1
-       ;;
-  esac
- done
-
- echo -e "${GREEN}== OSD_TYPE ${OSD_TYPE} BALANCE ${BALANCE} ==${NC}"
- echo -e "${GREEN}== Loading test plan from ${TEST_PLAN} ==${NC}"
- source $TEST_PLAN
-
- # Create the run directory if it does not exist
- [ ! -d "${RUN_DIR}" ] && mkdir -p ${RUN_DIR}
- fun_save_test_plan
- cd /ceph/build/
-
- if [ "$REGEN" = true ]; then
-     fun_run_regen_fio_files
- fi
- if [ "$PRECOND" = true ]; then
-     fun_run_precond "precond"
- fi
- if [ "$OSD_TYPE" == "all" ]; then
-     for OSD_TYPE in classic sea; do # cyan blue 
-         fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}
-     done
- else
-    echo -e "${GREEN}==fun_run_bal_vs_default_tests: OSD_TYPE ${OSD_TYPE} BALANCE ${BALANCE} ==${NC}"
-     fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}
- fi
- exit

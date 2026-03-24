@@ -23,6 +23,7 @@
         "osd_type": "crimson",
         "osd_backend": "bluestore",
         "osd_range": [ 1 ],
+        "reactor_range": [ 1 ],
         "store_devs": [ "/dev/nvme0n1"],
         "vstart_cpu_set": [ "0-95" ],
         "pool_size": "128",

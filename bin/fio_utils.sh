@@ -1,82 +1,93 @@
 #!/usr/bin/env bash
 
-#!/usr/bin/env bash
-# ! FIO driver for Ceph 
-# ! Usage: ./run_fio.sh [-a] [-c <osd-cpu-cores>] [-k] [-j] [-d rundir]
-# !  		-w {workload} [-n] -p <test_prefix>, eg "4cores_8img_16io_2job_8proc"
-# !		 
-# ! Run FIO according to the workload given:
-# ! rw (randomwrite), rr (randomread), sw (seqwrite), sr (seqread)
-# ! -a : run the four typical workloads with the reference I/O concurrency queue values
-# ! -c : indicate the range of OSD CPU cores
-# ! -d : indicate the run directory cd to
-# ! -j : indicate whether to use multi-job FIO
-# ! -k : indicate whether to skip OSD dump_metrics
-# ! -l : indicate whether to use latency_target FIO profile
-# ! -r : indicate whether the tests runs are intended for Response Latency Curves
-# ! -g : indicate whether to post-process existing data --requires -p (only coalescing charts atm)
-# ! -n : only collect top measurements, no perf
-# ! -t : indicate the type of OSD (classic or crimson by default).
-# ! -x : skip the heuristic criteria for Response Latency Curves
-# ! -z : use AIO for FIO (no Ceph cluster)
-# !
-# ! Ex.: ./run_fio.sh -w sw
-# ! Ex.: ./run_fio.sh -a -s  -w sw # single workload
-# ! Ex.: ./run_fio.sh -a -s  -w  200gb # single workload -- see definition below
-# ! Ex.: ./run_fio.sh -a -s -c "0-4" -w  200gb # single workload -- see definition below
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+# Utilities from run_fio.sh, so we can reuse them in other scripts, e.g., rae-yp-rados.sh
 
-source ${SCRIPT_DIR}/fio_utils.sh
-source ${SCRIPT_DIR}/common.sh
-source ${SCRIPT_DIR}/monitoring.sh
 
-while getopts 'ac:d:f:jklrsrw:p:nmt:gxz' option; do
-  case "$option" in
-    a) RUN_ALL=true
-        ;;
-    c) OSD_CORES=$OPTARG
-        ;;
-    d) RUN_DIR=$OPTARG
-        ;;
-    f) FIO_CORES=$OPTARG
-        ;;
-    w) WORKLOAD=$OPTARG
-        ;;
-    n) WITH_FLAMEGRAPHS=false # no flamegraphs by default
-        ;;
-    m) WITH_MEM_PROFILE=true # no mem profiile by default
-        ;;
-    s) SINGLE=true
-        ;;
-    k) SKIP_OSD_MON=true
-        ;;
-    j) MULTI_JOB_VOL=true
-        ;;
-    r) RESPONSE_CURVE=true
-        ;;
-    p) TEST_PREFIX=$OPTARG
-        ;;
-    t) OSD_TYPE=$OPTARG
-        ;;
-    l) LATENCY_TARGET=true
-        ;;
-    g) POST_PROC=true
-        ;;
-    x) RC_SKIP_HEURISTIC=true
-        ;;
-    z) FIO_JOB_SPEC="aio_"
-        ;;
-    :) printf "missing argument for -%s\n" "$OPTARG" >&2
-       usage >&2
-       exit 1
-       ;;
-    \?) printf "illegal option: -%s\n" "$OPTARG" >&2
-       usage >&2
-       exit 1
-       ;;
-  esac
- done
-# Validate the workload given
+# #### EXPERIMENTAL: USE UNDER YOUR OWN RISK #####
+#
+# Assoc array to use the single OSD table for (iodepth x num_jobs) ref values
+# WORKLOAD (first arg to fun_run_workload) is used as index for these:
+declare -A map=([rw]=randwrite [rr]=randread [sw]=seqwrite [sr]=seqread 
+                [rr_norm]=randread_norm [rw_norm]=randwrite_norm 
+                [rr_zipf]=randread_zipf [rw_zipf]=randwrite_zipf 
+                [rr_zoned]=randread_zoned [rw_zoned]=randwrite_zoned 
+                [ex8osd]=ex8osd [hockey]=hockey)
+declare -A mode=([rw]=write [rr]=read [sw]=write [sr]=read 
+                    [rr_norm]=read [rw_norm]=write
+                    [rr_zipf]=read [rw_zipf]=write 
+                    [rr_zoned]=read [rw_zoned]=write)
+# Typical values as observed during discovery sprint:
+# Single FIO instances: for sequential workloads, bs=64k fixed
+# Need to be valid ranges
+RAND_IODEPTH_RANGE="1 2 4 8 16 24 32 40 52 64"
+SEQ_IODEPTH_RANGE="1 2 3 4 6 8 10 12 14 16"
+# Option -w (WORKLOAD) is used as index for these:
+# We need to refine the values for hockey so that each workload has its own list of iodepth/numjobs
+#declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="${RAND_IODEPTH_RANGE}"  [rw]=16 [rr]=16 [sw]=14 [sr]=16 [rr_norm]=16 [rw_norm]=16 [rr_zipf]=16 [rw_zipf]=16 [rr_zoned]=16 [rw_zoned]=16) # Original
+#declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="1 2 4 8 16 24 32 40 52 64"  [rw]="1 2 4 8 16 24 32 40 52 64" [rr]=16 [sw]=14 [sr]=16 [rr_norm]=16 [rw_norm]=16 [rr_zipf]=16 [rw_zipf]=16 [rr_zoned]=16 [rw_zoned]=16) # 400GB_1hr_rw_rc
+
+declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="${RAND_IODEPTH_RANGE}" 
+[rw]="${RAND_IODEPTH_RANGE}" [rr]="${RAND_IODEPTH_RANGE}" [sw]="${SEQ_IODEPTH_RANGE}" [sr]="${SEQ_IODEPTH_RANGE}" 
+[rr_norm]=16 [rw_norm]=16 [rr_zipf]=16 [rw_zipf]=16 [rr_zoned]=16 [rw_zoned]=16) # 400GB_1hr_all_rc
+
+declare -A m_s_numjobs=( [ex8osd]="1 4 8" [hockey]="1"  [rw]=1  [rr]=16 [sw]=1  [sr]=1 [rr_norm]=16
+    [rw_norm]=4 [rr_zipf]=16 [rw_zipf]=4 [rr_zoned]=16 [rw_zoned]=4)
+#declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
+
+# Multiple FIO instances: results for 8 RBD images/vols
+declare -A m_m_iodepth=( [rw]=2 [rr]=2 [sw]=2 [sr]=2 [rr_norm]=1 [rw_norm]=1 [rr_zipf]=1 [rw_zipf]=1 [rr_zoned]=1 [rw_zoned]=1)
+declare -A m_m_numjobs=( [rw]=1 [rr]=2  [sw]=1 [sr]=1 [rr_norm]=1 [rw_norm]=1 [rr_zipf]=1 [rw_zipf]=1 [rr_zoned]=1 [rw_zoned]=1)
+
+declare -A m_bs=( [rw]=4k [rr]=4k [sw]=64k [sr]=64k [rr_norm]=4k [rw_norm]=4k [rr_zipf]=4k [rw_zipf]=4k [rr_zoned]=4k [rw_zoned]=4k )
+# Precondition before the actual test workload
+#declare -A m_pre=( [rw]=4k [rr]=4k [sw]=64k [sr]=64k )
+# The order of execution of the workloads for the random distributions
+##declare -a workloads_order=( rr_norm rw_norm rr_zipf rw_zipf rr_zoned rw_zoned )
+# The order of execution of the workloads for response curves: original
+declare -a workloads_order=( rr rw sr sw )
+declare -a procs_order=( true false )
+
+declare -A osd_id
+declare -A fio_id
+declare -a global_fio_id=()
+
+[ -z "${SCRIPT_DIR}" ] && SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+# Default values that can be changed via arg options
+# Or even betterm via test_plan.json
+FIO_JOBS=${SCRIPT_DIR}/fio_workloads/
+FIO_CORES="0-31" # unrestricted
+FIO_JOB_SPEC="rbd_"
+OSD_CORES="0-31" # range of CPU cores to monitor
+NUM_PROCS=8 # num FIO processes
+TEST_PREFIX="4cores_8img"
+RUN_DIR="/tmp"
+
+SKIP_OSD_MON=false
+RUN_ALL=false
+SINGLE=false
+MULTI_JOB_VOL=false
+# NUM_SAMPLES=30 # for top measurements, moved to test_plan
+OSD_TYPE="crimson"
+RESPONSE_CURVE=false
+LATENCY_TARGET=false
+RC_SKIP_HEURISTIC=false
+POST_PROC=false
+PACK_DIR="/packages/"
+MAX_LATENCY=20 #in millisecs
+STOP_CLEAN=false
+NUM_ATTEMPTS=3 # number of attempts to run the workload
+
+WITH_FLAMEGRAPHS=true
+WITH_MEM_PROFILE=false
+SUCCESS=0
+FAILURE=1
+
+# Local watchdog: need to generalise this if monitoring multiple processes
+WATCHDOG_PID=0
+WATCHDOG=false
+fio_rc=0
+
 
 #############################################################################################
 # Decide wether use a simple profile, or latency_target, or a multijob (job per volume)
@@ -614,46 +625,3 @@ fun_post_process_cold() {
   done
 }
 
-#############################################################################################
-#trap "exit" INT TERM
-#trap "kill 0" EXIT
-# 
-trap 'echo "$(date):run_fio == Got signal from parent, quiting =="; kill -9 ${fio_id[@]}; jobs -p | xargs -r kill -9; fun_tidyup ${TEST_RESULT} _failed; exit 1' SIGINT SIGTERM SIGHUP
-
-#############################################################################################
-# main:
-
-[[ ! -d $RUN_DIR ]] && mkdir $RUN_DIR
-pushd $RUN_DIR
-
-# Standalone option to post-process a set of results previously collected
-# might need to provide extra info for the end file name
-if [ "$POST_PROC" = false ]; then
-  fun_set_osd_pids $TEST_PREFIX
-  fun_set_fio_job_spec
-fi
-
-# Launch a continuous monitoring of the OSD process, exit with failure if no
-# OSD is running and kill all FIO etc processes, tidy up
-
-  if [ "$RUN_ALL" = true ]; then
-    if [ "$SINGLE" = true ]; then
-      procs_order=( true )
-    fi
-    for single_procs in ${procs_order[@]}; do
-      for wk in ${workloads_order[@]}; do
-        #fun_prime
-        if [ "$POST_PROC" = true ]; then
-          fun_post_process_cold $wk $single_procs  $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD 
-        else
-          fun_run_workload_loop $wk $single_procs  $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD
-        fi
-      done
-    done
-  else
-    fun_run_workload_loop $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX
-  fi
-
-  echo "$(date)== run_fio: $TEST_PREFIX completed (OSD pid: ${osd_id[@]})=="
-popd
-exit 0 # Success
