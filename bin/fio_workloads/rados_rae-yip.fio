@@ -8,6 +8,7 @@ touch_objects=0
 busy_poll=0
 cpus_allowed_policy=split
 group_reporting=1
+direct=1
 percentile_list=99.0:99.9:99.99:99.999:99.9999:100
 
 bs=64k

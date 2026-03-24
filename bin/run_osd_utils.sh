@@ -22,7 +22,7 @@ OSD_CPU=${VSTART_CPU_CORES} # Currently used for Classic only
 FIO_CPU_CORES="28-55,84-111" # inc HT
 #FIO_CPU_CORES="52-55,108-111" # inc HT
 #FIO_CPU_CORES="14-27,70-83,42-55,98-111" # inc HT
-FIO_JOBS=/root/bin/fio_workloads/
+FIO_JOBS=${SCRIPT_DIR}/fio_workloads/
 FIO_SPEC="32fio" # 32 client/jobs
 OSD_TYPE=cyan
 ALIEN_THREADS=8 # fixed- num alien threads per CPU core
@@ -49,6 +49,7 @@ pid_watchdog=0
 # Associative arrays to hold the test cases
 declare -A test_table
 declare -A test_row
+declare -A bench_row
 declare -A num_cpus
 declare -A osd_id
 
@@ -150,7 +151,7 @@ fun_validate_set() {
   # produce a dict which keys are the cpu uid (numeric), values is a list of threads-types
   # take longest string to define the cell width, and produce an ascii grid
   [ ! -f "${NUMA_NODES_OUT}" ] && lscpu --json > ${NUMA_NODES_OUT}
-  python3 /root/bin/tasksetcpu.py -c $TEST_NAME -u ${NUMA_NODES_OUT} -d ${RUN_DIR}
+  python3 ${SCRIPT_DIR}/tasksetcpu.py -c $TEST_NAME -u ${NUMA_NODES_OUT} -d ${RUN_DIR}
 }
 
 #############################################################################################
@@ -184,6 +185,22 @@ fun_show_grid() {
 }
 
 #############################################################################################
+# Run FIO with an specifio job file
+fun_run_fio_custom(){
+  local TEST_NAME=$1
+  local -n dict=$2
+
+  # for x in $(IFS=';';echo $IN); do echo "> [$x]"; done
+  for io in $(IFS=','; echo ${dict[fio_iodepth]}); do 
+      for numj in $(IFS=','; echo ${dict[fio_numjobs]}); do 
+          echo "== io_depth: ${io} num_jobs: ${numj}=="; 
+          json_name="${RUN_DIR}/${TEST_NAME}_${numj}job_${io}io_p0.json"
+          pool_name=crimsonpool clientuid=1 jobnum=1 io_depth=$io num_jobs=$numj taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} --output=${json_name}  --output-format=json;  
+      done; 
+  done
+}
+
+#############################################################################################
 # Useful when the cluster was created manually:
 fun_run_fio(){
   local TEST_NAME=$1
@@ -206,12 +223,12 @@ fun_run_fio(){
 #########################################
   # Oficial FIO command:
   # x: skip response curves stop heuristic, n:no flamegraphs
-  cmd="/root/bin/run_fio.sh -s ${OPTS} -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -t ${OSD_TYPE}"
+  cmd="${SCRIPT_DIR}/run_fio.sh -s ${OPTS} -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -t ${OSD_TYPE}"
 #########################################
   # Experimental: -w for single, and -k for skipping OSD monitoring
-  #cmd="/root/bin/run_fio.sh -s ${OPTS} -w sr -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR}"
-  #cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -k"
-  #cmd="/root/bin/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -d ${RUN_DIR}"
+  #cmd="${SCRIPT_DIR}/run_fio.sh -s ${OPTS} -w sr -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR}"
+  #cmd="${SCRIPT_DIR}/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -k"
+  #cmd="${SCRIPT_DIR}/run_fio.sh -s ${OPTS} -a -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -d ${RUN_DIR}"
 #########################################
   echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_test_run.log
   ##eval "${cmd}"
@@ -244,21 +261,25 @@ fun_run_fixed_bal_tests() {
   for NUM_OSD in ${sorted_keys}; do
     eval "${test_table["${NUM_OSD}"]}"
     for x in "${!test_row[@]}"; do printf "[%s]=%s\n" "$x" "${test_row[$x]}" ; done
+
+    if [ "${test_row['fio_type']}" == "custom" ]; then
+        FIO_SPEC="${test_row['fio_type']}"
+    fi
   #for NUM_OSD in ${OSD_RANGE}; do
     #  for NUM_REACTORS in ${REACTOR_RANGE}; do
     for NUM_REACTORS in ${test_row[reactor_range]}; do
 
           if [ "$OSD_TYPE" == "classic" ]; then
               title="(${OSD_TYPE}) $NUM_OSD OSD classic, fixed ${FIO_SPEC}"
-              cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1  taskset -ac '${VSTART_CPU_CORES}' /ceph/src/vstart.sh\
+              cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1  taskset -ac '${test_row[vstart_cpu_set]}' /ceph/src/vstart.sh\
  --new -x --localhost --without-dashboard --redirect-output ${osd_be_table[blue]} ${test_row[store_devs]} --no-restart"
                   # -- disabling this
               test_name="${OSD_TYPE}_${NUM_OSD}osd_${FIO_SPEC}_${SUFFIX}"
 
           else
               title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor,  fixed ${FIO_SPEC}" 
-              # Default does not respect the balance VSTART_CPU_CORES, but balanced does
-              cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac '${VSTART_CPU_CORES}' /ceph/src/vstart.sh\
+              # Default does not respect the balance test_row[vstart_cpu_set], but balanced does
+              cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac '${test_row[vstart_cpu_set]}' /ceph/src/vstart.sh\
  --new -x --localhost --without-dashboard --redirect-output ${osd_be_table[${OSD_TYPE}]} ${test_row[store_devs]}\
  --crimson ${bal_ops_table[${BAL_KEY}]} --crimson-smp ${NUM_REACTORS} --no-restart"
 
@@ -285,7 +306,7 @@ fun_run_fixed_bal_tests() {
           fi
 
           if [ "$OSD_TYPE" == "classic" ]; then
-              # Manually set the OSD process affinity
+              # Manually set the OSD process affinity: do we still need this?
               cmd="taskset -a -c -p ${OSD_CPU}  $(pgrep osd)"
               if [ "${SKIP_EXEC}" = true ]; then
                   echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_test_run.log
@@ -300,35 +321,49 @@ fun_run_fixed_bal_tests() {
 
           echo "$(date) Sleeping for 20 secs..."
           sleep 20 # wait until all OSD online, pgrep?
-          fun_show_grid $test_name
+          ## Disabling grid temporarly
+          ##fun_show_grid $test_name
 
           [ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
-          /root/bin/cephlogoff.sh 2>&1 > /dev/null && \
+          ${SCRIPT_DIR}/cephlogoff.sh 2>&1 > /dev/null && \
           # Preliminary: simply collect the threads from OSD to verify its as expected
-          # TODO: m,ak eit agnostic of pool details, so can run for RADOs as well as RBD
-          /root/bin/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_test_run.log 
-              #&& \/root/bin/cpu-map.sh  -n osd -g "alien:4-31"
+          # TODO: make it agnostic of pool details, so can run for RADOs as well as RBD
+          if [ "${test_row['pool_type']}" == "rados" ]; then
+              # Simply create a pool for RADOS
+              #ceph osd pool create crimsonpool 128 128 && \; 
+              ceph osd pool create crimsonpool ${test_row['pool_size']} && ceph status;
+              ceph osd pool ls;
+              rados df; 
+              ceph osd pool set noautoscale
+         else
+            ${SCRIPT_DIR}/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_test_run.log 
+              #&& \${SCRIPT_DIR}/cpu-map.sh  -n osd -g "alien:4-31"
+          fi
 
           # Start FIO:
           echo "$(date) Starting FIO..."
           #( fun_run_fio $test_name ) & 
           #fio_pid=$!
-          fun_run_fio "$test_name" "${test_row[fio_workload]}"
-          echo "$(date) FIO ${fio_pid} started: $test_name ${test_row[fio_workload]}"
-          # Start watchdog: modified to run as a background job (subsell) since the pid returned was the 
-          # same as this running script , so it killed itself!
-          echo "$(date) Starting watchdog..."
-          WATCHDOG=true
-          ( fun_watchdog ${fio_pid} ) &
-          #/root/bin/watchdog.sh -p $fio_pid &
-          pid_watchdog=$!
+          if [ "${test_row['fio_type']}" == "custom" ]; then
+            fun_run_fio_custom "$test_name" test_row
+          else
+              fun_run_fio "$test_name" "${test_row[fio_workload]}"
+              echo "$(date) FIO ${fio_pid} started: $test_name ${test_row[fio_workload]}"
+              # Start watchdog: modified to run as a background job (subsell) since the pid returned was the 
+              # same as this running script , so it killed itself!
+              echo "$(date) Starting watchdog..."
+              WATCHDOG=true
+              ( fun_watchdog ${fio_pid} ) &
+              #${SCRIPT_DIR}/watchdog.sh -p $fio_pid &
+              pid_watchdog=$!
 
-          # Wait for FIO to finish
-          echo "$(date) Waiting for FIO to complete, (watchdog pid ${pid_watchdog})..."
-          wait $fio_pid
-          # Stop watchdog
-          echo "$(date) FIO completed, killing watchdog ${pid_watchdog}..."
-          kill -9 $pid_watchdog
+              # Wait for FIO to finish
+              echo "$(date) Waiting for FIO to complete, (watchdog pid ${pid_watchdog})..."
+              wait $fio_pid
+              # Stop watchdog
+              echo "$(date) FIO completed, killing watchdog ${pid_watchdog}..."
+              kill -9 $pid_watchdog
+          fi
           # Should be a neater way to stop the cluster
           if [ "$OSD_TYPE" == "classic" ]; then
             /ceph/src/stop.sh
@@ -364,11 +399,11 @@ fun_run_bal_vs_default_tests() {
 #############################################################################################
 # Regenerate the FIO jobs .fio files according to the current NUM_RBD_IMAGES and LATENCY_TARGET
 fun_run_regen_fio_files(){
-    echo -e "${GREEN}== Regenerating FIO job files ==${NC}"
+    echo -e "${GREEN}== Regenerating FIO RBD job files ==${NC}"
     if [ "$LATENCY_TARGET" = true ]; then
         OPTS="${OPTS} -l "
     fi
-    cmd="/root/bin/gen_fio_job.sh ${OPTS} -n ${NUM_RBD_IMAGES} -d /root/bin/fio_workloads" #  -p fio_test
+    cmd="${SCRIPT_DIR}/gen_fio_job.sh ${OPTS} -n ${NUM_RBD_IMAGES} -d ${SCRIPT_DIR}/fio_workloads" #  -p fio_test
     echo "${cmd}"
     eval "${cmd}"
     rc=$? 
@@ -394,7 +429,7 @@ fun_run_precond(){
     fi
     #fun_get_diskstats ${TEST_NAME}
     # We might need to exted to get a non-destructive option since we might need to look at further measurements
-    jc --pretty /proc/diskstats | python3 /root/bin/diskstat_diff.py -d ${RUN_DIR} -a  ${TEST_NAME}_precond.json 
+    jc --pretty /proc/diskstats | python3 ${SCRIPT_DIR}/diskstat_diff.py -d ${RUN_DIR} -a  ${TEST_NAME}_precond.json 
 }
 
 #############################################################################################
