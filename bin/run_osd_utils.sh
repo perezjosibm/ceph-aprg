@@ -189,14 +189,17 @@ fun_show_grid() {
 # Run FIO with an specifio job file
 fun_run_fio_custom(){
   local TEST_NAME=$1
-  local -n dict=$2
+  local run_dir=$2
+  local -n dict=$3
 
   # for x in $(IFS=';';echo $IN); do echo "> [$x]"; done
   for io in $(IFS=','; echo ${dict[fio_iodepth]}); do 
       for numj in $(IFS=','; echo ${dict[fio_numjobs]}); do 
           echo "== io_depth: ${io} num_jobs: ${numj}=="; 
-          json_name="${RUN_DIR}/${TEST_NAME}_${numj}job_${io}io_p0.json"
+          json_name="${run_dir}${TEST_NAME}_${numj}job_${io}io_p0.json"
           pool_name=crimsonpool clientuid=1 jobnum=1 io_depth=$io num_jobs=$numj taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} --output=${json_name}  --output-format=json;  
+          # Filter out from json_name the " Saving output of"
+          sed -i "s/^.*Saving output of.*//g" ${json_name}
       done; 
   done
 }
@@ -346,14 +349,17 @@ fun_run_fixed_bal_tests() {
           #( fun_run_fio $test_name ) & 
           #fio_pid=$!
           if [ "${test_row['fio_type']}" == "custom" ]; then
-            fun_run_fio_custom "$test_name" test_row
+            [ ! -d "${RUN_DIR}/FIO/" ] && mkdir -p ${RUN_DIR}/FIO/
+            fun_run_fio_custom "$test_name" "${RUN_DIR}/FIO/" test_row
             # zip all the .json files produced by FIO in the run dir for this test
             #find ${RUN_DIR} -name "${test_name}_*.json" -exec gzip -9fq {} \;
             #cd ${RUN_DIR} && tar -czf ${test_name}_fio_results.tar.gz ${test_name}_*.json && rm -f ${test_name}_*.json
             # Minor processing: convert into .csv table via fio_parse_jsons.py:
-            cd ${RUN_DIR} && ls -rt ${test_name}*.json > ${test_name}_list && \
-                ${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c ${test_name}_list -v --csv -t ${test_name} && \
-                zip -9mqj ${test_name}.zip *.json *.csv *_top.out *_list && cd -
+            pushd ${RUN_DIR} 
+            cd FIO/
+            ls -rt ${test_name}*.json > ${test_name}_list && \
+                ${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c ${test_name}_list -v --csv -t ${test_name}
+            cd .. && zip -9mrq ${test_name}.zip FIO/* *.json *.csv *_top.out *_list && popd
 
           else
               fun_run_fio "$test_name" "${test_row[fio_workload]}"
