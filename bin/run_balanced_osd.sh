@@ -61,7 +61,7 @@ while getopts 'ab:c:d:e:g:t:s:r:jlpxz:' option; do
         ;;
     p) PRECOND=true
         ;;
-    g) REGEN=false
+    g) REGEN=true
         ;;
     z) CACHE_ALG=$OPTARG
        if [ "$CACHE_ALG" != "LRU" ] && [ "$CACHE_ALG" != "2Q" ]; then
@@ -80,10 +80,12 @@ while getopts 'ab:c:d:e:g:t:s:r:jlpxz:' option; do
 
  echo -e "${GREEN}== OSD_TYPE ${OSD_TYPE} BALANCE ${BALANCE} ==${NC}"
  echo -e "${GREEN}== Loading test plan from ${TEST_PLAN} ==${NC}"
+ export RUN_DIR=${RUN_DIR:-/tmp/runs/$(date +%Y%m%d_%H%M%S)}
  source $TEST_PLAN
 
  # Create the run directory if it does not exist
  [ ! -d "${RUN_DIR}" ] && mkdir -p ${RUN_DIR}
+ 
  fun_save_test_plan
  cd /ceph/build/
 

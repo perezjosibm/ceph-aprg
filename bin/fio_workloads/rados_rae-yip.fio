@@ -17,6 +17,10 @@ nrfiles=32
 iodepth=${io_depth}
 numjobs=${num_jobs}
 
+# Triggering the profiling only during the I/O phase
+exec_prerun=start_monitor.sh
+exec_postrun=stop_monitor.sh
+
 [rados-seqwrite]
 rw=write
 io_size=256m

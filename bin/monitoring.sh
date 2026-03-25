@@ -20,6 +20,27 @@ declare -A perf_options=(
 
 
 #############################################################################################
+mon_get_osd_pids() {
+  local TEST_PREFIX=$1
+  # Should be a better way, eg ceph query
+  local NUM_OSD=$(pgrep -c osd)
+
+  for (( i=0; i<$NUM_OSD; i++ )); do
+    iosd=/ceph/build/out/osd.${i}.pid
+    if [ -f "$iosd" ]; then
+      osd_id["osd.${i}"]=$(cat "$iosd")
+      x=${osd_id["osd.${i}"]}
+      # Count number, name and affinity of the OSD threads
+      ps -p $x -L -o pid,tid,comm,psr --no-headers >> _threads.out
+      taskset -acp $x >> _tasks.out
+      paste _threads.out _tasks.out >> "osd_${i}"_${TEST_PREFIX}_threads.out
+      rm -f  _threads.out _tasks.out
+    fi
+  done
+}
+
+
+#############################################################################################
 mon_perf() {
   local PID=$1 # , separate string of pid
   local TEST_NAME=$2
@@ -218,7 +239,7 @@ fun_osd_dump_metrics() {
 
 #############################################################################################
 # Get reactor utilisation: fixed to ten samples each 10 secs apart
-fun_get_reactor_util() {
+mon_get_reactor_util() {
     local TEST_NAME=$1
     local TEST_RESULT=$2
     #local OUTFILE=$2

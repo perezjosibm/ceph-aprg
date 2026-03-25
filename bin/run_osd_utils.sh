@@ -41,7 +41,7 @@ PRECOND=false
 WATCHDOG=false
 TEST_PLAN=${SCRIPT_DIR}/tp_cmp_classic_seastore.sh # default test plan if none provided
 SKIP_EXEC=false 
-REGEN=true # always regenerate the .fio jobs by default
+REGEN=false # do not regenerate the .fio jobs by default
 fio_pid=0 
 pid_watchdog=0 
 
@@ -116,6 +116,7 @@ EOF
 #############################################################################################
 # Obtain the CPU id mapping per thread
 # Returns a _list of _threads.out files
+# This is repeated in monitoring.sh, consider to call that script instead
 fun_set_osd_pids() {
   local TEST_PREFIX=$1
   # Should be a better way, eg ceph query
@@ -346,6 +347,14 @@ fun_run_fixed_bal_tests() {
           #fio_pid=$!
           if [ "${test_row['fio_type']}" == "custom" ]; then
             fun_run_fio_custom "$test_name" test_row
+            # zip all the .json files produced by FIO in the run dir for this test
+            #find ${RUN_DIR} -name "${test_name}_*.json" -exec gzip -9fq {} \;
+            #cd ${RUN_DIR} && tar -czf ${test_name}_fio_results.tar.gz ${test_name}_*.json && rm -f ${test_name}_*.json
+            # Minor processing: convert into .csv table via fio_parse_jsons.py:
+            cd ${RUN_DIR} && ls -rt ${test_name}*.json > ${test_name}_list && \
+                ${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c ${test_name}_list -v --csv -t ${test_name} && \
+                zip -9mqj ${test_name}.zip *.json *.csv *_top.out *_list && cd -
+
           else
               fun_run_fio "$test_name" "${test_row[fio_workload]}"
               echo "$(date) FIO ${fio_pid} started: $test_name ${test_row[fio_workload]}"

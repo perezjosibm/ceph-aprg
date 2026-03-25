@@ -38,7 +38,7 @@ string=$(declare -p test_row)
 test_table["1"]=${string}
 
 test_row['osd']="2"
-test_row['reactor_range']="10" # 9 18
+test_row['reactor_range']="10"
 test_row['vstart_cpu_set']="${VSTART_CPU_CORES}"
 test_row['store_devs']='/dev/nvme0n1,/dev/nvme1n1'
 test_row['pool_type']="rados"
@@ -50,6 +50,20 @@ test_row['fio_numjobs']="10"
 test_row['fio_iodepth']="1,2,4,8,16,32,64"
 string=$(declare -p test_row)
 test_table["2"]=${string}
+
+test_row['osd']="4"
+test_row['reactor_range']="10"
+test_row['vstart_cpu_set']="${VSTART_CPU_CORES}"
+test_row['store_devs']='/dev/nvme0n1,/dev/nvme1n1,/dev/nvme2n1,/dev/nvme3n1'
+test_row['pool_type']="rados"
+test_row['pool_size']="1024"
+test_row['fio_type']="custom"
+test_row['fio_cpu_set']="$FIO_CPU_CORES"
+test_row['fio_workload']="rados_rae-yip.fio"
+test_row['fio_numjobs']="10"
+test_row['fio_iodepth']="1,2,4,8,16,32,64"
+string=$(declare -p test_row)
+test_table["4"]=${string}
 
 test_row['osd']="8"
 test_row['reactor_range']="10"  

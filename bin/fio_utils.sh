@@ -88,7 +88,6 @@ WATCHDOG_PID=0
 WATCHDOG=false
 fio_rc=0
 
-
 #############################################################################################
 # Decide wether use a simple profile, or latency_target, or a multijob (job per volume)
 fun_set_fio_job_spec() {
@@ -167,6 +166,7 @@ fun_set_globals() {
 EOF
     echo "$json" | jq . >> ${TEST_PREFIX}_keymap.json
 }
+
 ##############################################################################################
 fun_run_workload_loop() {
     local WORKLOAD=$1
@@ -341,7 +341,7 @@ fun_run_workload() {
     if [ "$SKIP_OSD_MON" = false ]; then
         if  [ "${OSD_TYPE}" != "classic" ]; then
           #timestamp=$(date +%Y%m%d_%H%M%S)
-          ( fun_get_reactor_util ${TEST_NAME} ${TEST_RESULT} ) & # ${OSD_TYPE}
+          ( mon_get_reactor_util ${TEST_NAME} ${TEST_RESULT} ) & # ${OSD_TYPE}
         fi 
         fun_get_diskstats ${TEST_NAME} ${TEST_RESULT}_diskstats.json
     fi
@@ -491,27 +491,6 @@ fun_tidyup() {
     # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
     # rm -f *.log *_cpu_distro.log
 }
-
-#############################################################################################
-fun_set_osd_pids() {
-  local TEST_PREFIX=$1
-  # Should be a better way, eg ceph query
-  local NUM_OSD=$(pgrep -c osd)
-
-  for (( i=0; i<$NUM_OSD; i++ )); do
-    iosd=/ceph/build/out/osd.${i}.pid
-    if [ -f "$iosd" ]; then
-      osd_id["osd.${i}"]=$(cat "$iosd")
-      x=${osd_id["osd.${i}"]}
-      # Count number, name and affinity of the OSD threads
-      ps -p $x -L -o pid,tid,comm,psr --no-headers >> _threads.out
-      taskset -acp $x >> _tasks.out
-      paste _threads.out _tasks.out >> "osd_${i}"_${TEST_PREFIX}_threads.out
-      rm -f  _threads.out _tasks.out
-    fi
-  done
-}
-
 #############################################################################################
 # Priming
 fun_prime() {
