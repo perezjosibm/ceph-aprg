@@ -181,7 +181,6 @@ fun_show_tests() {
 fun_show_grid() {
     local test_name=$1
 
-    fun_set_osd_pids ${test_name}
     fun_validate_set "${RUN_DIR}/${test_name}_threads_list"
 }
 
@@ -327,6 +326,7 @@ fun_run_fixed_bal_tests() {
           sleep 20 # wait until all OSD online, pgrep?
           ## Disabling grid temporarly
           ##fun_show_grid $test_name
+          mon_dump_osd_threads ${test_name}
 
           [ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
           ${SCRIPT_DIR}/cephlogoff.sh 2>&1 > /dev/null && \

@@ -2,11 +2,8 @@
 # Common routines to monitor processes: CPU, Memory, and I/O usage via perf, top and diskstat
 # ! Usage: source monitoring.sh
 # ! Functions:
-
 # Consider a better way of setting the top filter:
 TOP_FILTER="cores"
-
-
 # TBC. select which perf options to use via test_plan.json
 declare -A perf_options=(
     [freq]="cpu-clock"
@@ -18,25 +15,33 @@ declare -A perf_options=(
     [core]=' -A -a --per-core ' # --cpu=<cpu-list> --no-aggr
 )
 
-
 #############################################################################################
+# Load the OSD pid into a dict
 mon_get_osd_pids() {
-  local TEST_PREFIX=$1
-  # Should be a better way, eg ceph query
-  local NUM_OSD=$(pgrep -c osd)
+    # Should be a better way, eg ceph query
+    local NUM_OSD=$(pgrep -c osd)
 
-  for (( i=0; i<$NUM_OSD; i++ )); do
-    iosd=/ceph/build/out/osd.${i}.pid
-    if [ -f "$iosd" ]; then
-      osd_id["osd.${i}"]=$(cat "$iosd")
-      x=${osd_id["osd.${i}"]}
-      # Count number, name and affinity of the OSD threads
-      ps -p $x -L -o pid,tid,comm,psr --no-headers >> _threads.out
-      taskset -acp $x >> _tasks.out
-      paste _threads.out _tasks.out >> "osd_${i}"_${TEST_PREFIX}_threads.out
-      rm -f  _threads.out _tasks.out
-    fi
-  done
+    for (( i=0; i<$NUM_OSD; i++ )); do
+        iosd=/ceph/build/out/osd.${i}.pid
+        if [ -f "$iosd" ]; then
+            osd_id["osd.${i}"]=$(cat "$iosd")
+            #x=${osd_id["osd.${i}"]}
+        fi
+    done
+}
+
+# Get the thread info and CPU affinity for each OSD pid, output to a file named with the OSD id and test prefix
+mon_dump_osd_threads() {
+    local TEST_PREFIX=$1
+    mon_get_osd_pids 
+    for i in "${!osd_id[@]}"; do
+        x=${osd_id[$i]}
+        # Count number, name and affinity of the OSD threads
+        ps -p $x -L -o pid,tid,comm,psr --no-headers >> _threads.out
+        taskset -acp $x >> _tasks.out
+        paste _threads.out _tasks.out >> "osd_${i}"_${TEST_PREFIX}_threads.out
+        rm -f  _threads.out _tasks.out
+    done
 }
 
 
