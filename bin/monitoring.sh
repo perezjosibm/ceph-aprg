@@ -62,15 +62,25 @@ function mon_start_monitor() {
         ts=$(date +%Y%m%d_%H%M%S)
         perf_out="${run_dir}/${i}_${ts}_perf_stat.json"
         top_out="${run_dir}/${i}_${ts}_top.out"
-        perf stat -e "${perf_options[default]}" -i -p ${PID} -j -o ${perf_out} -- sleep ${RUNTIME} 2>&1 >/dev/null & 
+        # need more resolution
+        #perf stat -e "${perf_options[default]}" -i -p ${PID} -j -o ${perf_out} -- sleep ${RUNTIME} 2>&1 >/dev/null & 
+        # Need something like this:
+        # # perf stat -I $(( DELAY * 1000 )) --interval-count 2 -e cpu-clock,task-clock -p 1 -x "," -o /tmp/bash_perf.csv
         top -w 512 -b -H -1 -p ${PID} -n ${NUM_SAMPLES} -d ${DELAY_SAMPLES} >> ${top_out} &
+        perf stat -e "${perf_options[default]}" -i -p ${PID} -I $(( DELAY_SAMPLES * 1000 )) --interval-count ${NUM_SAMPLES}  -j -o ${perf_out}  &
     done
     # Collect OSD performance metrics during the test run
     for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
-        rutil_out="${run_dir}/$(date +%Y%m%d_%H%M%S)_rutil.json"
-        ds_out="${run_dir}/$(date +%Y%m%d_%H%M%S)_ds.json"
-        /ceph/build/bin/ceph tell osd.0 dump_metrics reactor_utilisation > ${rutil_out}
+        ts=$(date +%Y%m%d_%H%M%S)
+        rutil_out="${run_dir}/${ts}_rutil.json"
+        ds_out="${run_dir}/${ts}_ds.json"
+        /ceph/build/bin/ceph tell osd.0 dump_metrics reactor_utilization > ${rutil_out}
         jc --pretty /proc/diskstats > ${ds_out}
+        # for i in "${!osd_id[@]}"; do
+        #     PID=${osd_id[$i]}
+        #     perf_out="${run_dir}/${i}_${ts}_perf_stat.csv"
+        #     perf stat -e "${perf_options[default]}" -I -p ${PID} -x, -o ${perf_out}
+        # done
         sleep ${DELAY_SAMPLES};
     done
     # Collect final OSD dump at the end of the test run
