@@ -9,9 +9,9 @@ export RADOS_POOL_SIZE=1024
 export RADOS_POOL_NAME="rados"
 
 # These timings are in seconds
-export RUNTIME=180 # (3 min) -- response curves
+export RUNTIME=120 # (2 min) -- response curves
 #export RUNTIME=3600 # (1 hr)
-export DELAY_SAMPLES=5 # sec delay between samples
+export DELAY_SAMPLES=10 # sec delay between samples
 # This is just the ration RUNTIME div by DELAY_SAMPLES:
 export NUM_SAMPLES=$(( RUNTIME / DELAY_SAMPLES ))
 export FIO_CPU_CORES="96-191"

@@ -216,7 +216,9 @@ fun_zip_results_custom(){
 }
 
 #############################################################################################
-# Run FIO with an specifio job file
+# Run FIO with an specifio job file -- need to trigger the OSD monitoring in
+# parallel, and then stop it after FIO is done, to avoid the watchdog to kill the
+# script before we can collect the results
 fun_run_fio_custom(){
     local TEST_NAME=$1
     local run_dir=$2
@@ -231,7 +233,11 @@ fun_run_fio_custom(){
                 taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} \
                 --output=${json_name}  --output-format=json ) &
             fio_pid=$!
+            ( mon_start_monitor ${run_dir} ) &
+            mon_pid=$!
             fun_wait_fio $fio_pid
+            echo "$(date) Killing monitoring jobs (pid ${mon_pid})..."
+            kill -9 $mon_pid
             # Filter out from json_name the " Saving output of"
             sed -i "s/^.*Saving output of.*//g" ${json_name}
         done; 
@@ -387,8 +393,6 @@ fun_run_fixed_bal_tests() {
             [ ! -d "${RUN_DIR}/FIO/" ] && mkdir -p ${RUN_DIR}/FIO/
             # Start monitoring OSD performance in the background
             # ${SCRIPT_DIR}/monitoring.sh -d ${RUN_DIR} -p $test_name &
-            ( mon_start_monitor ${RUN_DIR} ) &
-            mon_pid=$!
             fun_run_fio_custom "$test_name" "${RUN_DIR}/FIO/" test_row
             # zip all the .json files produced by FIO in the run dir for this test
             #find ${RUN_DIR} -name "${test_name}_*.json" -exec gzip -9fq {} \;
@@ -396,8 +400,6 @@ fun_run_fixed_bal_tests() {
             # Kill all monitoring jobs, since we are going to stop the cluster,
             # and we want to avoid the watchdog to kill the script before we
             # can collect the results
-            echo "$(date) Killing monitoring jobs (pid ${mon_pid})..."
-            kill -9 $mon_pid
             fun_zip_results_custom "$test_name"
           else
               fun_run_fio "$test_name" "${test_row[fio_workload]}"
