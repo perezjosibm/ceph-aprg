@@ -51,7 +51,6 @@ declare -A test_table
 declare -A test_row
 declare -A bench_row
 declare -A num_cpus
-declare -A osd_id
 
 # CPU allocation strategies
 declare -A bal_ops_table
@@ -185,22 +184,58 @@ fun_show_grid() {
 }
 
 #############################################################################################
+fun_wait_fio() {
+    local pid_fio=$1
+
+    # Start watchdog: modified to run as a background job (subsell) since the pid returned was the 
+    # same as this running script , so it killed itself!
+    echo "$(date) Starting watchdog..."
+    WATCHDOG=true
+    ( fun_watchdog ${fio_pid} ) &
+    #${SCRIPT_DIR}/watchdog.sh -p $fio_pid &
+    pid_watchdog=$!
+
+    # Wait for FIO to finish
+    echo "$(date) Waiting for FIO to complete, (watchdog pid ${pid_watchdog})..."
+    wait $fio_pid
+    # Stop watchdog
+    echo "$(date) FIO completed, killing watchdog ${pid_watchdog}..."
+    kill -9 $pid_watchdog
+}
+
+#############################################################################################
+fun_zip_results_custom(){
+    local test_name=$1
+
+    pushd ${RUN_DIR} 
+    cd FIO/
+    # Minor processing: convert into .csv table via fio_parse_jsons.py:
+    ls -rt ${test_name}*.json > ${test_name}_list && \
+        ${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c ${test_name}_list -v --csv -t ${test_name}
+    cd .. && zip -9mrq ${test_name}.zip FIO/* *.json *.csv *_top.out *_list && popd
+}
+
+#############################################################################################
 # Run FIO with an specifio job file
 fun_run_fio_custom(){
-  local TEST_NAME=$1
-  local run_dir=$2
-  local -n dict=$3
+    local TEST_NAME=$1
+    local run_dir=$2
+    local -n dict=$3
 
-  # for x in $(IFS=';';echo $IN); do echo "> [$x]"; done
-  for io in $(IFS=','; echo ${dict[fio_iodepth]}); do 
-      for numj in $(IFS=','; echo ${dict[fio_numjobs]}); do 
-          echo "== io_depth: ${io} num_jobs: ${numj}=="; 
-          json_name="${run_dir}${TEST_NAME}_${numj}job_${io}io_p0.json"
-          pool_name=crimsonpool clientuid=1 jobnum=1 io_depth=$io num_jobs=$numj taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} --output=${json_name}  --output-format=json;  
-          # Filter out from json_name the " Saving output of"
-          sed -i "s/^.*Saving output of.*//g" ${json_name}
-      done; 
-  done
+    # for x in $(IFS=';';echo $IN); do echo "> [$x]"; done
+    for io in $(IFS=','; echo ${dict[fio_iodepth]}); do 
+        for numj in $(IFS=','; echo ${dict[fio_numjobs]}); do 
+            echo "== io_depth: ${io} num_jobs: ${numj}=="; 
+            json_name="${run_dir}${TEST_NAME}_${numj}job_${io}io_p0.json"
+            ( pool_name=crimsonpool clientuid=1 jobnum=1 io_depth=$io num_jobs=$numj \
+                taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} \
+                --output=${json_name}  --output-format=json ) &
+            fio_pid=$!
+            fun_wait_fio $fio_pid
+            # Filter out from json_name the " Saving output of"
+            sed -i "s/^.*Saving output of.*//g" ${json_name}
+        done; 
+    done
 }
 
 #############################################################################################
@@ -350,34 +385,24 @@ fun_run_fixed_bal_tests() {
           #fio_pid=$!
           if [ "${test_row['fio_type']}" == "custom" ]; then
             [ ! -d "${RUN_DIR}/FIO/" ] && mkdir -p ${RUN_DIR}/FIO/
+            # Start monitoring OSD performance in the background
+            # ${SCRIPT_DIR}/monitoring.sh -d ${RUN_DIR} -p $test_name &
+            ( mon_start_monitor ${RUN_DIR} ) &
+            mon_pid=$!
             fun_run_fio_custom "$test_name" "${RUN_DIR}/FIO/" test_row
             # zip all the .json files produced by FIO in the run dir for this test
             #find ${RUN_DIR} -name "${test_name}_*.json" -exec gzip -9fq {} \;
             #cd ${RUN_DIR} && tar -czf ${test_name}_fio_results.tar.gz ${test_name}_*.json && rm -f ${test_name}_*.json
-            # Minor processing: convert into .csv table via fio_parse_jsons.py:
-            pushd ${RUN_DIR} 
-            cd FIO/
-            ls -rt ${test_name}*.json > ${test_name}_list && \
-                ${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c ${test_name}_list -v --csv -t ${test_name}
-            cd .. && zip -9mrq ${test_name}.zip FIO/* *.json *.csv *_top.out *_list && popd
-
+            # Kill all monitoring jobs, since we are going to stop the cluster,
+            # and we want to avoid the watchdog to kill the script before we
+            # can collect the results
+            echo "$(date) Killing monitoring jobs (pid ${mon_pid})..."
+            kill -9 $mon_pid
+            fun_zip_results_custom "$test_name"
           else
               fun_run_fio "$test_name" "${test_row[fio_workload]}"
               echo "$(date) FIO ${fio_pid} started: $test_name ${test_row[fio_workload]}"
-              # Start watchdog: modified to run as a background job (subsell) since the pid returned was the 
-              # same as this running script , so it killed itself!
-              echo "$(date) Starting watchdog..."
-              WATCHDOG=true
-              ( fun_watchdog ${fio_pid} ) &
-              #${SCRIPT_DIR}/watchdog.sh -p $fio_pid &
-              pid_watchdog=$!
-
-              # Wait for FIO to finish
-              echo "$(date) Waiting for FIO to complete, (watchdog pid ${pid_watchdog})..."
-              wait $fio_pid
-              # Stop watchdog
-              echo "$(date) FIO completed, killing watchdog ${pid_watchdog}..."
-              kill -9 $pid_watchdog
+              fun_wait_fio $fio_pid
           fi
           # Should be a neater way to stop the cluster
           if [ "$OSD_TYPE" == "classic" ]; then

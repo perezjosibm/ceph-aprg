@@ -24,6 +24,7 @@
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 source ${SCRIPT_DIR}/common.sh
+source ${SCRIPT_DIR}/monitoring.sh
 source ${SCRIPT_DIR}/run_osd_utils.sh
 
 #########################################

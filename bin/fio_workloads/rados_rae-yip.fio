@@ -18,8 +18,9 @@ iodepth=${io_depth}
 numjobs=${num_jobs}
 
 # Triggering the profiling only during the I/O phase
-exec_prerun=start_monitor.sh
-exec_postrun=stop_monitor.sh
+# unfortunately these are run one per instance, which is a lot!
+#exec_prerun=start_monitor.sh
+#exec_postrun=stop_monitor.sh
 
 [rados-seqwrite]
 rw=write
