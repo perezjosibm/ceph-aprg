@@ -231,6 +231,7 @@ fun_run_fio_custom(){
             echo "== io_depth: ${io} num_jobs: ${numj}=="; 
             json_name="${run_dir}/FIO/${TEST_NAME}_${numj}job_${io}io_p0.json"
             ( pool_name=crimsonpool clientuid=1 jobnum=1 io_depth=$io num_jobs=$numj \
+                block_size=${dict[fio_blocksize]} \
                 taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} \
                 --output=${json_name}  --output-format=json ) &
             fio_pid=$!

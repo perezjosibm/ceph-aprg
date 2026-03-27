@@ -1,9 +1,21 @@
 [global]
-ioengine=rados
+ioengine=http
 #clustername=6a13fa8f-f35c-11f0-a10a-6c92cfd8e45a
-clientname=admin
-pool=${pool_name}
-filename_format=$clientuid.rados_test.$jobnum.$filenum
+name=rgw_test
+# S3 uses specific ports; 80/443 or custom (8000/7480)
+https=off
+http_host=192.168.1.100:7480
+http_user=your_access_key
+http_pass=your_secret_key
+# S3 request format
+http_mode=s3
+s3_keyid=your_access_key
+s3_secret=your_secret_key
+
+# clientname=admin
+# pool=${pool_name}
+# filename_format=$clientuid.rados_test.$jobnum.$filenum
+filename=/my-test-bucket/test_obj
 touch_objects=0
 busy_poll=0
 cpus_allowed_policy=split
@@ -12,9 +24,10 @@ direct=1
 percentile_list=99.0:99.9:99.99:99.999:99.9999:100
 # For the most accurate time-series plot, ensure your FIO job file includes
 # log_avg_msec=1000 and write_lat_log=fio_latency
-
-bs=${block_size}
-size=256m
+bs=128k
+size=1G
+# bs=64k
+# size=256m
 nrfiles=32
 iodepth=${io_depth}
 numjobs=${num_jobs}
@@ -24,20 +37,20 @@ numjobs=${num_jobs}
 #exec_prerun=start_monitor.sh
 #exec_postrun=stop_monitor.sh
 
-[rados-seqwrite]
+[rgw-seqwrite]
 rw=write
 io_size=256m
 nrfiles=32
 #verify=crc32c
 stonewall
 
-[rados-randwrite]
+[rgw-randwrite]
 rw=randwrite
 time_based=1
 runtime=60
 stonewall
 
-[rados-randread]
+[rgw-randread]
 rw=randread
 time_based=1
 runtime=60

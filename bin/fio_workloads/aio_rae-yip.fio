@@ -10,8 +10,9 @@ filename=/dev/nvme0n1
 cpus_allowed_policy=split
 group_reporting=1
 percentile_list=99.0:99.9:99.99:99.999:99.9999:100
+
 direct=1
-bs=64k
+bs=${block_size}
 size=256m
 nrfiles=32
 iodepth=${io_depth}
@@ -31,9 +32,6 @@ runtime=60
 stonewall
 
 [rados-randread]
-# Triggering the profiling only during the I/O phase: ensure these scripts are in the PATH and executable
-exec_prerun=start_monitor.sh
-exec_postrun=stop_monitor.sh
 rw=randread
 time_based=1
 runtime=60

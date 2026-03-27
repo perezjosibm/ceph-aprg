@@ -2,16 +2,17 @@
 ioengine=librbd
 #clustername=6a13fa8f-f35c-11f0-a10a-6c92cfd8e45a
 clientname=admin
-pool=crimsonpool
+pool=${pool_name}
 filename_format=$clientuid.librbd_test.$jobnum.$filenum
 rbdname=$clientuid.librbd_test.$jobnum.$filenum
 touch_objects=0
 busy_poll=0
 cpus_allowed_policy=split
 group_reporting=1
+direct=1
 percentile_list=99.0:99.9:99.99:99.999:99.9999:100
 
-bs=64k
+bs=${block_size}
 size=256m
 nrfiles=32
 iodepth=${io_depth}
