@@ -4,7 +4,9 @@ ioengine=libaio
 #clientname=admin
 #pool=crimsonpool
 filename_format=$clientuid.aio_test.$jobnum.$filenum
-filename=/dev/nvme0n1
+# How to extend to multiple devices
+#filename=/dev/nvme0n1;/dev/nvme1n1;/dev/nvme2n1;/dev/nvme3n1;/dev/nvme4n1;/dev/nvme5n1;/dev/nvme6n1;/dev/nvme7n1
+filename=${file_name}
 #touch_objects=0
 #busy_poll=0
 cpus_allowed_policy=split
