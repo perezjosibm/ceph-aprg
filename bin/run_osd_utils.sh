@@ -224,11 +224,12 @@ fun_run_fio_custom(){
     local run_dir=$2
     local -n dict=$3
 
+    [ ! -d "${run_dir}/FIO/" ] && mkdir -p ${run_dir}/FIO/
     # for x in $(IFS=';';echo $IN); do echo "> [$x]"; done
     for io in $(IFS=','; echo ${dict[fio_iodepth]}); do 
         for numj in $(IFS=','; echo ${dict[fio_numjobs]}); do 
             echo "== io_depth: ${io} num_jobs: ${numj}=="; 
-            json_name="${run_dir}${TEST_NAME}_${numj}job_${io}io_p0.json"
+            json_name="${run_dir}/FIO/${TEST_NAME}_${numj}job_${io}io_p0.json"
             ( pool_name=crimsonpool clientuid=1 jobnum=1 io_depth=$io num_jobs=$numj \
                 taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} \
                 --output=${json_name}  --output-format=json ) &
@@ -390,10 +391,9 @@ fun_run_fixed_bal_tests() {
           #( fun_run_fio $test_name ) & 
           #fio_pid=$!
           if [ "${test_row['fio_type']}" == "custom" ]; then
-            [ ! -d "${RUN_DIR}/FIO/" ] && mkdir -p ${RUN_DIR}/FIO/
             # Start monitoring OSD performance in the background
             # ${SCRIPT_DIR}/monitoring.sh -d ${RUN_DIR} -p $test_name &
-            fun_run_fio_custom "$test_name" "${RUN_DIR}/FIO/" test_row
+            fun_run_fio_custom "$test_name" ${RUN_DIR} test_row
             # zip all the .json files produced by FIO in the run dir for this test
             #find ${RUN_DIR} -name "${test_name}_*.json" -exec gzip -9fq {} \;
             #cd ${RUN_DIR} && tar -czf ${test_name}_fio_results.tar.gz ${test_name}_*.json && rm -f ${test_name}_*.json
