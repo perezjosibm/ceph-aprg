@@ -55,10 +55,11 @@ for bs in 4k 64k; do
     for nd in 1 2 4 8; do 
         echo "== num_devices: ${nd} block_size: ${bs} ==";
         # Get the number of devices to use for the test, and update the fio file with the correct number of devices. This is a bit hacky, but it works for now.
-        devs=$(echo ${dev_list[@]} | cut -d ' ' -f 1-$nd | tr ' ' ',')
+        devs=$(echo ${dev_list[@]} | cut -d ' ' -f 1-$nd | tr ' ' ':')
         for io in 1 2 4 8 16 32 64; do 
             echo "== io_depth: ${io} num_jobs: 10=="; 
-            clientuid=1 jobnum=1 io_depth=$io num_jobs=10 block_size=$bs file_name=$devs taskset -ac 96-191 fio ${AIO_FIO_FILE} --output=${RUN_DIR}aio_direct_${nd}dev_${bs}_${io}io_p0.json --output-format=json &
+            json_out="${RUN_DIR}/FIO/aio_direct_${nd}dev_${bs}_${io}io_p0.json"
+            clientuid=1 jobnum=1 io_depth=$io num_jobs=10 block_size=$bs file_name=$devs taskset -ac 96-191 fio ${AIO_FIO_FILE} --output=${json_out} --output-format=json &
             fio_pid=$!
             ( mon_start_monitor ${RUN_DIR} ${fio_pid} ) &
             mon_pid=$!
