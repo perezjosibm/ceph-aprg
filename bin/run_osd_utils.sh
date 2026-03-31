@@ -238,8 +238,7 @@ fun_run_fio_custom(){
                     block_size=${dict[fio_blocksize]} \
                     taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} \
                     --output=${json_name}  --output-format=json ) &
-            #elif [ "${test_row['pool_type']}" == "rdb" ]; then
-            else
+            elif [ "${dict[pool_type]}" == "rbd" ]; then
                 ( pool_name=${dict[pool_type]} io_depth=$io num_jobs=$numj \
                     block_size=${dict[fio_blocksize]} size=${dict[rbd_size]} nrfiles=${dict[rbd_num_images]} \
                     taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} \
@@ -448,7 +447,7 @@ fun_run_fixed_bal_tests() {
                   rados df; 
                   ceph osd pool set noautoscale
               ;;
-              rdb)
+              rbd)
                  echo "$(date) RBD..."
                   fun_mkrbd_custom "$test_name" ${RUN_DIR} test_row
               ;;
