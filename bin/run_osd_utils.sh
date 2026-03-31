@@ -233,12 +233,13 @@ fun_run_fio_custom(){
             json_name="${run_dir}/FIO/${TEST_NAME}_${numj}job_${io}io_p0.json"
             # To be unified RBD/RADOs once we test the RBD with the nrfiles and
             # rbd_size, we might rename it to a more generic name
-            if [ "${test_row['pool_type']}" == "rados" ]; then
+            if [ "${dict[pool_type]}" == "rados" ]; then
                 ( pool_name=${dict[pool_type]} io_depth=$io num_jobs=$numj \
                     block_size=${dict[fio_blocksize]} \
                     taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} \
                     --output=${json_name}  --output-format=json ) &
-            elif [ "${test_row['pool_type']}" == "rdb" ]; then
+            #elif [ "${test_row['pool_type']}" == "rdb" ]; then
+            else
                 ( pool_name=${dict[pool_type]} io_depth=$io num_jobs=$numj \
                     block_size=${dict[fio_blocksize]} size=${dict[rbd_size]} nrfiles=${dict[rbd_num_images]} \
                     taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} \
@@ -293,6 +294,7 @@ fun_run_fio(){
   fio_pid=$!
 }
 
+#############################################################################################
 function fun_mkrbd_custom() {
     local test_name=$1
     local run_dir=$2
@@ -435,26 +437,33 @@ fun_run_fixed_bal_tests() {
           ${SCRIPT_DIR}/cephlogoff.sh 2>&1 > /dev/null && \
           # Preliminary: simply collect the threads from OSD to verify its as expected
           # TODO: make it agnostic of pool details, so can run for RADOs as well as RBD
-          if [ "${test_row['pool_type']}" == "rados" ]; then
-              # Simply create a pool for RADOS
-              #ceph osd pool create crimsonpool 128 128 && \; 
-              #pool_name="${RBD_POOL_NAME:-crimsonpool}"
-              ceph osd pool create ${test_row['pool_type']} ${test_row['pool_size']} && ceph status;
-              ceph osd pool ls;
-              rados df; 
-              ceph osd pool set noautoscale
-          elif [ "${test_row['pool_type']}" == "rdb" ]; then
-              fun_mkrbd_custom "$test_name" ${RUN_DIR} test_row
-          else
-              ${SCRIPT_DIR}/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_test_run.log 
+          case "${test_row[pool_type]}" in
+              rados)
+                 echo "$(date) RADOS..."
+                  # Simply create a pool for RADOS
+                  #ceph osd pool create crimsonpool 128 128 && \; 
+                  #pool_name="${RBD_POOL_NAME:-crimsonpool}"
+                  ceph osd pool create ${test_row['pool_type']} ${test_row['pool_size']} && ceph status;
+                  ceph osd pool ls;
+                  rados df; 
+                  ceph osd pool set noautoscale
+              ;;
+              rdb)
+                 echo "$(date) RBD..."
+                  fun_mkrbd_custom "$test_name" ${RUN_DIR} test_row
+              ;;
+              *)
+                 echo "$(date) Other pool_type ${test_row[pool_type]} legacy..."
+                  ${SCRIPT_DIR}/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_test_run.log 
               #&& \${SCRIPT_DIR}/cpu-map.sh  -n osd -g "alien:4-31"
-          fi
+              ;;
+          esac
 
           # Start FIO:
-          echo "$(date) Starting FIO..."
           #( fun_run_fio $test_name ) & 
           #fio_pid=$!
           if [ "${test_row['fio_type']}" == "custom" ]; then
+            echo "$(date) Starting FIO... ${test_row[fio_type]} "
             # Start monitoring OSD performance in the background
             # ${SCRIPT_DIR}/monitoring.sh -d ${RUN_DIR} -p $test_name &
             fun_run_fio_custom "$test_name" ${RUN_DIR} test_row
