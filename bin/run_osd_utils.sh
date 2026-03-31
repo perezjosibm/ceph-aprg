@@ -223,6 +223,7 @@ fun_run_fio_custom(){
     local TEST_NAME=$1
     local run_dir=$2
     local -n dict=$3
+    #local pool_name=${dict[pool_type]}
 
     [ ! -d "${run_dir}/FIO/" ] && mkdir -p ${run_dir}/FIO/
     # for x in $(IFS=';';echo $IN); do echo "> [$x]"; done
@@ -230,10 +231,19 @@ fun_run_fio_custom(){
         for numj in $(IFS=','; echo ${dict[fio_numjobs]}); do 
             echo "== io_depth: ${io} num_jobs: ${numj}=="; 
             json_name="${run_dir}/FIO/${TEST_NAME}_${numj}job_${io}io_p0.json"
-            ( pool_name=crimsonpool clientuid=1 jobnum=1 io_depth=$io num_jobs=$numj \
-                block_size=${dict[fio_blocksize]} \
-                taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} \
-                --output=${json_name}  --output-format=json ) &
+            # To be unified RBD/RADOs once we test the RBD with the nrfiles and
+            # rbd_size, we might rename it to a more generic name
+            if [ "${test_row['pool_type']}" == "rados" ]; then
+                ( pool_name=${dict[pool_type]} io_depth=$io num_jobs=$numj \
+                    block_size=${dict[fio_blocksize]} \
+                    taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} \
+                    --output=${json_name}  --output-format=json ) &
+            elif [ "${test_row['pool_type']}" == "rdb" ]; then
+                ( pool_name=${dict[pool_type]} io_depth=$io num_jobs=$numj \
+                    block_size=${dict[fio_blocksize]} size=${dict[rbd_size]} nrfiles=${dict[rbd_num_images]} \
+                    taskset -ac ${dict[fio_cpu_set]} fio ${FIO_JOBS}/${dict[fio_workload]} \
+                    --output=${json_name}  --output-format=json ) &
+            fi
             fio_pid=$!
             ( mon_start_monitor ${run_dir} ) &
             mon_pid=$!
@@ -283,6 +293,55 @@ fun_run_fio(){
   fio_pid=$!
 }
 
+function fun_mkrbd_custom() {
+    local test_name=$1
+    local run_dir=$2
+    local -n dict=$3
+
+    #local pool_name="${RBD_POOL_NAME:-crimsonpool}"
+    local pool_name=${dict[pool_type]}
+    ceph osd pool create ${pool_name} ${dict[pool_size]} && ceph status;
+    ceph osd pool application enable ${pool_name} rbd
+    RBD_POOL_REPLICA=1
+    ceph osd pool set ${pool_name} size ${RBD_POOL_REPLICA} --yes-i-really-mean-it
+    #NUM_RBD_IMAGES=32 # as it appears for nrfiles in the .fio files, but we can increase it if needed
+    echo "$(date) Creating ${dict[rbd_num_images]} volumes..."
+    for (( i=0; i<${dict[rbd_num_images]}; i++ )); do
+        # Should match the rbdname format in the .fio files 
+        # rbdname=$clientuid.librbd_test.$jobnum.$filenum
+        # TODO: consider to use the same naming format for all the tests, 
+        # make it configurable via the test plan, so we can reuse the same .fio
+        # files for different test cases (eg with different number of volumes)
+        for (( j=0; i<${dict[fio_numjobs]}; j++ )); do
+            rbdname="librbd_test.${j}.${i}"
+            rbd create --size ${dict[rbd_size]} ${pool_name}/${rbdname}
+            rbd du ${rbdname}
+            # Prefill, so we workaround the FIO prefill 
+            echo "Prefilling rbd/${rbdname} with ${dict[rbd_size]} of data"
+            rbd bench -p ${pool_name} --image ${rbdname} --io-size 64K --io-threads 10 \
+                --io-total ${dict[rbd_size]} --io-pattern seq --io-type write  && rbd du ${rbdname}
+        done
+    done
+    ceph status
+    ceph osd pool ls;
+    rados df; 
+    ceph osd pool set noautoscale
+    #show a pool’s utilization statistics:
+    rados df
+    # Raw utilisation
+    ceph df detail --format=json > ${run_dir}/${test_name}_ceph_df_detail.json
+    # Turn off auto scaler for existing and new pools - stops PGs being split/merged
+    ceph osd pool set noautoscale
+    # Turn off balancer to avoid moving PGs
+    ceph balancer off
+    # Turn off deep scrub
+    ceph osd set nodeep-scrub
+    # Turn off scrub
+    ceph osd set noscrub
+    # Turn off RBD coalescing
+    ceph config set client rbd_io_scheduler none 
+}
+
 #########################################
 # Run balanced vs default CPU core/reactor distribution in Crimson using either Cyan, Seastore or  Bluestore
 # Cluster creation iterating over the number of OSDs and reactors
@@ -291,6 +350,7 @@ fun_run_fixed_bal_tests() {
     local OSD_TYPE=$2
     local NUM_ALIEN_THREADS=7 # default 
     local title=""
+    #local pool_name="" #${RBD_POOL_NAME:-crimsonpool}"
 
     echo -e "${GREEN}== OSD type: ${OSD_TYPE} ==${NC}"
 
@@ -378,12 +438,15 @@ fun_run_fixed_bal_tests() {
           if [ "${test_row['pool_type']}" == "rados" ]; then
               # Simply create a pool for RADOS
               #ceph osd pool create crimsonpool 128 128 && \; 
-              ceph osd pool create crimsonpool ${test_row['pool_size']} && ceph status;
+              #pool_name="${RBD_POOL_NAME:-crimsonpool}"
+              ceph osd pool create ${test_row['pool_type']} ${test_row['pool_size']} && ceph status;
               ceph osd pool ls;
               rados df; 
               ceph osd pool set noautoscale
-         else
-            ${SCRIPT_DIR}/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_test_run.log 
+          elif [ "${test_row['pool_type']}" == "rdb" ]; then
+              fun_mkrbd_custom "$test_name" ${RUN_DIR} test_row
+          else
+              ${SCRIPT_DIR}/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_test_run.log 
               #&& \${SCRIPT_DIR}/cpu-map.sh  -n osd -g "alien:4-31"
           fi
 

@@ -19,7 +19,7 @@ NUM_RBD_IMAGES=1
 #[ -z "$RBD_SIZE" ] && 
 RBD_SIZE=2GB
 VOLNAME_PREFIX="fio_test"
-
+    
 while getopts 'n:s:r:p:' option; do
   case "$option" in
     n) NUM_RBD_IMAGES=$OPTARG
@@ -72,7 +72,7 @@ ceph osd dump | grep 'replicated size'
 #show a pool’s utilization statistics:
 rados df
 # Raw utilisation
-ceph df detail --format=json > /tmp/ceph_df_detail.json
+ceph df detail --format=json > /tmp/ceph_df_detail.json 
 # Turn off auto scaler for existing and new pools - stops PGs being split/merged
 ceph osd pool set noautoscale
 # Turn off balancer to avoid moving PGs
