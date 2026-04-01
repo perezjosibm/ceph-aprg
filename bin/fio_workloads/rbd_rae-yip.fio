@@ -6,7 +6,6 @@ pool=${pool_name}
 filename_format=librbd_test.$jobnum.$filenum
 rbdname=librbd_test.$jobnum.$filenum
 #rbdname=$clientuid.librbd_test.$jobnum.$filenum
-touch_objects=0
 busy_poll=0
 cpus_allowed_policy=split
 group_reporting=1
