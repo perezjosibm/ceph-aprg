@@ -396,7 +396,7 @@ class Scrappy:
         self.issues = load_issues(issues_file)
         logger.debug(f"Issues: {pp.pformat(self.issues)}")
         self.previous_report = previous_report
-        self.failures = load_scrapper(os.path.join(logdir, "scrape.log"))
+        self.failures = load_scrapper(os.path.join(logdir, "results.log")) # scrape
         self.exclude_issues = exclude_issues
         logger.debug(f"Failures: {self.failures}")
 
