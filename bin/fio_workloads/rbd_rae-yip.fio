@@ -1,5 +1,5 @@
 [global]
-ioengine=librbd
+ioengine=rbd
 invalidate=0  # Mandatory for the rbd engine
 #clustername=6a13fa8f-f35c-11f0-a10a-6c92cfd8e45a
 clientname=admin
@@ -16,8 +16,8 @@ direct=1
 percentile_list=99.0:99.9:99.99:99.999:99.9999:100
 
 bs=${block_size}
-size=${rbd_size}
-nrfiles=${rbd_num_images}
+#size=${rbd_size}
+#nrfiles=${rbd_num_images}
 iodepth=${io_depth}
 numjobs=${num_jobs}
 #ramp_time=30s
