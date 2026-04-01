@@ -307,21 +307,24 @@ function fun_mkrbd_custom() {
     ceph osd pool set ${pool_name} size ${RBD_POOL_REPLICA} --yes-i-really-mean-it
     rbd_size=${dict[rbd_size]^^} # convert to uppercase, since rbd bench needs it in that format
     #NUM_RBD_IMAGES=32 # as it appears for nrfiles in the .fio files, but we can increase it if needed
-    echo "$(date) Creating ${dict[rbd_num_images]} volumes..."
-    for (( i=0; i<${dict[rbd_num_images]}; i++ )); do
+    num_volumes=$(( dict[rbd_num_images] * dict[fio_numjobs] ))
+    n=$(( dict[rbd_num_images] ))
+    m=$(( dict[fio_numjobs] ))
+    echo "$(date) Creating ${num_volumes} volumes...(${n} images, ${m} numjobs) "
+    for (( i=0; i<n ; i++ )); do
         # Should match the rbdname format in the .fio files 
         # rbdname=$clientuid.librbd_test.$jobnum.$filenum
         # TODO: consider to use the same naming format for all the tests, 
         # make it configurable via the test plan, so we can reuse the same .fio
         # files for different test cases (eg with different number of volumes)
-        for (( j=0; i<${dict[fio_numjobs]}; j++ )); do
+        for (( j=0; i<m; j++ )); do
             rbdname="librbd_test.${j}.${i}"
             rbd create --size ${rbd_size} ${pool_name}/${rbdname}
             rbd du ${rbdname}
             # Prefill, so we workaround the FIO prefill 
             echo "Prefilling rbd/${rbdname} with ${rbd_size} of data"
-            rbd bench -p ${pool_name} --image ${rbdname} --io-size 64K --io-threads 10 \
-                --io-total ${rbd_size} --io-pattern seq --io-type write  && rbd du ${rbdname}
+            # rbd bench -p ${pool_name} --image ${rbdname} --io-size 64K --io-threads 10 \
+            #     --io-total ${rbd_size} --io-pattern seq --io-type write  && rbd du ${rbdname}
         done
     done
     ceph status
