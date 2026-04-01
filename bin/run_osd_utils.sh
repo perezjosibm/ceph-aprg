@@ -317,14 +317,14 @@ function fun_mkrbd_custom() {
         # TODO: consider to use the same naming format for all the tests, 
         # make it configurable via the test plan, so we can reuse the same .fio
         # files for different test cases (eg with different number of volumes)
-        for (( j=0; i<m; j++ )); do
+        for (( j=0; j<m; j++ )); do
             rbdname="librbd_test.${j}.${i}"
             rbd create --size ${rbd_size} ${pool_name}/${rbdname}
             rbd du ${rbdname}
             # Prefill, so we workaround the FIO prefill 
             echo "Prefilling rbd/${rbdname} with ${rbd_size} of data"
-            # rbd bench -p ${pool_name} --image ${rbdname} --io-size 64K --io-threads 10 \
-            #     --io-total ${rbd_size} --io-pattern seq --io-type write  && rbd du ${rbdname}
+             rbd bench -p ${pool_name} --image ${rbdname} --io-size 64K --io-threads 10 \
+                 --io-total ${rbd_size} --io-pattern seq --io-type write  && rbd du ${rbdname}
         done
     done
     ceph status
