@@ -185,7 +185,7 @@ fun_show_grid() {
 
 #############################################################################################
 fun_wait_fio() {
-    local pid_fio=$1
+    local fio_pid=$1
 
     # Start watchdog: modified to run as a background job (subsell) since the pid returned was the 
     # same as this running script , so it killed itself!
@@ -320,7 +320,7 @@ fun_run_fio(){
       return
   else 
   ( ${cmd} >> ${RUN_DIR}/${test_name}_test_run.log ) &
-  fio_pid=$!
+  #fio_pid=$!
   fi
 }
 
@@ -462,8 +462,8 @@ fun_run_fixed_bal_tests() {
               continue
           fi
 
-          echo "$(date) Sleeping for 20 secs..."
-          sleep 20 # wait until all OSD online, pgrep?
+          echo "$(date) Sleeping for 10 secs..."
+          sleep 10 # wait until all OSD online, pgrep?
           ## Disabling grid temporarly
           ##fun_show_grid $test_name
           mon_dump_osd_threads ${test_name}
