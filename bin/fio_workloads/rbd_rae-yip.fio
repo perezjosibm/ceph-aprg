@@ -3,8 +3,10 @@ ioengine=rbd
 #clustername=6a13fa8f-f35c-11f0-a10a-6c92cfd8e45a
 clientname=admin
 pool=${pool_name}
-filename_format=librbd_test.$jobnum.$filenum
-rbdname=librbd_test.$jobnum.$filenum
+#filename_format=librbd_test.$jobnum.$filenum
+#rbdname=librbd_test.$jobnum.$filenum
+#Colon ';' separated list of volumes:
+rbdname=${rbd_name}
 #rbdname=$clientuid.librbd_test.$jobnum.$filenum
 busy_poll=0
 cpus_allowed_policy=split
