@@ -24,20 +24,20 @@ numjobs=${num_jobs}
 #exec_prerun=start_monitor.sh
 #exec_postrun=stop_monitor.sh
 
-[aio-seqwrite]
+[rados-seqwrite]
 rw=write
 io_size=256m
 nrfiles=32
 #verify=crc32c
 stonewall
 
-[aio-randwrite]
+[rados-randwrite]
 rw=randwrite
 time_based=1
 runtime=60
 stonewall
 
-[aio-randread]
+[rados-randread]
 rw=randread
 time_based=1
 runtime=60

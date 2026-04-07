@@ -20,20 +20,20 @@ nrfiles=32
 iodepth=${io_depth}
 numjobs=${num_jobs}
 
-[rados-seqwrite]
+[aio-seqwrite]
 rw=write
 io_size=256m
 nrfiles=32
 #verify=crc32c
 stonewall
 
-[rados-randwrite]
+[aio-randwrite]
 rw=randwrite
 time_based=1
 runtime=60
 stonewall
 
-[rados-randread]
+[aio-randread]
 rw=randread
 time_based=1
 runtime=60

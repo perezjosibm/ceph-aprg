@@ -32,8 +32,9 @@ source ${SCRIPT_DIR}/run_osd_utils.sh
 #
 trap 'echo "$(date)== INT received, exiting... =="; fun_stop ${fio_pid}; exit 1' SIGINT SIGTERM SIGHUP
 
+STOP_AT_FIO=false
 # DEfine some FIO options, or a .json test plan instead
-while getopts 'ab:c:d:e:g:t:s:r:jlpxz:' option; do
+while getopts 'ab:c:d:e:g:t:s:r:jlpxz:q' option; do
   case "$option" in
     a) fun_show_all_tests
        exit
@@ -72,6 +73,8 @@ while getopts 'ab:c:d:e:g:t:s:r:jlpxz:' option; do
        ;;
    x) SKIP_EXEC=true
        ;;
+    q) STOP_AT_FIO=true
+        ;;
     :) printf "missing argument for -%s\n" "$OPTARG" >&2
        usage >&2
        exit 1

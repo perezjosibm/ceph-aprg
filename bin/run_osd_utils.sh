@@ -313,8 +313,15 @@ fun_run_fio(){
   echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_test_run.log
   ##eval "${cmd}"
   #${cmd} | tee >> ${RUN_DIR}/${test_name}_test_run.log &
+  if [ "${STOP_AT_FIO}" = true ]; then
+      echo "Test: $test_name" >> "${RUN_DIR}/${test_name}_test_run.log"
+      echo "Command: ${cmd}" >> "${RUN_DIR}/${test_name}_test_run.log"
+      exit 0
+      return
+  else 
   ( ${cmd} >> ${RUN_DIR}/${test_name}_test_run.log ) &
   fio_pid=$!
+  fi
 }
 
 #############################################################################################

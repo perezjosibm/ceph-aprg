@@ -44,7 +44,8 @@ declare -A m_bs=( [rw]=4k [rr]=4k [sw]=64k [sr]=64k [rr_norm]=4k [rw_norm]=4k [r
 # The order of execution of the workloads for the random distributions
 ##declare -a workloads_order=( rr_norm rw_norm rr_zipf rw_zipf rr_zoned rw_zoned )
 # The order of execution of the workloads for response curves: original
-declare -a workloads_order=( rr rw sr sw )
+#declare -a workloads_order=( rr rw sr sw )
+declare -a workloads_order=( sw sr rw rr )
 declare -a procs_order=( true false )
 
 declare -A osd_id
@@ -292,9 +293,9 @@ fun_run_workload() {
         fi
         # Execute FIO: for multijob/vols, we do not need to indicate the RBD_NAME
         # Note the test duration is specified in the .fio file!
-        LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} \
+        ( LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} \
             taskset -ac ${FIO_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json \
-            --output-format=json 2> fio_${TEST_NAME}.err &
+            --output-format=json 2> fio_${TEST_NAME}.err ) &
         # Capture the pid of the FIO instance
         lastfio_pid=$!
         fio_id["fio_${i}"]=$lastfio_pid
