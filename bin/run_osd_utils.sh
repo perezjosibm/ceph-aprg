@@ -259,6 +259,28 @@ fun_run_fio_custom(){
 }
 
 #############################################################################################
+# Regenerate the FIO jobs .fio files according to the current NUM_RBD_IMAGES and LATENCY_TARGET
+fun_run_regen_fio_files(){
+    local -n dict=$1
+    local OPTS=""
+    
+    echo -e "${GREEN}== Regenerating FIO RBD job files ==${NC}"
+    if [ "$LATENCY_TARGET" = true ]; then
+        OPTS="${OPTS} -l "
+    fi
+    cmd="${SCRIPT_DIR}/gen_fio_job.sh ${OPTS} -n ${dict[rbd_num_images]} -d ${SCRIPT_DIR}/fio_workloads -p ${dict[pool_type]}"
+    echo "${cmd}"
+    eval "${cmd}"
+    rc=$? 
+     if [ $rc -eq 0 ]; then
+       echo -e "${GREEN}== FIO job files generated in ${FIO_JOBS} ==${NC}"
+     else
+       echo -e "${RED}== Error generating FIO job files in ${FIO_JOBS} ==${NC}"
+     fi
+}
+
+
+#############################################################################################
 # Useful when the cluster was created manually:
 fun_run_fio(){
   local TEST_NAME=$1
@@ -445,7 +467,7 @@ fun_run_fixed_bal_tests() {
           # TODO: make it agnostic of pool details, so can run for RADOs as well as RBD
           case "${test_row[pool_type]}" in
               rados)
-                 echo "$(date) RADOS..."
+                  echo "$(date) RADOS..."
                   # Simply create a pool for RADOS
                   #ceph osd pool create crimsonpool 128 128 && \; 
                   #pool_name="${RBD_POOL_NAME:-crimsonpool}"
@@ -453,16 +475,22 @@ fun_run_fixed_bal_tests() {
                   ceph osd pool ls;
                   rados df; 
                   ceph osd pool set noautoscale
-              ;;
+                  ;;
               rbd)
-                 echo "$(date) RBD..."
-                  fun_mkrbd_custom "$test_name" ${RUN_DIR} test_row
-              ;;
+                  echo "$(date) RBD..."
+                  if [ "${test_row['fio_type']}" == "custom" ]; then
+                      fun_mkrbd_custom "$test_name" ${RUN_DIR} test_row
+                  else
+                      fun_run_regen_fio_files test_row
+                      rbd_size=${test_row[rbd_size]^^} # convert to uppercase, since rbd bench needs it in that format
+                      ${SCRIPT_DIR}/cephmkrbd.sh -n ${test_row[rbd_num_images]} -s $rbd_size \
+                          -p ${test_row[pool_type]} -z ${test_row[pool_size]} 2>&1  >> ${RUN_DIR}/${test_name}_test_run.log 
+                  fi
+                  ;;
               *)
-                 echo "$(date) Other pool_type ${test_row[pool_type]} legacy..."
-                  ${SCRIPT_DIR}/cephmkrbd.sh  2>&1  >> ${RUN_DIR}/${test_name}_test_run.log 
-              #&& \${SCRIPT_DIR}/cpu-map.sh  -n osd -g "alien:4-31"
-              ;;
+                  echo "$(date) Other pool_type ${test_row[pool_type]} legacy..."
+                  #&& \${SCRIPT_DIR}/cpu-map.sh  -n osd -g "alien:4-31"
+                  ;;
           esac
 
           # Start FIO:
@@ -516,25 +544,6 @@ fun_run_bal_vs_default_tests() {
     fun_run_fixed_bal_tests ${BAL} ${OSD_TYPE}
   fi
 }
-
-#############################################################################################
-# Regenerate the FIO jobs .fio files according to the current NUM_RBD_IMAGES and LATENCY_TARGET
-fun_run_regen_fio_files(){
-    echo -e "${GREEN}== Regenerating FIO RBD job files ==${NC}"
-    if [ "$LATENCY_TARGET" = true ]; then
-        OPTS="${OPTS} -l "
-    fi
-    cmd="${SCRIPT_DIR}/gen_fio_job.sh ${OPTS} -n ${NUM_RBD_IMAGES} -d ${SCRIPT_DIR}/fio_workloads" #  -p fio_test
-    echo "${cmd}"
-    eval "${cmd}"
-    rc=$? 
-     if [ $rc -eq 0 ]; then
-       echo -e "${GREEN}== FIO job files generated in ${FIO_JOBS} ==${NC}"
-     else
-       echo -e "${RED}== Error generating FIO job files in ${FIO_JOBS} ==${NC}"
-     fi
-}
-
 #############################################################################################
 # Remember to regenerate the radwrite64k.fio for the config of drives
 fun_run_precond(){

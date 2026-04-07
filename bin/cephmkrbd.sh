@@ -20,13 +20,15 @@ NUM_RBD_IMAGES=1
 RBD_SIZE=2GB
 VOLNAME_PREFIX="fio_test"
     
-while getopts 'n:s:r:p:' option; do
+while getopts 'n:s:z:r:p:' option; do
   case "$option" in
     n) NUM_RBD_IMAGES=$OPTARG
         ;;
     s) RBD_SIZE=$OPTARG
         ;;
     r) RBD_POOL_REPLICA=$OPTARG
+        ;;
+    z) RBD_POOL_SIZE=$OPTARG
         ;;
     p) VOLNAME_PREFIX=$OPTARG
         ;;
