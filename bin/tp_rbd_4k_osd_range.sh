@@ -9,13 +9,14 @@ export RBD_POOL_SIZE=1024
 export RBD_POOL_NAME="rbd"
 
 # These timings are in seconds
-export RUNTIME=120 # (2 min) -- response curves
+export RUNTIME=60 # (2 min) -- response curves
 #export RUNTIME=3600 # (1 hr)
 export DELAY_SAMPLES=10 # sec delay between samples
 # This is just the ration RUNTIME div by DELAY_SAMPLES:
 export NUM_SAMPLES=$(( RUNTIME / DELAY_SAMPLES ))
 export FIO_CPU_CORES="96-191"
 export VSTART_CPU_CORES="0-95"
+export ALL_CPU_CORES="0-191" # to monitor by the run_fio.sh script
 # Test plan: to be extended to a .json file
 # The index of the table indicates the number of drives/OSDs
 

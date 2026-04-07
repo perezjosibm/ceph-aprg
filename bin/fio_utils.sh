@@ -167,68 +167,6 @@ fun_set_globals() {
 EOF
     echo "$json" | jq . >> ${TEST_PREFIX}_keymap.json
 }
-
-##############################################################################################
-fun_run_workload_loop() {
-    local WORKLOAD=$1
-    local SINGLE=$2
-    local WITH_FLAMEGRAPHS=$3
-    local TEST_PREFIX=$4
-    local WORKLOAD_NAME=$5 # used for respose curves
-
-    fun_set_globals $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD_NAME
-
-    if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump_start ${TEST_RESULT}_dump.json
-        fun_osd_dump_stats_start ${TEST_RESULT}_dump.json
-        fun_osd_dump "dump_before" 1 1 ${TEST_RESULT}_dump.json  "start" # ${OSD_TYPE}
-    fi
-
-    declare -a list_io_depth=()
-    IFS=', ' read -r -a list_io_depth <<< "$RANGE_IODEPTH"
-    # for io in "${array[@]}"; do
-    #     list_io_depth+=( $io )
-    # done
-
-    for job in $RANGE_NUMJOBS; do
-        for io in $RANGE_IODEPTH; do
-            local num_attempts=0
-            local rc=$FAILURE
-            while [[ $num_attempts -lt $NUM_ATTEMPTS && $rc -eq $FAILURE ]]; do
-                # We might need to check for OSD failure, etc
-                echo "== Attempt $((num_attempts+1)) for job $job with io depth $io =="
-                fun_run_workload $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD_NAME $job $io
-                rc=$?
-                if [[ $rc == $FAILURE ]]; then
-                    echo "== Attempt $((num_attempts+1)) failed, retrying... =="
-                    num_attempts=$((num_attempts+1))
-                else
-                    echo -e "${GREEN}== Attempt $((num_attempts+1)) succeeded ==${NC}"
-                    if [ "$SKIP_OSD_MON" = false ]; then
-                        #timestamp=$(date +%Y%m%d_%H%M%S)
-                        local end=$( [ "$io" == "${list_io_depth[-1]}" ] && echo "end" || echo "notyet" )
-                        fun_osd_dump "${TEST_NAME}" 1 1 ${TEST_RESULT}_dump.json $end # ${OSD_TYPE}
-                    fi
-                fi
-            done
-            if [[ "$rc" == "false" ]]; then
-                echo -e "${RED}== All attempts failed for job $job with io depth $io, exiting... ${NC}=="
-                fun_tidyup ${TEST_RESULT}
-                exit 1
-            fi
-        done # loop IO_DEPTH
-    done # loop num_jobs
-    if [ "$SKIP_OSD_MON" = false ]; then
-        fun_osd_dump_end ${TEST_RESULT}_dump.json
-        fun_osd_dump_stats_end ${TEST_RESULT}_dump.json
-        if [ "$WITH_MEM_PROFILE" = true ]; then
-            fun_osd_mem_profile ${TEST_RESULT}_memprofile.out
-        fi
-    fi
-    # Post processing:
-    fun_post_process   
-}
-        
 #############################################################################################
 # Monitor the FIO proccesses whether they complete successfully
 # TBC. extend to a list of processes, when one of they dies, kill all FIO and notify the parent
@@ -387,6 +325,67 @@ fun_run_workload() {
     return $SUCCESS
 } # end of fun_run_workload
 
+##############################################################################################
+fun_run_workload_loop() {
+    local WORKLOAD=$1
+    local SINGLE=$2
+    local WITH_FLAMEGRAPHS=$3
+    local TEST_PREFIX=$4
+    local WORKLOAD_NAME=$5 # used for respose curves
+
+    fun_set_globals $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD_NAME
+
+    if [ "$SKIP_OSD_MON" = false ]; then
+        fun_osd_dump_start ${TEST_RESULT}_dump.json
+        fun_osd_dump_stats_start ${TEST_RESULT}_dump.json
+        fun_osd_dump "dump_before" 1 1 ${TEST_RESULT}_dump.json  "start" # ${OSD_TYPE}
+    fi
+
+    declare -a list_io_depth=()
+    IFS=', ' read -r -a list_io_depth <<< "$RANGE_IODEPTH"
+    # for io in "${array[@]}"; do
+    #     list_io_depth+=( $io )
+    # done
+
+    for job in $RANGE_NUMJOBS; do
+        for io in $RANGE_IODEPTH; do
+            local num_attempts=0
+            local rc=$FAILURE
+            while [[ $num_attempts -lt $NUM_ATTEMPTS && $rc -eq $FAILURE ]]; do
+                # We might need to check for OSD failure, etc
+                echo "== Attempt $((num_attempts+1)) for job $job with io depth $io =="
+                fun_run_workload $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD_NAME $job $io
+                rc=$?
+                if [[ $rc == $FAILURE ]]; then
+                    echo "== Attempt $((num_attempts+1)) failed, retrying... =="
+                    num_attempts=$((num_attempts+1))
+                else
+                    echo -e "${GREEN}== Attempt $((num_attempts+1)) succeeded ==${NC}"
+                    if [ "$SKIP_OSD_MON" = false ]; then
+                        #timestamp=$(date +%Y%m%d_%H%M%S)
+                        local end=$( [ "$io" == "${list_io_depth[-1]}" ] && echo "end" || echo "notyet" )
+                        fun_osd_dump "${TEST_NAME}" 1 1 ${TEST_RESULT}_dump.json $end # ${OSD_TYPE}
+                    fi
+                fi
+            done
+            if [[ "$rc" == "false" ]]; then
+                echo -e "${RED}== All attempts failed for job $job with io depth $io, exiting... ${NC}=="
+                fun_tidyup ${TEST_RESULT}
+                exit 1
+            fi
+        done # loop IO_DEPTH
+    done # loop num_jobs
+    if [ "$SKIP_OSD_MON" = false ]; then
+        fun_osd_dump_end ${TEST_RESULT}_dump.json
+        fun_osd_dump_stats_end ${TEST_RESULT}_dump.json
+        if [ "$WITH_MEM_PROFILE" = true ]; then
+            fun_osd_mem_profile ${TEST_RESULT}_memprofile.out
+        fi
+    fi
+    # Post processing:
+    fun_post_process   
+}
+        
 #############################################################################################
 fun_post_process() {
     # local TEST_PREFIX=$1

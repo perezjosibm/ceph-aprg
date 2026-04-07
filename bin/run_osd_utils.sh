@@ -285,6 +285,7 @@ fun_run_regen_fio_files(){
 fun_run_fio(){
   local TEST_NAME=$1
   local FIO_OPTS=$2
+
   if [ ! -z "${FIO_OPTS}" ]; then
 	  OPTS="${FIO_OPTS}"
   else
@@ -303,7 +304,7 @@ fun_run_fio(){
 #########################################
   # Oficial FIO command:
   # x: skip response curves stop heuristic, n:no flamegraphs
-  cmd="${SCRIPT_DIR}/run_fio.sh -s ${OPTS} -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -t ${OSD_TYPE}"
+  cmd="${SCRIPT_DIR}/run_fio.sh -s ${OPTS} -c ${ALL_CPU_CORES} -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR} -t ${OSD_TYPE}"
 #########################################
   # Experimental: -w for single, and -k for skipping OSD monitoring
   #cmd="${SCRIPT_DIR}/run_fio.sh -s ${OPTS} -w sr -c \"0-111\" -f $FIO_CPU_CORES -p ${TEST_NAME} -n -d ${RUN_DIR}"
@@ -319,7 +320,9 @@ fun_run_fio(){
       exit 0
       return
   else 
-  ( ${cmd} >> ${RUN_DIR}/${test_name}_test_run.log ) &
+  #( ${cmd} >> ${RUN_DIR}/${test_name}_test_run.log ) &
+  # Needs to run sequential:
+  ${cmd} >> ${RUN_DIR}/${test_name}_test_run.log
   #fio_pid=$!
   fi
 }
@@ -517,8 +520,9 @@ fun_run_fixed_bal_tests() {
             fun_zip_results_custom "$test_name"
           else
               fun_run_fio "$test_name" "${test_row[fio_workload]}"
-              echo "$(date) FIO ${fio_pid} started: $test_name ${test_row[fio_workload]}"
-              fun_wait_fio $fio_pid
+              echo "$(date) FIO ${fio_pid} completed: $test_name ${test_row[fio_workload]}"
+              # Enable when FIO be invoked via fio_utils.sh instead of via run_fio.sh
+              #fun_wait_fio $fio_pid
           fi
           # Should be a neater way to stop the cluster
           if [ "$OSD_TYPE" == "classic" ]; then
