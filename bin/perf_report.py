@@ -349,23 +349,24 @@ class PerfReporter(object):
         # to generate the file
         pass
 
+
+    def plot_ds_df(self, name: str, ds: pd.DataFrame, x_column: str, y_column: str):
+        """
+        Plot the given dataframe ds, using the x_column and y_column
+        """
+        sns.lineplot(data=ds, x=x_column, y=y_column)
+        plt.xlabel(x_column)
+        plt.ylabel(y_column)
+        plt.title(f"{x_column} vs {y_column}")
+        #plt.title(f"{x_column} vs {y_column}")
+        plt.grid(True)
+        plt.show()
+
     def plot_dataset(self):
         """
         Plot the dataframes from the input list of .json files
         Use the example, sns_multi_example.py, to generate the plots, and the alternative method
         """
-
-        def _plot_ds_df(self, ds: pd.DataFrame, x_column: str, y_column: str):
-            """
-            Plot the given dataframe ds, using the x_column and y_column
-            """
-            sns.lineplot(data=ds, x=x_column, y=y_column)
-            plt.xlabel(x_column)
-            plt.ylabel(y_column)
-            plt.title(f"{x_column} vs {y_column}")
-            plt.grid(True)
-            plt.show()
-
         sns.set_theme()
         # Set fig size to 650,420 px
         fig, ax = plt.subplots(figsize=(650.0 / 100.0, 420.0 / 100.0), dpi=100)
@@ -482,6 +483,44 @@ class PerfReporter(object):
         dp = os.path.join(self.config["output"]["path"], self.config["output"]["name"])
         self.save_file(f"{dp}.md", self.document["md"])
 
+        
+    def plot_csv_files(self):
+        """
+        Plot the dataframes loaded from the .csv files in the input_dirs.
+        """
+        sns.set_theme()
+        WORKLOAD_LIST = ["randread", "randwrite", "seqwrite"] #  "seqread",
+        # Traverse the workloads:
+        for workload in WORKLOAD_LIST:
+            # We need to specify the output path, eg report_dir/figures
+            # And keep the output name so we can use it in the .tex files
+            dp = os.path.join(
+                self.config["output"]["path"], "figures/", self.config["output"]["name"]
+            )
+            for name, frame in self.ds_list.items():
+                logger.info(f"Plotting dataframe for {name}")
+                # Filter the rows which column "jobname" matches the workload name
+                regex = re.compile(f".*{workload}")  # to match the workload name in the jobname column
+                fr = frame["frame"] #.reset_index()
+                # Probably better to investigate about using an "apply"
+                # function to filter the rows, instead of iterating over them
+                # and matching the regex, which is not very efficient. We can
+                # also use the pandas "query" function to filter the rows based
+                # on the regex match.
+                # for row in df.itertuples(index=True, name='Pandas'):
+                # print(row.c1, row.c2)
+                # rowData = your_df.loc[ 'index' , : ]
+                #filtered = df.loc[df['Age'] > 25] 
+                filtered = fr.loc[regex.match(fr['jobname'])]
+
+                # for index, row in fr.interrows(): # itertuples():
+                #     if regex.match(fr["jobname"]):
+                #         # add this row to the dataframe to be plotted
+                #         df += fr[regex.match(fr["jobname"])]
+                self.plot_ds_df(name, filtered, x_column="iops", y_column="clat_ms")
+            plt.savefig(f"{dp}_{workload}.png", dpi=100, bbox_inches="tight")
+            plt.close()
+
 
     def load_csv_files(self, input_dirs: Dict[str, Any]):
         """
@@ -489,6 +528,7 @@ class PerfReporter(object):
         dictionary. The keys are labels to be used in the report, the values
         are dictionaries consisting of the paths to the .zip archive, and
         "test_run"the name of the .csv file to use/extract from the zip file.
+
 
         Example:
           "kind": "fio_csv_report",
@@ -524,14 +564,6 @@ class PerfReporter(object):
         corresponds to the 'clat_ms'.
         """
         pass
-
-        
-    def plot_csv_files(self):
-        """
-        Plot the dataframes loaded from the .csv files in the input_dirs.
-        """
-        pass
-
 
     def load_files(self, input_dirs: Dict[str, Any]):
         """
