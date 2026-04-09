@@ -30,11 +30,13 @@ declare -A m_s_iodepth=( [ex8osd]="32" [hockey]="${RAND_IODEPTH_RANGE}"
 [rw]="${RAND_IODEPTH_RANGE}" [rr]="${RAND_IODEPTH_RANGE}" [sw]="${SEQ_IODEPTH_RANGE}" [sr]="${SEQ_IODEPTH_RANGE}" 
 [rr_norm]=16 [rw_norm]=16 [rr_zipf]=16 [rw_zipf]=16 [rr_zoned]=16 [rw_zoned]=16) # 400GB_1hr_all_rc
 
-declare -A m_s_numjobs=( [ex8osd]="1 4 8" [hockey]="1"  [rw]=1  [rr]=16 [sw]=1  [sr]=1 [rr_norm]=16
-    [rw_norm]=4 [rr_zipf]=16 [rw_zipf]=4 [rr_zoned]=16 [rw_zoned]=4)
+# Option -w (WORKLOAD) is used as index for these:
+# note [rr] was 16, it now has been set back to 1 to avoid the issue of too many RBD threads
+declare -A m_s_numjobs=( [ex8osd]="1 4 8" [hockey]="1"  [rw]=1  [rr]=1 [sw]=1  [sr]=1
+    [rr_norm]=16 [rw_norm]=4 [rr_zipf]=16 [rw_zipf]=4 [rr_zoned]=16 [rw_zoned]=4 ) # Original
 #declare -A m_s_numjobs=( [hockey]="1 2 4 8 12 16 20"  [rw]=4  [rr]=16 [sw]=1  [sr]=1 )
 
-# Multiple FIO instances: results for 8 RBD images/vols
+# Multiple FIO instances: results for 8 RBD images/vols -- not been used in a while ...
 declare -A m_m_iodepth=( [rw]=2 [rr]=2 [sw]=2 [sr]=2 [rr_norm]=1 [rw_norm]=1 [rr_zipf]=1 [rw_zipf]=1 [rr_zoned]=1 [rw_zoned]=1)
 declare -A m_m_numjobs=( [rw]=1 [rr]=2  [sw]=1 [sr]=1 [rr_norm]=1 [rw_norm]=1 [rr_zipf]=1 [rw_zipf]=1 [rr_zoned]=1 [rw_zoned]=1)
 
@@ -203,9 +205,25 @@ fun_watchdog_proc() {
 }
 
 #############################################################################################
+fun_get_threads_list() {
+    local PID=$1
+    local OUT_FILE=$2
+    #while kill -0 ${PID} 2> /dev/null; do
+    if kill -0 ${PID} 2> /dev/null; then
+        #ps -T -p ${PID} -o pid,tid,time,comm >> ${OUT_FILE}
+        ps -p ${PID} -L -o pid,tid,comm,psr --no-headers > _threads.out
+        taskset -acp ${PID} > _tasks.out
+        paste _threads.out _tasks.out >> ${OUT_FILE}
+        rm -f  _threads.out _tasks.out
+        #sleep 5
+        # done
+    fi
+}
+
+#############################################################################################
 # Run a single workload
 fun_run_workload() {
-    local WORKLOAD=$1
+    local WORKLOAD=$1 # used as key to the map
     local SINGLE=$2
     local WITH_FLAMEGRAPHS=$3
     local TEST_PREFIX=$4
@@ -236,10 +254,14 @@ fun_run_workload() {
             --output-format=json 2> fio_${TEST_NAME}.err ) &
         # Capture the pid of the FIO instance
         lastfio_pid=$!
+        # count the number of threads in the FIO process, to investigate
+        # an issue with too many threads being created
+        fun_get_threads_list ${lastfio_pid} fio_${TEST_NAME}_threads.out
+        num_threads=$(wc -l < fio_${TEST_NAME}_threads.out)
         fio_id["fio_${i}"]=$lastfio_pid
         global_fio_id+=( $lastfio_pid  )
         fio_pids+=( $lastfio_pid  )
-        echo "== $(date) == Launched FIO (pid: $lastfio_pid) ${fio_name} \
+        echo "== $(date) == Launched FIO (pid: $lastfio_pid) ${fio_name}, num_threads: ${num_threads} \
             with RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} on cores ${FIO_CORES} ==";
         # Check return code from FIO
     done # loop NUM_PROCS
@@ -274,7 +296,7 @@ fun_run_workload() {
         printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
     fi
     all_pids=$( fun_join_by ',' ${osd_id[@]}  ${fio_id[@]} )
-    ( mon_measure "${all_pids}" "${top_out_name}_top.out" ${TOP_OUT_LIST} ) &
+    ( mon_start_top "${all_pids}" "${top_out_name}_top.out" ${TOP_OUT_LIST} ) &
 
     # Measure OSD dump_metrics and diskstats during the FIO run
     if [ "$SKIP_OSD_MON" = false ]; then

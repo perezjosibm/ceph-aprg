@@ -281,7 +281,7 @@ fun_monitor() {
     local test_top_out="${test_name}_top.out"
 
     mon_perf  ${pid} ${test_name} ${FLAME}
-    ( mon_measure ${pid} ${test_top_out} ${TOP_OUT_LIST} ) &
+    ( mon_start_top ${pid} ${test_top_out} ${TOP_OUT_LIST} ) &
     #mon_measure ${test_top_out} ${TOP_OUT_LIST} ${pid}
     fun_show_grid ${test_name} ${pid}
 }

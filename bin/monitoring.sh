@@ -109,7 +109,7 @@ mon_perf() {
 
 #############################################################################################
 # Depends of global variables NUM_SAMPLES and DELAY_SAMPLES
-mon_measure() {
+mon_start_top() {
   local PID=$1 #comma sep list of pids
   local TEST_OUT=$2
   local TEST_TOP_OUT_LIST=$3
