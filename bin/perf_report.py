@@ -490,7 +490,10 @@ class PerfReporter(object):
         """
         sns.set_theme()
         WORKLOAD_LIST = ["randread", "randwrite", "seqwrite"] #  "seqread",
-        # Traverse the workloads:
+        # Traverse the workloads: produce a single plot (with all the
+        # input_dirs) per workload, with the same x and y columns, to be
+        # defined in the config .json file, or by default x is latency, y is
+        # iops for random workloads, and bw for sequential workloads.
         for workload in WORKLOAD_LIST:
             # We need to specify the output path, eg report_dir/figures
             # And keep the output name so we can use it in the .tex files
@@ -517,6 +520,10 @@ class PerfReporter(object):
                 #     if regex.match(fr["jobname"]):
                 #         # add this row to the dataframe to be plotted
                 #         df += fr[regex.match(fr["jobname"])]
+                # Alt. concat the filtered rows into a new dataframe to be
+                # plotted, indicating in a new column the name of the test run,
+                # to be used as hue in the plot
+
                 self.plot_ds_df(name, filtered, x_column="iops", y_column="clat_ms")
             plt.savefig(f"{dp}_{workload}.png", dpi=100, bbox_inches="tight")
             plt.close()

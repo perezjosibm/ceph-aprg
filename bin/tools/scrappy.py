@@ -389,15 +389,17 @@ class Scrappy:
     ISSUES_FILE = os.path.join(SCRIPT_PATH, "issues.json")
 
     def __init__(
-        self, issues_file, logdir, previous_report=False, exclude_issues=False
+        self, args
+        #self, issues_file, logdir, previous_report=False, exclude_issues=False
     ):
-        self.issues_file = issues_file
-        self.logdir = logdir
-        self.issues = load_issues(issues_file)
+        self.issues_file = args.issues
+        self.logdir = args.logdir
+        self.issues = load_issues(self.issues_file)
         logger.debug(f"Issues: {pp.pformat(self.issues)}")
-        self.previous_report = previous_report
-        self.failures = load_scrapper(os.path.join(logdir, "results.log")) # scrape
-        self.exclude_issues = exclude_issues
+        self.previous_report = args.previous_report
+        self.failures = load_scrapper(os.path.join(self.logdir, "results.log")) # scrape
+        self.exclude_issues = args.exclude
+        self.failures = args.failures.split(",") if args.failures else self.failures
         logger.debug(f"Failures: {self.failures}")
 
     def prepare_egrep_files(self):
@@ -790,6 +792,15 @@ def parse_arguments(argv):
         "-d", "--logdir", required=True, help="Directory containing log files to scan."
     )
     parser.add_argument(
+        "-f",
+        "--failures",
+        required=False,
+        # Use this list of comma separated jobs, overriding the list of failures from the results.log file
+        default="",
+        help="List of , separated jobs to analise (override those found in the results.log).",
+    )
+
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -826,7 +837,7 @@ def main(argv):
             filename=tmpfile.name, encoding="utf-8", level=logLevel, format=FORMAT
         )
     logger.debug("Got options: {0}".format(args))
-    scrappy = Scrappy(args.issues, args.logdir, args.previous_report, args.exclude)
+    scrappy = Scrappy(args) #.issues, args.logdir, args.previous_report, args.exclude)
     scrappy.run()
     # We might need options to scan only specific types of logs,
     # or to scan the current directory for ,json produced by a previous run to
