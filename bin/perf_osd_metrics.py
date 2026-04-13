@@ -1158,7 +1158,7 @@ class PerfMetricEntry(object):
                 # and investigate whether the concat can be done specifiying a
                 # set of columns
                 df = pd.concat(df_ls, axis=1)
-                # This duplicates vvalues:
+                # This duplicates values:
                 # df = reduce(lambda df1,df2: pd.merge(df1,df2, on='shard'), df_ls)
             except Exception as e:
                 logger.error(

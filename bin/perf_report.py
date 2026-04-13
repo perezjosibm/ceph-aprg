@@ -38,7 +38,7 @@ from typing import List, Dict, Any
 from common import load_json, save_json
 from gnuplot_plate import FioPlot
 import zipfile
-
+from io import StringIO
 
 # from fio_plot import FioPlot FIXME
 
@@ -387,7 +387,7 @@ class PerfReporter(object):
                 df = pd.DataFrame(
                     {
                         "x": ds[workload]["json"][xcol],
-                        "y": ds[workload]["json"][ycol],
+                       "y": ds[workload]["json"][ycol],
                         "type": name,
                     }
                 )
@@ -488,46 +488,106 @@ class PerfReporter(object):
         """
         Plot the dataframes loaded from the .csv files in the input_dirs.
         """
-        sns.set_theme()
+        def _plot_single_df(df: pd.DataFrame, workload: str, dp: str):
+            """
+            Plot a single dataframe for the given workload.
+                df["iops"] = pd.to_numeric(df["iops"], errors="coerce")
+                df["clat_ms"] = pd.to_numeric(df["clat_ms"], errors="coerce")
+            """
+            amap = {
+                "rand": {
+                    "regex": re.compile(r"rand.*"),
+                    "xcol": "iops", #: "IOPS", 
+                    "ycol": "clat_ms", #: "Latency (ms)"
+                },
+                "seq": {
+                    "regex": re.compile(r"rand.*"),
+                    "xcol": "bw", #: "BW (MB/s)", 
+                    "ycol": "clat_ms", #: "Latency (ms)"
+                },
+            }
+            xcol = "iops"  # default x column is IOPs
+            ycol = "clat_ms"  # default y column is latency in ms
+            # Get the type of workload from the amap:
+            for k in amap.keys():
+                if amap[k]["regex"].search(workload):
+                    xcol = amap[k]["xcol"]
+                    ycol = amap[k]["ycol"]
+                    break
+
+            try:                
+                #g = 
+                sns.lineplot( #relplot( 
+                                 data=df,
+                                 x=xcol , #"iops",
+                                 y=ycol, #"clat_ms",
+                                 hue="type",
+                                 style="type",
+                                 #kind="line", # not for lineplots
+                                 markers=True,
+                                 legend="full",
+                                 ).set(title=f"{workload}: latency vs IOPS")
+                # g.set_axis_labels("IOPS", "Latency (ms)")
+                # g.set(xticks=df["iops"].unique())
+                # # df.dataframe(df.style.format(subset=['Position', 'Marks'], formatter="{:.2f}"))
+                # g.set_xticklabels(rotation=45)
+                # g.legend.remove()
+                # plt.legend(title="Build", loc="center right")
+                plt.yscale('log')
+                plt.xscale('log')
+                plt.show()
+                # Save df as csv in the output directory, with the name of the workload
+                plt.savefig(f"{dp}_{workload}.png", dpi=100, bbox_inches="tight")
+                # Add to the generated list of figures to be included in the .tex report,
+                # with the expected name to be used in the .tex template
+                
+                plt.close()
+            except Exception as e:
+                logger.error(f"Exception {e} plotting dataframe for workload {workload}... skipping")
+
+        sns.set_theme(style="darkgrid")
         WORKLOAD_LIST = ["randread", "randwrite", "seqwrite"] #  "seqread",
-        # Traverse the workloads: produce a single plot (with all the
-        # input_dirs) per workload, with the same x and y columns, to be
-        # defined in the config .json file, or by default x is latency, y is
-        # iops for random workloads, and bw for sequential workloads.
         for workload in WORKLOAD_LIST:
+            df_list = []
             # We need to specify the output path, eg report_dir/figures
             # And keep the output name so we can use it in the .tex files
             dp = os.path.join(
                 self.config["output"]["path"], "figures/", self.config["output"]["name"]
             )
             for name, frame in self.ds_list.items():
-                logger.info(f"Plotting dataframe for {name}")
+                logger.info(f"Preparing dataframe for {name}")
                 # Filter the rows which column "jobname" matches the workload name
-                regex = re.compile(f".*{workload}")  # to match the workload name in the jobname column
-                fr = frame["frame"] #.reset_index()
-                # Probably better to investigate about using an "apply"
-                # function to filter the rows, instead of iterating over them
-                # and matching the regex, which is not very efficient. We can
-                # also use the pandas "query" function to filter the rows based
-                # on the regex match.
-                # for row in df.itertuples(index=True, name='Pandas'):
-                # print(row.c1, row.c2)
-                # rowData = your_df.loc[ 'index' , : ]
+                #regex = re.compile(f".*{workload}")  # to match the workload name in the jobname column
+                df = frame["frame"] #.reset_index()
                 #filtered = df.loc[df['Age'] > 25] 
-                filtered = fr.loc[regex.match(fr['jobname'])]
+                #filtered = df.loc[regex.match(df['jobname'])]
+                try:
+                    #filtered = df.loc[df.iloc[:,0].str.contains(workload, regex=True)]
+                    filtered = df.loc[df['jobname'].str.contains(workload, regex=True)]
+                except Exception as e:
+                    logger.error(f"Exception {e} filtering dataframe for {name} with workload {workload}... skipping")
+                    continue
+                # Add a new column for this df with the name of the test run, to be used as hue in the plot 
+                filtered["type"] = name # works, but gets a warning about setting a value on a copy of a 
+                # slice from a dataframe, we might need to use .loc to avoid it
+                #filtered.loc["type"] = name# didn't work
+                logger.info(f"filtered:\n{filtered}")
+                df_list.append(filtered)
 
-                # for index, row in fr.interrows(): # itertuples():
-                #     if regex.match(fr["jobname"]):
-                #         # add this row to the dataframe to be plotted
-                #         df += fr[regex.match(fr["jobname"])]
-                # Alt. concat the filtered rows into a new dataframe to be
-                # plotted, indicating in a new column the name of the test run,
-                # to be used as hue in the plot
-
-                self.plot_ds_df(name, filtered, x_column="iops", y_column="clat_ms")
-            plt.savefig(f"{dp}_{workload}.png", dpi=100, bbox_inches="tight")
-            plt.close()
-
+            logger.info(f"ds_list:\n{df_list}")
+            try:
+                df = pd.concat(df_list) #, ignore_index=True)
+            except Exception as e:
+                logger.error(
+                    f"Exception {e} concatenating dataframes for {workload}... skipping"
+                )
+                continue
+            # Filter the dataframe to skip data points with latency values higher than 100 ms 
+            #df = df[df["clat_ms"] < 100]
+            logger.info(f"Saving df for {workload} in {dp}_{workload}.csv:")#\n{df}
+            df.to_csv(f"{dp}_{workload}.csv", index=False)
+            df.to_latex(f"{dp}_{workload}.tex", index=False)
+            _plot_single_df(df, workload, dp)
 
     def load_csv_files(self, input_dirs: Dict[str, Any]):
         """
@@ -535,7 +595,6 @@ class PerfReporter(object):
         dictionary. The keys are labels to be used in the report, the values
         are dictionaries consisting of the paths to the .zip archive, and
         "test_run"the name of the .csv file to use/extract from the zip file.
-
 
         Example:
           "kind": "fio_csv_report",
@@ -551,10 +610,21 @@ class PerfReporter(object):
             # if zipfile.is_zipfile(test_d['path']):
             try:
                 with zipfile.ZipFile(test_d['path'], mode="r") as archive:
-                    #info= archive.getinfo(test_d["test_run"])
+                    # Check if the test_d['test_run'] exists in the archive --
+                    # if not found, try a "*.csv" glob pattern to find the .csv
+                    # file in the archive
+                    try:
+                        info = archive.getinfo(test_d["test_run"])
+                    except KeyError:
+                        logger.error(f"File {test_d['test_run']} not found in archive {test_d['path']}")
+                        continue
                     csv_data = archive.read(test_d["test_run"]).decode(encoding="utf-8")
                     # Load the .csv file into a pandas dataframe
-                    df = pd.read_csv(csv_data)
+                    try:
+                        df = pd.read_csv(StringIO(csv_data))
+                    except Exception as e:
+                        logger.error(f"Error loading .csv file {test_d['test_run']} into dataframe: {e}")
+                        continue
                     self.ds_list[name] = {"frame": df}
                     logger.info(f"Loaded .csv file {test_d['test_run']} for {name} into dataframe")
             except zipfile.BadZipFile as e:
@@ -1048,7 +1118,8 @@ class PerfReporter(object):
         self.load_config()
         # self.plot_dataset() # FIXME: this should be called after the dataset is loaded
         if "kind" in self.config:
-            self.gen_basic_csv_cmp()
+            #self.gen_basic_csv_cmp()
+            self.plot_csv_files()
         else:
             self.gen_basic_cmp()
         self.gen_report()

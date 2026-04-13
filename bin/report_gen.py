@@ -21,22 +21,10 @@ The expected layout of the dir structure is:
 
 import argparse
 import logging
-import subprocess
 import os
 import sys
-import json
-import glob
-import re
 import tempfile
 import pprint
-import shutil
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from typing import List, Dict, Any
-from common import load_json, save_json
-from gnuplot_plate import FioPlot
 from perf_report import PerfReporter
 # from fio_plot import FioPlot FIXME
 
