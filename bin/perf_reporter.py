@@ -1,25 +1,9 @@
 #!/usr/bin/env python3
 """
-This module is the original version to traverse the dir tree indicated in the
-input config test report plan file .JSON to select benchmark results .JSON
-entries to generate a report in .tex
-
-The expected layout of the dir structure is:
-
-<build_desxcription>/
-    data/
-    <one dir per config, eg num_reactor> -- eg these contain one response curve run per dir:
-    1osd_4reactor_32fio_sea_rc/
-    1osd_8reactor_32fio_sea_rc/
-    <TEST_RESULT>_<WORKLOAD>_d/
-    <TEST_RESULT>_<WORKLOAD>.dat - output from the fio_parse_jsons.py script (response curves)
-    <TEST_RESULT>_<WORKLOAD>.json - output from the perf_metrics.py script, aggregated from the .dat files
-    <TEST_RESULT>_<WORKLOAD>_top_cpu.json - output from the parse-top.py script, aggregated from the top command output
-    <TEST_RESULT>_<WORKLOAD>_rutil_conf.json - reactor utiil input config schema
-    ... etc
-
-    By default, the script will construct a simple comparison (response curves)
-    from each of the directories (bench.dat) side by side.
+This module is the new version to traverse the report test plan config .json to
+extract CSV FIO output from each target archive and produce:
+- comparison graphs as .png in figures/ with the expected name to be used in the .tex template
+- tex tables
 """
 
 import argparse
@@ -47,6 +31,7 @@ import zipfile
 from io import StringIO
 
 # from fio_plot import FioPlot FIXME
+# from perf_report import PerfReporterLegacy
 
 __author__ = "Jose J Palacios-Perez"
 
@@ -55,17 +40,45 @@ FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
 # root_logger = logging.getLogger(__name__)
 pp = pprint.PrettyPrinter(width=61, compact=True)
 
+# Either use the factory for two classes: nre one below, legacy from the
+# previous version, or use a flag in the same class to switch between the two
+# modes of operation, which is probably simpler to maintain, but might make the
+# code more complex. We can start with the flag, and if it gets too complex, we
+# can split into two classes.
 
-class PerfReporterLegacy(object):
+class PerfReporter(object):
     """
-    This class is used to generate a report from the results of the performance
+    This is the new version of the class used to generate a report from the results of the performance
     tests. It will traverse the directories given in the configuration file,
-    and generate a report in .tex and .md format. The input (runs) is a
+    and generate a report in .tex and .md format. The input (test runs) is a
     dictionary describing the directories to traverse (values), with keys the
     aliases or test names. The report will contain tables and figures for the
     performance tests, often comparing results from the input runs directories.
     Each section correspond to a workload. The report will be generated in the
     directory given in the configuration file.
+
+    Example of a report configuration plan .json:
+
+    {
+      "description": "Configuration file to report the comparison between
+         Seastore and Bluestore on RADOS, additionally Linux native AIO, 4k bs",
+      "kind": "fio_csv_report",
+      "input": {
+        "seastore_4k_1osd": {
+          "path": "data/tp_rados_seastore_4k_osd_range/sea_1osd_10reactor_custom_default_rc.zip",
+          "test_run": "FIO/sea_1osd_10reactor_custom_default_rc.csv"
+        },
+        "seastore_4k_2osd": {
+          "path": "data/tp_rados_seastore_4k_osd_range/sea_2osd_10reactor_custom_default_rc.zip",
+          "test_run": "FIO/sea_2osd_10reactor_custom_default_rc.csv"
+        },
+      },
+      "output": {
+        "name": "cmp_rados_crimson_vs_aio_4k_rc",
+        "_comment_": "This is the path where the report will be generated, from the -d option",
+        "path": "./"
+        }
+    }
     """
 
     # This is the default list of workloads we are interested in, but can be given in the input .json file.
@@ -509,12 +522,57 @@ class PerfReporterLegacy(object):
             self.document["tex"] += f"\\label{{fig:{file_name}}}\n"
             self.document["tex"] += "\\end{figure}\n\n"
         """
-
         if key == "tex":
             title = title.replace("_", "-")
             self.document["tex"] += f"\\myplot{{{label}}}{{{title}}}{{{file_name}}}\n"
         elif key == "md":
             self.document["md"] += f"![{title}]({dir_path}/{file_name})\n\n"
+
+    def get_entry_table(self, key: str, title: str, table_content: str, label: str = ""):
+        """
+        Generate .tex and .md for the table entry
+        Use the new macro:
+        \\mytable{clat}{Latency}{cmp_blue_vs_sea_1osd_randread_64k_clat.tex}
+        instead of the pure LaTeX:
+
+            self.document["tex"] += "\\begin{table}[h!]\n"
+            self.document["tex"] += "\\centering\n"
+            self.document["tex"] += f"\\input{{{table_content}}}\n"
+            self.document["tex"] += f"\\caption{{{title}}}\n"
+            self.document["tex"] += f"\\label{{tab:{table_content}}}\n"
+            self.document["tex"] += "\\end{table}\n\n"
+        """
+
+        if key == "tex":
+            title = title.replace("_", "-")
+            self.document["tex"] += f"\\mytable{{{label}}}{{{title}}}{{{table_content}}}\n"
+        elif key == "md":
+            # For markdown, we can simply include the table content as is, since it is already in markdown format
+            self.document["md"] += f"{table_content}\n\n"
+
+    # relative to the report output dir, since the .tex files are in report_dir/tex and the .md files in report_dir/
+    target_dir_d = {
+        "figures": "figures/",
+        "tables": "tex/",
+        "md": "./",
+    }
+
+    def get_target_name(self, name: str):
+        """
+        Get the name of the generated target file, always assuming the figures
+        go to "figures/" and the tables to "tex/", with the expected name to be
+        used in the .tex template.
+        return os.path.join(dir_path, file_name)
+        """
+        return f"{self.config["output"]["name"]}_{name}"
+
+    def get_target_path(self, name: str, target_type: str):
+        """
+        Get the path to the generated target file (relative to this generator script), same assumptoion as above.
+        """
+        return os.path.join(
+                self.config["output"]["path"], f"{self.target_dir_d[target_type]}", self.get_target_name(name)
+            )
 
     def plot_csv_files(self):
         """
@@ -542,7 +600,7 @@ class PerfReporterLegacy(object):
         }
 
         def _plot_single_df(
-            df: pd.DataFrame, workload: str, dp: str, style: str = "rc"
+            df: pd.DataFrame, workload: str, style: str = "rc"
         ):
             """
             Plot a single dataframe for the given workload.
@@ -595,7 +653,8 @@ class PerfReporterLegacy(object):
 
             for xcol in xcols:
                 title = f"{workload} {bs} {style} {name}"  # - {ycol} vs {xcol}
-                file_name = f"{dp}_{workload}_{bs}_{style}_{ycol}_vs_{xcol}.png"
+                file_name = f"{workload}_{bs}_{style}_{ycol}_vs_{xcol}.png"
+                t_path = self.get_target_path(file_name, "figures")
                 try:
                     sns.set_theme(style="darkgrid")
                     g = sns.relplot(  # lineplot(
@@ -619,11 +678,12 @@ class PerfReporterLegacy(object):
                     if styles[style].get("logx", False):
                         plt.xscale("log")
                     # Save df as csv in the output directory, with the name of the workload
-                    plt.savefig(file_name, dpi=100, bbox_inches="tight")
+                    plt.savefig(t_path, dpi=100, bbox_inches="tight")
+                    # Add entry in the report
                     self.add_entry_figure(
                         key="tex",
                         title=title,
-                        file_name=file_name,
+                        file_name=self.get_target_name(file_name),
                         dir_path="figures",
                         label=f"fig:{workload}-{bs}-{style}-{ycol}-vs-{xcol}",
                     )
@@ -660,9 +720,7 @@ class PerfReporterLegacy(object):
                     )
                     continue
                 # Add a new column for this df with the name of the test run, to be used as hue in the plot
-                filtered["type"] = (
-                    name  # works, but gets a warning about setting a value on a copy of a
-                )
+                #filtered["type"] = ( name ) # works, but gets a warning about setting a value on a copy of a
                 # slice from a dataframe, we might need to use .loc to avoid it
                 # filtered.loc["type"] = name# didn't work
                 logger.info(f"filtered:\n{filtered}")
@@ -678,14 +736,19 @@ class PerfReporterLegacy(object):
                 continue
             # Filter the dataframe to skip data points with latency values higher than 100 ms
             # df = df[df["clat_ms"] < 100]
-            logger.info(f"Saving df for {workload} in {dp}_{workload}.csv:")  # \n{df}
-            df.to_csv(f"{dp}_{workload}.csv", index=False)
-            latex_filename = f"{dp}_{workload}.tex"
-            df.to_latex(latex_filename, index=False)
-            self.document["tex"] += f"\\input{{{latex_filename}}}\n"
+            #t_name = self.get_target_name(f"{workload}.csv")
+            t_path = self.get_target_path(f"{workload}.csv", "tables")
+            logger.info(f"Saving df for {workload} in {t_path}:")  # \n{df}
+            df.to_csv(t_path, index=False)
+            #latex_filename = f"{dp}_{workload}.tex"
+            t_name = self.get_target_name(f"{workload}.tex")
+            t_path = self.get_target_path(f"{workload}.tex", "tables")
+            df.to_latex(t_path, index=False)
+            self.document["tex"] += f"\\input{{{t_name}}}\n"
+
             for style in styles.keys():
                 logger.info(f"Plotting df for {workload} with style {style}")
-                _plot_single_df(df, workload, dp, style)
+                _plot_single_df(df, workload, style)
 
     def load_csv_files(self, input_dirs: Dict[str, Any]):
         """
@@ -714,7 +777,8 @@ class PerfReporterLegacy(object):
                     # Check if the test_d['test_run'] exists in the archive --
                     # if not found, try a "*.csv" glob pattern to find the .csv
                     namelist = archive.namelist()
-                    # Assume test_d["test_run"] is a pattern to match the .csv file in the archive, if not found, try to find a .csv file in the archive
+                    # Assume test_d["test_run"] is a pattern to match the .csv file 
+                    # in the archive, if not found, try to find a .csv file in the archive
                     regex = re.compile(test_d["test_run"])
                     # if test_d["test_run"] not in namelist:
                     logger.warning(
@@ -729,18 +793,22 @@ class PerfReporterLegacy(object):
                         logger.info(
                             f"Found .csv files in archive {test_d['path']}: {csv_files}, using the first one: {csv_files[0]}"
                         )
-                        test_d["test_run"] = csv_files[
-                            0
-                        ]  # We might generalise this to support multiple .csv files,
-                        # for example one per workload, and then we can use the workload name as a key in the ds_list to store the corresponding dataframe
+                        # We might generalise this to support multiple .csv files,
+                        # for example one per workload, and then we can use the
+                        # workload name as a key in the ds_list to store the
+                        # corresponding dataframe
+                        test_d["test_run"] = csv_files[ 0 ]  
                     # file in the archive
                     try:
-                        info = archive.getinfo(test_d["test_run"])
+                        _info = archive.getinfo(test_d["test_run"])
                     except KeyError:
                         logger.error(
                             f"File {test_d['test_run']} not found in archive {test_d['path']}"
                         )
                         continue
+                    logger.debug(
+                        f"Found .csv file {test_d['test_run']} in archive {test_d['path']}, size: {_info.file_size} bytes"
+                    )
                     csv_data = archive.read(test_d["test_run"]).decode(encoding="utf-8")
                     # Load the .csv file into a pandas dataframe
                     try:
@@ -750,6 +818,10 @@ class PerfReporterLegacy(object):
                             f"Error loading .csv file {test_d['test_run']} into dataframe: {e}"
                         )
                         continue
+                    # Add the new column "name" to the dataframe, with the value of the name key in the input_dirs 
+                    # dictionary, to be used as hue in the plots
+                    #df["name"] = name
+                    df["type"] = name
                     self.ds_list[name] = {"frame": df}
                     logger.info(
                         f"Loaded .csv file {test_d['test_run']} for {name} into dataframe"
@@ -1207,6 +1279,7 @@ class PerfReporterLegacy(object):
             if "kind" in self.config:
                 self.load_csv_files(self.config["input"])
             else:
+                # This would be from the PerfReporterLegacy class
                 self.load_files(self.config["input"])
             # Generate the simple .gnuplot file for the report
         else:
@@ -1230,6 +1303,6 @@ class PerfReporterLegacy(object):
     def compile(self):
         """
         This method is used to compile the report. It will compile the .tex file into .pdf, but needs to include
-        some other sections, which coul dbe from an assuming template.
+        some other sections, which could be from an assuming template.
         """
         pass

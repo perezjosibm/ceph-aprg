@@ -1,22 +1,6 @@
 #!/usr/bin/env python3
 """
-This script traverses the dir tree indicated in the input confiig file .JSON to select benchmark results .JSON entries to
-generate a report in .tex
-
-The expected layout of the dir structure is:
-
-<build_desxcription>/
-    data/
-    <one dir per config, eg num_reactor> -- eg these contain one response curve run per dir:
-    1osd_4reactor_32fio_sea_rc/
-    1osd_8reactor_32fio_sea_rc/
-    <TEST_RESULT>_<WORKLOAD>_d/
-    <TEST_RESULT>_<WORKLOAD>.dat - output from the fio_parse_jsons.py script (response curves)
-    <TEST_RESULT>_<WORKLOAD>.json - output from the perf_metrics.py script, aggregated from the .dat files
-    <TEST_RESULT>_<WORKLOAD>_top_cpu.json - output from the parse-top.py script, aggregated from the top command output
-    <TEST_RESULT>_<WORKLOAD>_rutil_conf.json - reactor utiil input config schema
-    ... etc
-    By default, the script will construct a simple comparison (response curves) from each of the directories (bench.dat) side by side.
+This script expects an input test report plan .JSON to generate a performance test report.
 """
 
 import argparse
@@ -25,8 +9,7 @@ import os
 import sys
 import tempfile
 import pprint
-from perf_report import PerfReporter
-# from fio_plot import FioPlot FIXME
+from perf_reporter import PerfReporter
 
 __author__ = "Jose J Palacios-Perez"
 
