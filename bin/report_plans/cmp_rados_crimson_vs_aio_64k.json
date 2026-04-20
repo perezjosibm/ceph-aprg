@@ -1,0 +1,59 @@
+{
+  "description": "Configuration file to report the comparison between Seastore and Bluestore on RADOS, additionally Linux native AIO, 64k bs",
+  "kind": "fio_csv_report",
+  "input": {
+    "seastore_64k_1osd": {
+      "path": "data/tp_rados_seastore_64k_osd_range/sea_1osd_10reactor_custom_default_rc.zip",
+      "test_run": "FIO/sea_1osd_10reactor_custom_default_rc.csv"
+    },
+    "seastore_64k_2osd": {
+      "path": "data/tp_rados_seastore_64k_osd_range/sea_2osd_10reactor_custom_default_rc.zip",
+      "test_run": "FIO/sea_2osd_10reactor_custom_default_rc.csv"
+    },
+    "seastore_64k_4osd": {
+      "path": "data/tp_rados_seastore_64k_osd_range/sea_4osd_10reactor_custom_default_rc.zip",
+      "test_run": "FIO/sea_4osd_10reactor_custom_default_rc.csv"
+    },
+    "seastore_64k_8osd": {
+      "path": "data/tp_rados_seastore_64k_osd_range/sea_8osd_10reactor_custom_default_rc.zip",
+      "test_run": "FIO/sea_8osd_10reactor_custom_default_rc.csv"
+    },
+    "bluestore_64k_1osd": {
+      "path": "data/tp_rados_bluestore_64k_osd_range/blue_1osd_10reactor_40at_custom_default_rc.zip",
+      "test_run": "FIO/blue_1osd_10reactor_.*.csv"
+    },
+    "bluestore_64k_2osd": {
+      "path": "data/tp_rados_bluestore_64k_osd_range/blue_2osd_10reactor_80at_custom_default_rc.zip",
+      "test_run": "FIO/blue_2osd_10reactor_.*.csv"
+    },
+    "bluestore_64k_4osd": {
+      "path": "data/tp_rados_bluestore_64k_osd_range/blue_4osd_10reactor_160at_custom_default_rc.zip",
+      "test_run": "FIO/blue_4osd_10reactor_.*.csv"
+    },
+    "bluestore_64k_8osd": {
+      "path": "data/tp_rados_bluestore_64k_osd_range/blue_8osd_10reactor_320at_custom_default_rc.zip",
+      "test_run": "FIO/blue_8osd_10reactor_.*.csv"
+    },
+    "aio_64k_1dev": {
+      "path": "data/aio_direct_64k/aio_direct_1dev_64k.zip",
+      "test_run": "FIO/aio_direct_1dev_64k.csv"
+    },
+    "aio_64k_2dev": {
+      "path": "data/aio_direct_64k/aio_direct_2dev_64k.zip",
+      "test_run": "FIO/aio_direct_2dev_64k.csv"
+    },
+    "aio_64k_4dev": {
+      "path": "data/aio_direct_64k/aio_direct_4dev_64k.zip",
+      "test_run": "FIO/aio_direct_4dev_64k.csv"
+    },
+    "aio_64k_8dev": {
+      "path": "data/aio_direct_64k/aio_direct_8dev_64k.zip",
+      "test_run": "FIO/aio_direct_8dev_64k.csv"
+    }
+  },
+  "output": {
+    "name": "cmp_rados_crimson_vs_aio_64k_rc",
+    "_comment_": "This is the path where the report will be generated, from the -d option",
+    "path": "./"
+  }
+}

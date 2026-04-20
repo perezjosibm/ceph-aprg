@@ -46,7 +46,7 @@ while getopts 'ab:c:d:e:g:t:s:r:jlpxz:q' option; do
     d) RUN_DIR=$OPTARG
         ;;
     e) if [ ! -z "${OPTARG}" ] && [ -f "${SCRIPT_DIR}/${OPTARG}" ]; then
-        TEST_PLAN="${SCRIPT_DIR}/${OPTARG}"
+        TEST_PLAN="${TEST_PLAN_DIR}/${OPTARG}"
        fi
         ;;
     r) fun_run_fio $OPTARG

@@ -39,7 +39,8 @@ LATENCY_TARGET=false
 MULTI_JOB_VOL=false
 PRECOND=false
 WATCHDOG=false
-TEST_PLAN=${SCRIPT_DIR}/tp_cmp_classic_seastore.sh # default test plan if none provided
+TEST_PLAN_DIR=${SCRIPT_DIR}/test_plans/
+TEST_PLAN=${TEST_PLAN_DIR}/tp_cmp_classic_seastore.sh # default test plan if none provided
 SKIP_EXEC=false 
 REGEN=false # do not regenerate the .fio jobs by default
 fio_pid=0 
@@ -413,7 +414,8 @@ fun_run_fixed_bal_tests() {
     fi
   #for NUM_OSD in ${OSD_RANGE}; do
     #  for NUM_REACTORS in ${REACTOR_RANGE}; do
-    for NUM_REACTORS in ${test_row[reactor_range]}; do
+    #{dict[fio_iodepth]}); 
+    for NUM_REACTORS in $(IFS=','; echo ${test_row[reactor_range]}); do
 
           if [ "$OSD_TYPE" == "classic" ]; then
               title="(${OSD_TYPE}) $NUM_OSD OSD classic, fixed ${FIO_SPEC}"
