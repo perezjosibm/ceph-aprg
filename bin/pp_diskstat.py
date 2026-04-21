@@ -15,10 +15,36 @@ import tempfile
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from io import StringIO
+from typing import Optional
 
 __author__ = "Jose J Palacios-Perez"
 
 logger = logging.getLogger(__name__)
+
+
+def load_diskstat_dataframe_from_content(
+    json_content: str, device_regex: Optional[str] = None
+) -> pd.DataFrame:
+    """
+    Load diskstat JSON content into a DataFrame.
+    """
+    df = pd.read_json(StringIO(json_content))
+    if device_regex and "device" in df.columns:
+        df = df[df["device"].str.contains(device_regex, regex=True, na=False)]
+    return df
+
+
+def load_diskstat_dataframe(
+    json_fname: str, device_regex: Optional[str] = None
+) -> pd.DataFrame:
+    """
+    Load diskstat JSON file into a DataFrame.
+    """
+    with open(json_fname, "r", encoding="utf-8") as f:
+        return load_diskstat_dataframe_from_content(
+            f.read(), device_regex=device_regex
+        )
 
 
 def serialize_sets(obj):
