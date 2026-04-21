@@ -1,0 +1,19 @@
+{
+  "description": "Configuration file to report the comparison between Seastore vs Classic on RADOS, single OSD, single CPU, 4k bs",
+  "kind": "fio_csv_report",
+  "input": {
+    "seastore_4k_1osd": {
+      "path": "data/tp_rados_4k_1osd_1reactor_rc/sea_1osd_1reactor_custom_default_rc.zip",
+      "test_run": "FIO/sea_1osd_1reactor_custom_default_rc.csv"
+    },
+    "classic_4k_1osd": {
+      "path": "data/tp_rados_4k_1osd_1reactor_rc/classic_1osd_custom_rc.zip",
+      "test_run": "FIO/classic_1osd_custom_rc.csv"
+    }
+  },
+  "output": {
+    "name": "cmp_rados_crimson_vs_classic_4k_rc",
+    "_comment_": "This is the path where the report will be generated, from the -d option",
+    "path": "./"
+  }
+}
