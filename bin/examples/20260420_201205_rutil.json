@@ -1,0 +1,10 @@
+{
+    "metrics": [
+        {
+            "reactor_utilization": {
+                "shard": "0",
+                "value": 7.0633831199999992
+            }
+        }
+    ]
+}
