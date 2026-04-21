@@ -48,11 +48,18 @@ mon_dump_osd_threads() {
 #############################################################################################
 function mon_start_monitor() {
     local run_dir=$1
+    local OSD_TYPE=$2
 
     mon_get_osd_pids
     local ts=$(date +%Y%m%d_%H%M%S)
     local osd_out="${run_dir}/${ts}_dump.json"
-    /ceph/build/bin/ceph tell osd.0 dump_metrics > ${osd_out}
+    if [ "${OSD_TYPE}" == "classic" ]; then
+        cmd="/ceph/build/bin/ceph tell osd.0 perf dump"
+    else
+        cmd="/ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS}"
+    fi
+    #/ceph/build/bin/ceph tell osd.0 dump_metrics > ${osd_out}
+    ( $cmd > ${osd_out} )
     #( mon_perf "$osd_pids" ${TEST_NAME} ) &
     # Get the OSD osd_pids, traverse over them and start perf stat for each of them
     #for PID in $(pgrep osd); do
@@ -74,7 +81,9 @@ function mon_start_monitor() {
         ts=$(date +%Y%m%d_%H%M%S)
         rutil_out="${run_dir}/${ts}_rutil.json"
         ds_out="${run_dir}/${ts}_ds.json"
-        /ceph/build/bin/ceph tell osd.0 dump_metrics reactor_utilization > ${rutil_out}
+        if [ "${OSD_TYPE}" != "classic" ]; then
+          /ceph/build/bin/ceph tell osd.0 dump_metrics reactor_utilization > ${rutil_out}
+        fi
         jc --pretty /proc/diskstats > ${ds_out}
         # for i in "${!osd_id[@]}"; do
         #     PID=${osd_id[$i]}
@@ -85,7 +94,8 @@ function mon_start_monitor() {
     done
     # Collect final OSD dump at the end of the test run
     osd_out="${run_dir}/$(date +%Y%m%d_%H%M%S)_dump.json"
-    /ceph/build/bin/ceph tell osd.0 dump_metrics >${osd_out}
+    #/ceph/build/bin/ceph tell osd.0 dump_metrics >${osd_out}
+    ( $cmd > ${osd_out} )
 }
 
 #############################################################################################

@@ -7,9 +7,11 @@
 # Default values for the test plan, can be overridden by a .json file or command line args
 CACHE_ALG="LRU" # LRU or 2Q
 # Use a associative array to describe a test case, so we can recreate it faithfully
+# These default values should be overridden by the test plan .json file, but we
+# need to set some default values for the test plan generation and validation
 OSD_RANGE="1" #"" 2 4 8 16"
 REACTOR_RANGE="8" #"1 2 4 8 16"
-VSTART_CPU_CORES="0-27,56-83" # inc HT -- highest performance
+VSTART_CPU_CORES="0-0" #"0-27,56-83" # inc HT -- highest performance
 OSD_CPU=${VSTART_CPU_CORES} # Currently used for Classic only
 
 # Might try disable HT as well: so we can have the same test running on the two cases, which means that the FIO has two cases
@@ -19,7 +21,7 @@ OSD_CPU=${VSTART_CPU_CORES} # Currently used for Classic only
 #VSTART_CPU_CORES="0-51,56-107" # inc HT
 
 # Invariant: number of CPU cores for FIO
-FIO_CPU_CORES="28-55,84-111" # inc HT
+FIO_CPU_CORES="96-191" #"28-55,84-111" # inc HT
 #FIO_CPU_CORES="52-55,108-111" # inc HT
 #FIO_CPU_CORES="14-27,70-83,42-55,98-111" # inc HT
 FIO_JOBS=${SCRIPT_DIR}/fio_workloads/
@@ -221,9 +223,10 @@ fun_zip_results_custom(){
 # parallel, and then stop it after FIO is done, to avoid the watchdog to kill the
 # script before we can collect the results
 fun_run_fio_custom(){
-    local TEST_NAME=$1
-    local run_dir=$2
-    local -n dict=$3
+    local OSD_TYPE=$1
+    local TEST_NAME=$2
+    local run_dir=$3
+    local -n dict=$4
     #local pool_name=${dict[pool_type]}
 
     [ ! -d "${run_dir}/FIO/" ] && mkdir -p ${run_dir}/FIO/
@@ -248,7 +251,7 @@ fun_run_fio_custom(){
                     --output=${json_name}  --output-format=json ) &
             fi
             fio_pid=$!
-            ( mon_start_monitor ${run_dir} ) &
+            ( mon_start_monitor ${run_dir} ${OSD_TYPE}) &
             mon_pid=$!
             fun_wait_fio $fio_pid
             echo "$(date) Killing monitoring jobs (pid ${mon_pid})..."
@@ -455,7 +458,7 @@ fun_run_fixed_bal_tests() {
 
           if [ "$OSD_TYPE" == "classic" ]; then
               # Manually set the OSD process affinity: do we still need this?
-              cmd="taskset -a -c -p ${OSD_CPU}  $(pgrep osd)"
+              cmd="taskset -a -c -p '${test_row[classic_cpu_set]}'  $(pgrep osd)"
               if [ "${SKIP_EXEC}" = true ]; then
                   echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_test_run.log
               else 
@@ -512,7 +515,7 @@ fun_run_fixed_bal_tests() {
             echo "$(date) Starting FIO... ${test_row[fio_type]} "
             # Start monitoring OSD performance in the background
             # ${SCRIPT_DIR}/monitoring.sh -d ${RUN_DIR} -p $test_name &
-            fun_run_fio_custom "$test_name" ${RUN_DIR} test_row
+            fun_run_fio_custom $OSD_TYPE "$test_name" ${RUN_DIR} test_row
             # zip all the .json files produced by FIO in the run dir for this test
             #find ${RUN_DIR} -name "${test_name}_*.json" -exec gzip -9fq {} \;
             #cd ${RUN_DIR} && tar -czf ${test_name}_fio_results.tar.gz ${test_name}_*.json && rm -f ${test_name}_*.json
