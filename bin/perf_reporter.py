@@ -210,6 +210,12 @@ class PerfReporter(object):
         "md": "./",
     }
 
+    # Diskstat measurement groups used for time-series plots
+    _DISKSTAT_GROUPS: Dict[str, list] = {
+        "io_completed": ["reads_completed", "writes_completed"],
+        "io_time_ms": ["read_time_ms", "write_time_ms"],
+    }
+
     def get_target_name(self, name: str):
         """
         Get the name of the generated target file, always assuming the figures
@@ -311,7 +317,306 @@ class PerfReporter(object):
                 corr_name = f"{run_name}_fio_telemetry_correlation.csv"
                 corr_path = self.get_target_path(corr_name, "tables")
                 corr_df.to_csv(corr_path, index=False)
- 
+
+    # ------------------------------------------------------------------
+    # Telemetry time-series plotting
+    # ------------------------------------------------------------------
+
+    def plot_telemetry_metrics(self) -> None:
+        """
+        Plot disk, Crimson OSD, and Linux perf stat telemetry over time.
+
+        For each FIO run in ds_list the method combines all same-kind
+        telemetry snapshots into a single time-indexed DataFrame and
+        produces one or more charts:
+
+        * diskstat  – x=timestamp, y=metric value, hue=device, style=metric
+        * crimson   – x=timestamp, y=value, hue=metric, style=shard
+        * perf_stat – x=timestamp, y=metric_value, hue=event, style=event
+
+        Charts are saved as .png in the figures output directory and
+        referenced in the .tex document.
+        """
+        for run_name, run_data in self.ds_list.items():
+            telemetry = run_data.get("telemetry", {})
+            for kind, entries in telemetry.items():
+                if not entries:
+                    continue
+                if kind == "diskstat":
+                    self._plot_diskstat_over_time(run_name, entries)
+                elif kind == "crimson_dump":
+                    self._plot_crimson_dump_over_time(run_name, entries)
+                elif kind == "perf_stat":
+                    self._plot_perf_stat_over_time(run_name, entries)
+
+    def _plot_diskstat_over_time(self, run_name: str, entries: list) -> None:
+        """
+        Plot disk I/O statistics over time.
+
+        Combines all diskstat snapshots for *run_name* into a long-form
+        DataFrame and produces one chart per measurement group
+        (``io_completed`` and ``io_time_ms``).
+
+        Parameters
+        ----------
+        run_name : str
+            Label for this FIO run (used in chart titles and filenames).
+        entries : list
+            List of dicts with keys ``timestamp``, ``source``, ``frame``
+            as produced by ``_load_telemetry_from_archive``.
+        """
+        frames = []
+        for entry in entries:
+            df = entry["frame"].copy()
+            if "device" not in df.columns:
+                continue
+            df["timestamp"] = entry["timestamp"]
+            frames.append(df)
+        if not frames:
+            return
+
+        combined = pd.concat(frames, ignore_index=True)
+        ts_order = sorted(combined["timestamp"].unique())
+        combined["timestamp"] = pd.Categorical(
+            combined["timestamp"], categories=ts_order, ordered=True
+        )
+
+        all_metric_cols = [
+            c
+            for cols in self._DISKSTAT_GROUPS.values()
+            for c in cols
+            if c in combined.columns
+        ]
+        if not all_metric_cols:
+            return
+
+        melted = combined.melt(
+            id_vars=["timestamp", "device"],
+            value_vars=all_metric_cols,
+            var_name="metric",
+            value_name="value",
+        )
+
+        for group_name, metric_cols in self._DISKSTAT_GROUPS.items():
+            subset = melted[melted["metric"].isin(metric_cols)].dropna(
+                subset=["value"]
+            )
+            if subset.empty:
+                continue
+            try:
+                sns.set_theme(style="darkgrid")
+                g = sns.relplot(
+                    data=subset,
+                    kind="line",
+                    x="timestamp",
+                    y="value",
+                    hue="device",
+                    style="metric",
+                    markers=True,
+                    col="metric",
+                    col_wrap=2,
+                    facet_kws={"sharey": False, "sharex": True},
+                    height=4,
+                    aspect=1.5,
+                )
+                g.set_xticklabels(rotation=45)
+                g.set_titles("{col_name}")
+                g.figure.suptitle(
+                    f"{run_name} diskstat {group_name}", y=1.02
+                )
+                plt.tight_layout()
+                file_name = f"{run_name}_diskstat_{group_name}.png"
+                t_path = self.get_target_path(file_name, "figures")
+                plt.savefig(t_path, dpi=100, bbox_inches="tight")
+                self.add_entry_figure(
+                    key="tex",
+                    title=f"{run_name} diskstat {group_name}",
+                    file_name=file_name,
+                    dir_path=os.path.join(
+                        "figures/", f"{self.config['output']['name']}/"
+                    ),
+                    label=f"fig:{run_name}-diskstat-{group_name}",
+                )
+                plt.close()
+            except Exception as e:
+                logger.error(
+                    f"Error plotting diskstat {group_name} for {run_name}: {e}"
+                )
+                plt.close()
+
+    def _plot_crimson_dump_over_time(self, run_name: str, entries: list) -> None:
+        """
+        Plot Crimson OSD dump metrics over time.
+
+        Combines all dump_metrics snapshots into a long-form DataFrame,
+        aggregates values per (timestamp, metric, shard), and produces
+        one line chart per metric group.  When a group contains multiple
+        metrics with different magnitudes the values are min-max
+        normalised so they share a common y-axis.
+
+        Parameters
+        ----------
+        run_name : str
+            Label for this FIO run.
+        entries : list
+            Telemetry entries (timestamp, source, frame).
+        """
+        frames = []
+        for entry in entries:
+            df = entry["frame"].copy()
+            df["timestamp"] = entry["timestamp"]
+            frames.append(df)
+        if not frames:
+            return
+
+        combined = pd.concat(frames, ignore_index=True)
+        ts_order = sorted(combined["timestamp"].unique())
+        combined["timestamp"] = pd.Categorical(
+            combined["timestamp"], categories=ts_order, ordered=True
+        )
+        combined["shard"] = combined["shard"].astype(str)
+
+        agg = (
+            combined.groupby(
+                ["timestamp", "metric", "group", "shard"], observed=True
+            )["value"]
+            .mean()
+            .reset_index()
+        )
+
+        for group_name in agg["group"].unique():
+            grp = agg[agg["group"] == group_name].copy()
+            if grp.empty:
+                continue
+
+            if grp["metric"].nunique() > 1:
+                min_v = grp["value"].min()
+                max_v = grp["value"].max()
+                denom = max_v - min_v
+                grp["value"] = (grp["value"] - min_v) / denom if denom > 0 else 0.0
+                ylabel = "value (normalised)"
+            else:
+                ylabel = "value"
+
+            try:
+                sns.set_theme(style="darkgrid")
+                fig, ax = plt.subplots(figsize=(10, 5))
+                sns.lineplot(
+                    data=grp,
+                    x="timestamp",
+                    y="value",
+                    hue="metric",
+                    style="shard",
+                    markers=True,
+                    ax=ax,
+                )
+                ax.set_title(f"{run_name} – Crimson OSD {group_name}")
+                ax.set_xlabel("Timestamp")
+                ax.set_ylabel(ylabel)
+                ax.tick_params(axis="x", rotation=45)
+                plt.tight_layout()
+                file_name = f"{run_name}_crimson_dump_{group_name}.png"
+                t_path = self.get_target_path(file_name, "figures")
+                plt.savefig(t_path, dpi=100, bbox_inches="tight")
+                self.add_entry_figure(
+                    key="tex",
+                    title=f"{run_name} Crimson OSD {group_name}",
+                    file_name=file_name,
+                    dir_path=os.path.join(
+                        "figures/", f"{self.config['output']['name']}/"
+                    ),
+                    label=f"fig:{run_name}-crimson-{group_name}",
+                )
+                plt.close()
+            except Exception as e:
+                logger.error(
+                    f"Error plotting crimson_dump {group_name} for {run_name}: {e}"
+                )
+                plt.close()
+
+    def _plot_perf_stat_over_time(self, run_name: str, entries: list) -> None:
+        """
+        Plot Linux perf stat metrics over time.
+
+        Combines all perf_stat snapshots, computes the mean
+        ``metric_value`` across sampling intervals per (timestamp, event,
+        metric_unit), and produces one line chart per metric_unit group.
+
+        Parameters
+        ----------
+        run_name : str
+            Label for this FIO run.
+        entries : list
+            Telemetry entries (timestamp, source, frame).
+        """
+        frames = []
+        for entry in entries:
+            df = entry["frame"].copy()
+            df["timestamp"] = entry["timestamp"]
+            frames.append(df)
+        if not frames:
+            return
+
+        combined = pd.concat(frames, ignore_index=True)
+        ts_order = sorted(combined["timestamp"].unique())
+        combined["timestamp"] = pd.Categorical(
+            combined["timestamp"], categories=ts_order, ordered=True
+        )
+        combined["metric_value"] = pd.to_numeric(
+            combined["metric_value"], errors="coerce"
+        )
+
+        agg = (
+            combined.groupby(
+                ["timestamp", "event", "metric_unit"], observed=True
+            )["metric_value"]
+            .mean()
+            .reset_index()
+        )
+
+        for unit in agg["metric_unit"].unique():
+            unit_df = agg[agg["metric_unit"] == unit].dropna(
+                subset=["metric_value"]
+            )
+            if unit_df.empty:
+                continue
+            safe_unit = re.sub(r"[^\w]", "_", unit or "unknown")
+            try:
+                sns.set_theme(style="darkgrid")
+                fig, ax = plt.subplots(figsize=(10, 5))
+                sns.lineplot(
+                    data=unit_df,
+                    x="timestamp",
+                    y="metric_value",
+                    hue="event",
+                    style="event",
+                    markers=True,
+                    ax=ax,
+                )
+                ax.set_title(f"{run_name} – perf stat ({unit})")
+                ax.set_xlabel("Timestamp")
+                ax.set_ylabel(unit or "metric_value")
+                ax.tick_params(axis="x", rotation=45)
+                plt.tight_layout()
+                file_name = f"{run_name}_perf_stat_{safe_unit}.png"
+                t_path = self.get_target_path(file_name, "figures")
+                plt.savefig(t_path, dpi=100, bbox_inches="tight")
+                self.add_entry_figure(
+                    key="tex",
+                    title=f"{run_name} perf stat {unit}",
+                    file_name=file_name,
+                    dir_path=os.path.join(
+                        "figures/", f"{self.config['output']['name']}/"
+                    ),
+                    label=f"fig:{run_name}-perf-stat-{safe_unit}",
+                )
+                plt.close()
+            except Exception as e:
+                logger.error(
+                    f"Error plotting perf_stat unit={unit!r} for {run_name}: {e}"
+                )
+                plt.close()
+
     def plot_csv_files(self):
         """
         Plot the dataframes loaded from the .csv files in the input_dirs.
@@ -637,6 +942,7 @@ class PerfReporter(object):
         if "kind" in self.config:
             self.makedirs()
             self.export_telemetry_csv_files()
+            self.plot_telemetry_metrics()
             self.plot_csv_files()
         else:
             logger.warning(
