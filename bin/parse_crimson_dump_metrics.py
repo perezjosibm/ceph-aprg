@@ -527,6 +527,55 @@ class CrimsonDumpMetricsParser:
         self.generate_json_output()
 
 
+def _get_metric_group(metric_name: str) -> str:
+    """
+    Return the metric group name for a metric, if any.
+    """
+    for group, spec in CrimsonDumpMetricsParser.METRIC_GROUPS.items():
+        if spec["regex"].search(metric_name):
+            return group
+    return "ungrouped"
+
+
+def load_crimson_dump_dataframe_from_content(json_content: str) -> pd.DataFrame:
+    """
+    Load Crimson dump_metrics JSON content into a flat DataFrame.
+    """
+    data = json.loads(json_content)
+    metrics = data.get("metrics", [])
+    rows: List[Dict[str, Any]] = []
+    for item in metrics:
+        if not isinstance(item, dict):
+            continue
+        for metric_name, entry in item.items():
+            if not isinstance(entry, dict):
+                continue
+            shard = entry.get("shard", "0")
+            value = entry.get("value")
+            if value is None:
+                continue
+            if isinstance(value, dict):
+                count = value.get("count", 0)
+                value = value.get("sum", 0) / count if count else 0.0
+            row: Dict[str, Any] = {
+                "metric": metric_name,
+                "group": _get_metric_group(metric_name),
+                "shard": int(shard),
+                "value": float(value),
+            }
+            row.update({k: v for k, v in entry.items() if k not in {"shard", "value"}})
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def load_crimson_dump_dataframe(json_fname: str) -> pd.DataFrame:
+    """
+    Load a Crimson dump_metrics JSON file into a flat DataFrame.
+    """
+    with open(json_fname, "r", encoding="utf-8") as f:
+        return load_crimson_dump_dataframe_from_content(f.read())
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------

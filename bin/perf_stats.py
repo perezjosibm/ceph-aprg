@@ -50,7 +50,7 @@ import polars as pl
 import datetime as dt
 
 # import numpy as np
-# import pandas as pd
+import pandas as pd
 import matplotlib.pyplot as plt
 
 # import seaborn as sns
@@ -69,6 +69,46 @@ FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
 pp = pprint.PrettyPrinter(width=61, compact=True)
 
 DEFAULT_PLOT_EXT = "png"
+
+
+def load_perf_stat_dataframe_from_content(json_content: str) -> pd.DataFrame:
+    """
+    Load perf stat JSON-lines content into a DataFrame.
+    """
+    rows: List[Dict[str, Any]] = []
+    for line in json_content.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        metric_value = entry.get("metric-value")
+        counter_value = entry.get("counter-value")
+        rows.append(
+            {
+                "interval": float(entry.get("interval", 0.0)),
+                "event": entry.get("event", "unknown_metric"),
+                "metric_value": float(metric_value) if metric_value is not None else None,
+                "metric_unit": entry.get("metric-unit", ""),
+                "counter_value": float(counter_value)
+                if counter_value is not None
+                else None,
+                "counter_unit": entry.get("unit", ""),
+                "event_runtime": entry.get("event-runtime"),
+                "pcnt_running": entry.get("pcnt-running"),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def load_perf_stat_dataframe(json_fname: str) -> pd.DataFrame:
+    """
+    Load a perf stat JSON-lines file into a DataFrame.
+    """
+    with open(json_fname, "r", encoding="utf-8") as f:
+        return load_perf_stat_dataframe_from_content(f.read())
 
 
 class PerfStatMetric(object):

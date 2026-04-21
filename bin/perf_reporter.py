@@ -14,10 +14,14 @@ import re
 import pprint
 import zipfile
 from io import StringIO
+from collections import defaultdict
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, Any # List,
+from pp_diskstat import load_diskstat_dataframe_from_content
+from parse_crimson_dump_metrics import load_crimson_dump_dataframe_from_content
+from perf_stats import load_perf_stat_dataframe_from_content
 # import sys
 # import glob
 # import subprocess
@@ -224,6 +228,90 @@ class PerfReporter(object):
             #self.get_target_name(name)
             )
 
+    @staticmethod
+    def _extract_timestamp(path: str) -> str:
+        """
+        Extract YYYYMMDD_HHMMSS timestamp from a filename/path.
+        """
+        match = re.search(r"(\d{8}_\d{6})", os.path.basename(path))
+        return match.group(1) if match else "unknown_ts"
+
+    def _load_telemetry_from_archive(self, name: str, archive: zipfile.ZipFile) -> None:
+        """
+        Load timestamped telemetry JSON files from an archive into DataFrames.
+        """
+        telemetry = self.ds_list[name].setdefault("telemetry", defaultdict(list))
+        for member in archive.namelist():
+            base = os.path.basename(member)
+            if not base.endswith(".json"):
+                continue
+            ts = self._extract_timestamp(base)
+            try:
+                content = archive.read(member).decode(encoding="utf-8")
+            except Exception as e:
+                logger.error(f"Error reading JSON member {member}: {e}")
+                continue
+
+            if re.search(r"_ds\.json$", base):
+                df = load_diskstat_dataframe_from_content(content)
+                kind = "diskstat"
+            elif re.search(r"_dump\.json$", base):
+                df = load_crimson_dump_dataframe_from_content(content)
+                kind = "crimson_dump"
+            elif re.search(r"_perf_stat\.json$", base):
+                df = load_perf_stat_dataframe_from_content(content)
+                kind = "perf_stat"
+            else:
+                continue
+
+            if df is None or df.empty:
+                continue
+            telemetry[kind].append(
+                {
+                    "timestamp": ts,
+                    "source": member,
+                    "frame": df,
+                }
+            )
+
+    def export_telemetry_csv_files(self) -> None:
+        """
+        Export loaded telemetry dataframes as CSV files and produce a timestamp correlation CSV.
+        """
+        for run_name, run_data in self.ds_list.items():
+            telemetry = run_data.get("telemetry", {})
+            if not telemetry:
+                continue
+
+            fio_frame = run_data.get("frame")
+            fio_rows = len(fio_frame) if isinstance(fio_frame, pd.DataFrame) else 0
+            correlation_rows = {}
+
+            for kind, entries in telemetry.items():
+                for entry in entries:
+                    ts = entry["timestamp"]
+                    df = entry["frame"].copy()
+                    df.insert(0, "fio_run", run_name)
+                    df.insert(1, "timestamp", ts)
+                    df.insert(2, "source", entry["source"])
+                    out_name = f"{run_name}_{ts}_{kind}.csv"
+                    out_path = self.get_target_path(out_name, "tables")
+                    df.to_csv(out_path, index=False)
+
+                    row = correlation_rows.setdefault(
+                        ts, {"fio_run": run_name, "timestamp": ts, "fio_rows": fio_rows}
+                    )
+                    row[f"{kind}_rows"] = len(entry["frame"])
+                    row[f"{kind}_source"] = entry["source"]
+
+            if correlation_rows:
+                corr_df = pd.DataFrame(
+                    [correlation_rows[k] for k in sorted(correlation_rows.keys())]
+                )
+                corr_name = f"{run_name}_fio_telemetry_correlation.csv"
+                corr_path = self.get_target_path(corr_name, "tables")
+                corr_df.to_csv(corr_path, index=False)
+ 
     def plot_csv_files(self):
         """
         Plot the dataframes loaded from the .csv files in the input_dirs.
@@ -464,11 +552,14 @@ class PerfReporter(object):
                             f"Error loading .csv file {test_d['test_run']} into dataframe: {e}"
                         )
                         continue
-                    # Add the new column "name" to the dataframe, with the value of the name key in the input_dirs 
+                    # Add the new column "name" to the dataframe, with the value of the name key in the input_dirs
                     # dictionary, to be used as hue in the plots
-                    #df["name"] = name
                     df["type"] = name
-                    self.ds_list[name] = {"frame": df}
+                    self.ds_list[name] = {
+                        "frame": df,
+                        "telemetry": defaultdict(list),
+                    }
+                    self._load_telemetry_from_archive(name, archive)
                     logger.info(
                         f"Loaded .csv file {test_d['test_run']} for {name} into dataframe"
                     )
@@ -545,6 +636,7 @@ class PerfReporter(object):
         self.load_config()
         if "kind" in self.config:
             self.makedirs()
+            self.export_telemetry_csv_files()
             self.plot_csv_files()
         else:
             logger.warning(
