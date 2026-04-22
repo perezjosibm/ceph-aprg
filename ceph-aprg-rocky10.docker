@@ -10,10 +10,13 @@ RUN dnf update -y && \
 # Note: Rocky 10 uses DNF as the primary package manager
 RUN dnf group install -y "Development Tools" && \
     dnf install -y \
-    jq jc ccache iproute hostname python3-bcrypt lldb pdsh pdsh-rcmd-ssh \
+    jq jc ccache iproute hostname python3-bcrypt lldb \
     targetcli wget e2fsprogs blktrace lsof sysstat ipmitool dstat iftop \
-    iperf3 chrony irqbalance smartmontools logrotate lnav perf \
-    llvm llvm-devel python3-debug python3-lxml python3-yaml gnuplot vim
+    iperf3 chrony irqbalance smartmontools logrotate perf \
+    llvm llvm-devel python3-debug python3-lxml python3-yaml vim
+
+# The following packages are missing atm:
+# pdsh pdsh-rcmd-ssh gnuplot lnav
 
 # Addressing your comment: Clang and GCC coexist peacefully on RHEL-based systems.
 # They use separate paths and symlinks. Installing clang usually doesn't "clash."
