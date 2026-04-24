@@ -1,0 +1,847 @@
+{
+    "metrics": [
+        {
+            "alien_receive_batch_queue_length": {
+                "shard": "0",
+                "value": 10
+            }
+        },
+        {
+            "alien_total_received_messages": {
+                "shard": "0",
+                "value": 6412
+            }
+        },
+        {
+            "alien_total_sent_messages": {
+                "shard": "0",
+                "value": 6412
+            }
+        },
+        {
+            "io_queue_activations": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "stream": "rw",
+                "value": 6
+            }
+        },
+        {
+            "io_queue_adjusted_consumption": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "stream": "rw",
+                "value": 3.5762786865234376e-10
+            }
+        },
+        {
+            "io_queue_consumption": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "stream": "rw",
+                "value": 0
+            }
+        },
+        {
+            "io_queue_delay": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 4.8800000000000003e-07
+            }
+        },
+        {
+            "io_queue_disk_queue_length": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "io_queue_flow_ratio": {
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 1
+            }
+        },
+        {
+            "io_queue_queue_length": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "io_queue_shares": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 1000
+            }
+        },
+        {
+            "io_queue_starvation_time_sec": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 6.5860000000000001e-06
+            }
+        },
+        {
+            "io_queue_total_bytes": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 45056
+            }
+        },
+        {
+            "io_queue_total_delay_sec": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 8.1619999999999991e-06
+            }
+        },
+        {
+            "io_queue_total_exec_sec": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 0.00060503800000000002
+            }
+        },
+        {
+            "io_queue_total_operations": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 6
+            }
+        },
+        {
+            "io_queue_total_read_bytes": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 45056
+            }
+        },
+        {
+            "io_queue_total_read_ops": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 6
+            }
+        },
+        {
+            "io_queue_total_split_bytes": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "io_queue_total_split_ops": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "io_queue_total_write_bytes": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "io_queue_total_write_ops": {
+                "class": "main",
+                "iogroup": "0",
+                "mountpoint": "",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "memory_allocated_memory": {
+                "shard": "0",
+                "value": 1269780480
+            }
+        },
+        {
+            "memory_cross_cpu_free_operations": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "memory_free_memory": {
+                "shard": "0",
+                "value": 67449696256
+            }
+        },
+        {
+            "memory_free_operations": {
+                "shard": "0",
+                "value": 651752
+            }
+        },
+        {
+            "memory_malloc_failed": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "memory_malloc_live_objects": {
+                "shard": "0",
+                "value": 126574
+            }
+        },
+        {
+            "memory_malloc_operations": {
+                "shard": "0",
+                "value": 778326
+            }
+        },
+        {
+            "memory_oversized_allocs": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "memory_reclaims_operations": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "memory_total_memory": {
+                "shard": "0",
+                "value": 68719476736
+            }
+        },
+        {
+            "network_bytes_received": {
+                "group": "atexit",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "network_bytes_received": {
+                "group": "main",
+                "shard": "0",
+                "value": 918343
+            }
+        },
+        {
+            "network_bytes_sent": {
+                "group": "atexit",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "network_bytes_sent": {
+                "group": "main",
+                "shard": "0",
+                "value": 448644
+            }
+        },
+        {
+            "reactor_abandoned_failed_futures": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_aio_bytes_read": {
+                "shard": "0",
+                "value": 45056
+            }
+        },
+        {
+            "reactor_aio_bytes_write": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_aio_errors": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_aio_outsizes": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_aio_reads": {
+                "shard": "0",
+                "value": 6
+            }
+        },
+        {
+            "reactor_aio_retries": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_aio_writes": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_awake_time_ms_total": {
+                "shard": "0",
+                "value": 1109
+            }
+        },
+        {
+            "reactor_cpp_exceptions": {
+                "shard": "0",
+                "value": 60
+            }
+        },
+        {
+            "reactor_cpu_busy_ms": {
+                "shard": "0",
+                "value": 875
+            }
+        },
+        {
+            "reactor_cpu_steal_time_ms": {
+                "shard": "0",
+                "value": 192
+            }
+        },
+        {
+            "reactor_cpu_used_time_ms": {
+                "shard": "0",
+                "value": 916
+            }
+        },
+        {
+            "reactor_fstream_read_bytes": {
+                "shard": "0",
+                "value": 24576
+            }
+        },
+        {
+            "reactor_fstream_read_bytes_blocked": {
+                "shard": "0",
+                "value": 24576
+            }
+        },
+        {
+            "reactor_fstream_reads": {
+                "shard": "0",
+                "value": 3
+            }
+        },
+        {
+            "reactor_fstream_reads_ahead_bytes_discarded": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_fstream_reads_aheads_discarded": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_fstream_reads_blocked": {
+                "shard": "0",
+                "value": 3
+            }
+        },
+        {
+            "reactor_fsyncs": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_internal_errors": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_io_threaded_fallbacks": {
+                "reason": "aio_fallback",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_io_threaded_fallbacks": {
+                "reason": "file_operation",
+                "shard": "0",
+                "value": 6
+            }
+        },
+        {
+            "reactor_io_threaded_fallbacks": {
+                "reason": "process_operation",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_logging_failures": {
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "reactor_polls": {
+                "shard": "0",
+                "value": 888431
+            }
+        },
+        {
+            "reactor_sleep_time_ms_total": {
+                "shard": "0",
+                "value": 42695
+            }
+        },
+        {
+            "reactor_stalls": {
+                "shard": "0",
+                "value": {
+                    "sum": 56832,
+                    "count": 16,
+                    "buckets": [
+                        {
+                            "le": 640,
+                            "count": 0
+                        },
+                        {
+                            "le": 768,
+                            "count": 0
+                        },
+                        {
+                            "le": 896,
+                            "count": 0
+                        },
+                        {
+                            "le": 1024,
+                            "count": 0
+                        },
+                        {
+                            "le": 1280,
+                            "count": 1
+                        },
+                        {
+                            "le": 1536,
+                            "count": 5
+                        },
+                        {
+                            "le": 1792,
+                            "count": 6
+                        },
+                        {
+                            "le": 2048,
+                            "count": 7
+                        },
+                        {
+                            "le": 2560,
+                            "count": 9
+                        },
+                        {
+                            "le": 3072,
+                            "count": 9
+                        },
+                        {
+                            "le": 3584,
+                            "count": 10
+                        },
+                        {
+                            "le": 4096,
+                            "count": 14
+                        },
+                        {
+                            "le": 5120,
+                            "count": 14
+                        },
+                        {
+                            "le": 6144,
+                            "count": 14
+                        },
+                        {
+                            "le": 7168,
+                            "count": 14
+                        },
+                        {
+                            "le": 8192,
+                            "count": 14
+                        },
+                        {
+                            "le": 10240,
+                            "count": 16
+                        },
+                        {
+                            "le": 12288,
+                            "count": 16
+                        },
+                        {
+                            "le": 14336,
+                            "count": 16
+                        },
+                        {
+                            "le": 16384,
+                            "count": 16
+                        },
+                        {
+                            "le": 20480,
+                            "count": 16
+                        },
+                        {
+                            "le": 24576,
+                            "count": 16
+                        },
+                        {
+                            "le": 28672,
+                            "count": 16
+                        },
+                        {
+                            "le": 32768,
+                            "count": 16
+                        },
+                        {
+                            "le": 40960,
+                            "count": 16
+                        },
+                        {
+                            "le": 49152,
+                            "count": 16
+                        },
+                        {
+                            "le": 57344,
+                            "count": 16
+                        },
+                        {
+                            "le": 65536,
+                            "count": 16
+                        },
+                        {
+                            "le": 81920,
+                            "count": 16
+                        },
+                        {
+                            "le": 98304,
+                            "count": 16
+                        },
+                        {
+                            "le": 114688,
+                            "count": 16
+                        },
+                        {
+                            "le": 131072,
+                            "count": 16
+                        },
+                        {
+                            "le": 163840,
+                            "count": 16
+                        },
+                        {
+                            "le": 196608,
+                            "count": 16
+                        },
+                        {
+                            "le": 229376,
+                            "count": 16
+                        },
+                        {
+                            "le": 262144,
+                            "count": 16
+                        },
+                        {
+                            "le": 327680,
+                            "count": 16
+                        },
+                        {
+                            "le": 393216,
+                            "count": 16
+                        },
+                        {
+                            "le": 458752,
+                            "count": 16
+                        },
+                        {
+                            "le": 524288,
+                            "count": 16
+                        },
+                        {
+                            "le": 655360,
+                            "count": 16
+                        },
+                        {
+                            "le": 786432,
+                            "count": 16
+                        },
+                        {
+                            "le": 917504,
+                            "count": 16
+                        },
+                        {
+                            "le": 1048576,
+                            "count": 16
+                        },
+                        {
+                            "le": 1310720,
+                            "count": 16
+                        },
+                        {
+                            "le": 1572864,
+                            "count": 16
+                        },
+                        {
+                            "le": 1835008,
+                            "count": 16
+                        },
+                        {
+                            "le": 2097152,
+                            "count": 16
+                        },
+                        {
+                            "le": 2621440,
+                            "count": 16
+                        },
+                        {
+                            "le": 3145728,
+                            "count": 16
+                        },
+                        {
+                            "le": 3670016,
+                            "count": 16
+                        },
+                        {
+                            "le": 4194304,
+                            "count": 16
+                        },
+                        {
+                            "le": 5242880,
+                            "count": 16
+                        },
+                        {
+                            "le": 6291456,
+                            "count": 16
+                        },
+                        {
+                            "le": 7340032,
+                            "count": 16
+                        },
+                        {
+                            "le": 8388608,
+                            "count": 16
+                        },
+                        {
+                            "le": 10485760,
+                            "count": 16
+                        },
+                        {
+                            "le": 12582912,
+                            "count": 16
+                        },
+                        {
+                            "le": 14680064,
+                            "count": 16
+                        },
+                        {
+                            "le": 16777216,
+                            "count": 16
+                        },
+                        {
+                            "le": 20971520,
+                            "count": 16
+                        },
+                        {
+                            "le": 25165824,
+                            "count": 16
+                        },
+                        {
+                            "le": 29360128,
+                            "count": 16
+                        },
+                        {
+                            "le": 33554432,
+                            "count": 16
+                        },
+                        {
+                            "le": "+Inf",
+                            "count": 16
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "reactor_tasks_pending": {
+                "shard": "0",
+                "value": 521
+            }
+        },
+        {
+            "reactor_tasks_processed": {
+                "shard": "0",
+                "value": 176224
+            }
+        },
+        {
+            "reactor_timers_pending": {
+                "shard": "0",
+                "value": 1
+            }
+        },
+        {
+            "reactor_utilization": {
+                "shard": "0",
+                "value": 9.3238693200000213
+            }
+        },
+        {
+            "scheduler_queue_length": {
+                "group": "atexit",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "scheduler_queue_length": {
+                "group": "main",
+                "shard": "0",
+                "value": 521
+            }
+        },
+        {
+            "scheduler_runtime_ms": {
+                "group": "atexit",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "scheduler_runtime_ms": {
+                "group": "main",
+                "shard": "0",
+                "value": 785
+            }
+        },
+        {
+            "scheduler_shares": {
+                "group": "atexit",
+                "shard": "0",
+                "value": 1000
+            }
+        },
+        {
+            "scheduler_shares": {
+                "group": "main",
+                "shard": "0",
+                "value": 1000
+            }
+        },
+        {
+            "scheduler_starvetime_ms": {
+                "group": "atexit",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "scheduler_starvetime_ms": {
+                "group": "main",
+                "shard": "0",
+                "value": 31
+            }
+        },
+        {
+            "scheduler_tasks_processed": {
+                "group": "atexit",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "scheduler_tasks_processed": {
+                "group": "main",
+                "shard": "0",
+                "value": 176224
+            }
+        },
+        {
+            "scheduler_time_spent_on_task_quota_violations_ms": {
+                "group": "atexit",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "scheduler_time_spent_on_task_quota_violations_ms": {
+                "group": "main",
+                "shard": "0",
+                "value": 44
+            }
+        },
+        {
+            "scheduler_waittime_ms": {
+                "group": "atexit",
+                "shard": "0",
+                "value": 0
+            }
+        },
+        {
+            "scheduler_waittime_ms": {
+                "group": "main",
+                "shard": "0",
+                "value": 42986
+            }
+        },
+        {
+            "stall_detector_reported": {
+                "shard": "0",
+                "value": 0
+            }
+        }
+    ]
+}

@@ -126,7 +126,7 @@ class PerfReporter(object):
         self.document = {"tex":"", "md": ""}  # type: Dict[str, Any]
 
 
-    def save_file(self, file_path: str, content: str):
+    def save_file(self, file_path: str, content: str) -> None:
         """
         Save the content to the given file path.
         This is a stub, to be implemented later.
@@ -137,7 +137,7 @@ class PerfReporter(object):
             f.close()
         logger.info(f"File {file_path} saved successfully.")
 
-    def gen_report(self):
+    def gen_report(self) -> None:
         """
         Generate the report in .tex format.
         Simply traverse the ds_list structure, defining a Section per workload,
@@ -159,7 +159,7 @@ class PerfReporter(object):
 
     def add_entry_figure(
         self, key: str, title: str, file_name: str, dir_path: str, label: str = ""
-    ):
+    ) -> None:
         """
         Generate .tex and .md for the figure entry
         Use the new macro:
@@ -181,7 +181,7 @@ class PerfReporter(object):
         elif key == "md":
             self.document["md"] += f"![{title}]({dir_path}/{file_name})\n\n"
 
-    def get_entry_table(self, key: str, title: str, table_content: str, label: str = ""):
+    def get_entry_table(self, key: str, title: str, table_content: str, label: str = "") -> None:
         """
         Generate .tex and .md for the table entry
         Use the new macro:
@@ -216,7 +216,7 @@ class PerfReporter(object):
         "io_time_ms": ["read_time_ms", "write_time_ms"],
     }
 
-    def get_target_name(self, name: str):
+    def get_target_name(self, name: str) -> str:
         """
         Get the name of the generated target file, always assuming the figures
         go to "figures/" and the tables to "tex/", with the expected name to be
@@ -225,7 +225,7 @@ class PerfReporter(object):
         """
         return f"{self.config["output"]["name"]}_{name}"
 
-    def get_target_path(self, name: str, target_type: str):
+    def get_target_path(self, name: str, target_type: str) -> str:
         """
         Get the path to the generated target file (relative to this generator script), same assumptoion as above.
         """
@@ -300,9 +300,13 @@ class PerfReporter(object):
                     df.insert(0, "fio_run", run_name)
                     df.insert(1, "timestamp", ts)
                     df.insert(2, "source", entry["source"])
-                    out_name = f"{run_name}_{ts}_{kind}.csv"
-                    out_path = self.get_target_path(out_name, "tables")
-                    df.to_csv(out_path, index=False)
+                    # We might need to concatenate all these dataframes into a
+                    # single one per kind, but for now we can save them
+                    # separately with the timestamp in the name
+                    logger.info(f"{kind}: {ts} dataframe {df.shape[0]} rows")
+                    # out_name = f"{run_name}_{ts}_{kind}.csv"
+                    # out_path = self.get_target_path(out_name, "tables")
+                    # df.to_csv(out_path, index=False)
 
                     row = correlation_rows.setdefault(
                         ts, {"fio_run": run_name, "timestamp": ts, "fio_rows": fio_rows}

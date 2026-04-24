@@ -39,6 +39,7 @@ import seaborn as sns
 # import datetime as dt
 from typing import List, Dict, Any
 from common import load_json, save_json
+from collections import defaultdict
 
 __author__ = "Jose J Palacios-Perez"
 
@@ -150,6 +151,66 @@ def get_max(a_data: Dict[str, Any], b_data: Dict[str, Any]) -> Dict[str, Any]:
     return a_data
 
 
+def get_longest_prefixes(words: list[str]) -> Dict[str,Any]: #int:
+    """
+    Given a list of words, find the word that is the longest common prefix on a
+    subset of words. Each word follows the Python naming convention (separated
+    by '_') 
+    In the first pass, we find those words that are prefixes of other words,
+    and count how many words have the same prefix. In the second pass, we find
+    the prefix with the maximum number of words in its chain, and return that
+    prefix and the number of words that have that prefix. We form a dictionary
+    with those prefixes and values list of words (its group).
+    s = "hello"
+    target = "l"
+    last_pos = len(s) - 1 - s[::-1].index(target)
+    # s[::last_pos] -> 'he'
+    """
+    words.sort()
+    dp = {}
+    # First pass
+    for word in words:
+        dp[word] = [ w for w in words if w.startswith(word) ]  # list of words that have this word as prefix, inc itself
+    # Second pass: sort the prefixes by the number of words that have that
+    # prefix, and return the one with the maximum number of words that have
+    # that prefix 
+    prefixes = sorted(dp.items(), key=lambda item: len(item[1]), reverse=True)
+
+    return dict(prefixes)
+    # # Reduce the prefixes by the substring before the last '_', and count how
+    # many words have that prefix, and update the count for that prefix in dp
+    # TODO
+    #print(f"Sorted words: {words}")
+    #dp = defaultdict(int)
+    #res = 0
+    #     # Finds the last occurring '_' and takes the prefix up to that point 
+    #     prefix = word.rfind('_')
+    #     #prefix = word[:-1]
+    #     dp[word] = dp[prefix] + 1
+    #     res = max(res, dp[word])
+    #     #print(f"Word: '{word}', Prefix: '{prefix}', Length: {dp[word]}")
+    #
+    # # Find the prefix with the maximum number of words in its chain
+    # wp = defaultdict(int)
+    # for prefix in dp:
+    #     # Skip empty prefix
+    #     if prefix == "":
+    #         continue
+    #     # Get the set of words that have this prefix (was dp instead of words originally)
+    #     words_prefix = [w for w in words if w.startswith(prefix)]
+    #     wp[prefix] = len(words_prefix)
+    # # for word in w:
+    # #     prefix = word[:-1]
+    # #     if prefix in dp:
+    # #         dp[prefix] = max(dp[prefix], dp[word])
+    # #         print(f"Updating prefix '{prefix}' length to {dp[prefix]} based on word '{word}'")
+    # #print(f"Final DP state: {dict(dp)}\n{dict(wp)}")
+    # # Count how many words have this prefix
+    # # if dp[prefix] > res:
+    # #     res = dp[prefix]
+    # #     print(f"New longest sequence found with prefix '{prefix}' of length {res}")
+    # return dict(sorted(wp.items(), key=lambda item: item[1]))
+
 class PerfMetric(ABC):
     """
     Abstract base class for performance metrics
@@ -238,7 +299,7 @@ class PerfMetricEntry(object):
         "maximum": get_max,
     }
 
-    # Minimum set of metrics to consider, can be provided by tge config .json
+    # Minimum set of Crimson metrics to consider, can be provided by tge config .json
     DEFAULT_METRIC_REGEX = [
         re.compile(r"^(reactor_|memory_|cache_|seastore_).*"),
         re.compile(
@@ -253,6 +314,7 @@ class PerfMetricEntry(object):
     # If a metric name matches the regex, the its plot together as a subfamily
     # and use the key as the name of the subfamily (and the plot's title)
 
+    # These are for Crimson only
     METRICS = {
         "reactor_aio": {
             "regex": re.compile(r"^(reactor_aio_(reads|writes|retries))"),
@@ -309,14 +371,20 @@ class PerfMetricEntry(object):
             "unit": "operations",
             "reduce": "difference",
         },
-        "cache_cached": {
-            "regex": re.compile(r"^(cache_(cached.*|dirty.*))"),
+        "cache_lru": {
+            "regex": re.compile(r"^(cache_lru.*)"),
             "normalisation": "minmax",
             "unit": "operations",
             "reduce": "difference",
         },
-        "cache_lru": {
-            "regex": re.compile(r"^(cache_lru.*)"),
+        "cache_tree": {
+            "regex": re.compile(r"^(cache_tree.*)"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
+        "cache_cached": {
+            "regex": re.compile(r"^(cache_(cached.*|dirty.*))"),
             "normalisation": "minmax",
             "unit": "operations",
             "reduce": "difference",
@@ -334,7 +402,7 @@ class PerfMetricEntry(object):
             "reduce": "difference",
         },
         "cache_successful": {
-            "regex": re.compile(r"^(cache_successful*|cache_trans_read_successful)"),
+            "regex": re.compile(r"^(cache_refresh.*|cache_successful.*|cache_trans_.*)"),
             "normalisation": "minmax",
             "unit": "operations",
             "reduce": "difference",
@@ -390,6 +458,54 @@ class PerfMetricEntry(object):
             "reduce": "difference",
             "style": "points",  # special style since multiple metrics
         },
+        "lba_alloc_extents": {
+            "regex": re.compile(r"^(LBA_alloc_extents)"),
+            "normalisation": "minmax",
+            "unit": "extents",
+            "reduce": "difference",
+        },
+        "alien": {
+            "regex": re.compile(r"^(alien_.*)"),
+            "normalisation": "minmax",
+            "unit": "unknown",
+            "reduce": "difference",
+        },
+        "background_process_io": {
+            "regex": re.compile(r"^(background_process_io_.*)"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
+        "io_queue": {
+            "regex": re.compile(r"^(io_queue_.*)"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
+        "network": {
+            "regex": re.compile(r"^(network_bytes_.*)"),
+            "normalisation": "minmax",
+            "unit": "bytes",
+            "reduce": "difference",
+        },
+         "scheduler": {
+            "regex": re.compile(r"^(scheduler_.*)"),
+            "normalisation": "minmax",
+            "unit": "unknown",
+            "reduce": "difference",
+        },
+        "segment_manager": {
+            "regex": re.compile(r"^(segment_manager_.*)"),
+            "normalisation": "minmax",
+            "unit": "unknown",
+            "reduce": "difference",
+        },
+         "journal": {
+            "regex": re.compile(r"^(journal_.*)"),
+            "normalisation": "minmax",
+            "unit": "unknown",
+            "reduce": "difference",
+        },
     }
 
     def __init__(self, options):
@@ -418,6 +534,17 @@ class PerfMetricEntry(object):
 
         We construct dicts/dataframes with keys/columns the
         metric names, values the measurements (per shard).
+
+        Now extended for a simpler schema, where the main key is "metrics", and
+        the values are dicts with keys the shard names, and values the
+        measurements (per shard). This is more flexible since we can have
+        different metrics with different shards, and we can easily extend it to
+        other types of OSDs, etc. We just need to provide a mapping of the
+        metric names to the metric families (e.g. reactor_utilization,
+        memory_ops, etc) using regexes, and then we can apply the same
+        reduction and plotting logic to all the metrics in the same family. The
+        timestamp is now part of the input .json file name.
+
         """
         # Main key : "metrics"
         self.options = options
@@ -1522,6 +1649,83 @@ class PerfMetricEntry(object):
         # logger.info( f"families: {pp.pformat(self.m_families)}" )  # Reduce them to dataframes
         # Traverse the families to produce a dataframe per family
 
+    def common_prefix(self, words: List[str]) -> str: #Dict[str, Any]:
+        """
+        Get the longest common prefix of a list of words, this is used to group the metrics by common prefix
+        """
+        if not words:
+            return ""
+        prefix = words[0]
+        for word in words[1:]:
+            while not word.startswith(prefix):
+                prefix = prefix[:-1]
+                if not prefix:
+                    return ""
+        return prefix 
+
+    def get_groups(self, dump: Dict[str, Any]) -> Dict[str, List[pd.DataFrame]]:
+        """
+        Get the groups of metrics deduced by th elongest common prefix of the key names for each metric
+        """
+        groups = {}
+        for family in self.m_families:
+            for metric_name in self.m_families[family]:
+                group = self._get_metric_group(metric_name)
+                if group is not None:
+                    try:
+                        df = pd.DataFrame(self.m_families[family][metric_name])
+                    except Exception as e:
+                        logger.error(
+                            f"Exception {e} getting dataframe on family {family} metric {metric_name}"
+                        )
+                        continue
+                    df.rename(columns={"value": metric_name}, inplace=True)
+                    logger.info(f"Family {family} metric {metric_name}:\n{pp.pformat(df)}")
+                    if group not in groups:
+                        groups[group] = [df]
+                    else:
+                        groups[group].append(df)
+        return groups
+
+
+    def load_perf_dumps(self):
+        """
+        Load the *_dump .json files available in the current directory, this is
+        a special case that we also want to load the time sequence of the
+        reactor_utilization, so we need to keep the data as a dictionary,
+        """
+        #list_dumps = []
+        # Load the *_dump.json files
+        files = glob.glob("*_dump.json")
+        self.perf_data = {}
+        for f in files:
+            try:
+                perf_dump = load_json(f)
+            except IOError as e:
+                raise argparse.ArgumentTypeError(str(e))
+            logger.info(f"Loaded {f}")
+            ts = re.search(r"(\d{8}_\d{6})", f)
+            if ts:
+                ts = ts.group(1) # timestamp extracted from the filename
+            # Get a dataframe from the perf_dump, the keys are the metric
+            # names, the values are the dataframes with the attributes as
+            # columns 
+            #prefixes = get_longest_prefixes( [ m.keys() for m in perf_dump.get("metrics", []) ] )
+            all_keys = []
+            for m in perf_dump.get("metrics", []):
+                #logger.info(f"Metric keys for timestamp {ts}: {m.keys()}")
+                all_keys.extend(m.keys())
+            prefixes = get_longest_prefixes( all_keys )
+            logger.info(f"Prefixes to form groups for metrics: {ts} has {pp.pformat(dict(prefixes))}")
+            self.perf_data[ts] = self.filter_metrics(perf_dump)
+
+        for ts in self.perf_data:
+            logger.info(f"Timestamp {ts} has {len(self.perf_data[ts])} shards")
+            if self.sample_size == 0:
+                self.sample_size = len(self.perf_data[ts])
+        logger.info(f"perf_data:\n{pp.pformat(self.perf_data)}")
+
+
     def _load_generic_stats(self, schema: str, data_list: List[Dict[str, Any]]) -> None:
         """
         Load the  stats from the data dict
@@ -1701,7 +1905,14 @@ class PerfMetricEntry(object):
             # self.make_chart(pd.DataFrame(load_json(options.plot)).T)
             return
         # self.load_config()
-        self.load_perf_dump()
+        if self.options.input:
+            self.load_perf_dump()
+        else: 
+            # Assume old_schema: load all *_dump.json files in the directory
+            self.load_perf_dumps()
+            if self.options.old_schema:
+                logger.info("Old schema mode, quitting")
+                return
         # Probably families deserve to be a class of their own
         self._save_families()
         self._plot_families()
@@ -1954,6 +2165,13 @@ def main(argv):
         "--verbose",
         action="store_true",
         help="True to enable verbose logging mode",
+        default=False,
+    )
+    parser.add_argument(
+        "-o",
+        "--old_schema",
+        action="store_true",
+        help="True to assume the .json input files are in the original schema format, with the timestamp being its file name",
         default=False,
     )
     parser.add_argument(
