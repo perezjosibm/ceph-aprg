@@ -12,7 +12,7 @@ export RADOS_POOL_NAME="rados"
 # These timings are in seconds
 export RUNTIME=120 # (2 min) -- response curves
 #export RUNTIME=3600 # (1 hr)
-export DELAY_SAMPLES=10 # sec delay between samples
+export DELAY_SAMPLES=20 # sec delay between samples
 # This is just the ration RUNTIME div by DELAY_SAMPLES:
 export NUM_SAMPLES=$(( RUNTIME / DELAY_SAMPLES ))
 export FIO_CPU_CORES="96-191"
@@ -21,7 +21,7 @@ export VSTART_CPU_CORES="0-0"
 # The index of the table indicates the number of drives/OSDs
 
 test_row['osd']="1"
-test_row['reactor_range']="1,2,4" #14 28 56 # Number of reactors, can be a range
+test_row['reactor_range']="1" # Number of reactors, can be a ','-sep range
 #test_row['nat']="$NUM_ALIEN_THREADS" ## do not apply for Seastore
 test_row['store_devs']='/dev/nvme0n1'
 test_row['vstart_cpu_set']="${VSTART_CPU_CORES}"

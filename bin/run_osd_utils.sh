@@ -10,7 +10,7 @@ CACHE_ALG="LRU" # LRU or 2Q
 # These default values should be overridden by the test plan .json file, but we
 # need to set some default values for the test plan generation and validation
 OSD_RANGE="1" #"" 2 4 8 16"
-REACTOR_RANGE="8" #"1 2 4 8 16"
+REACTOR_RANGE="1" #"1 2 4 8 16"
 VSTART_CPU_CORES="0-0" #"0-27,56-83" # inc HT -- highest performance
 OSD_CPU=${VSTART_CPU_CORES} # Currently used for Classic only
 
