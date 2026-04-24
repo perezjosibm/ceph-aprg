@@ -577,6 +577,390 @@ def load_crimson_dump_dataframe(json_fname: str) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Rate Analysis and Work Attribution
+# ---------------------------------------------------------------------------
+
+class CrimsonMetricsRateAnalyzer:
+    """
+    Analyzes rate of work for Crimson OSD subcomponents from time-series
+    metric snapshots.
+    
+    This class implements the recommended analysis approach for attributing
+    work rates to the messenger, transaction manager, and object store
+    components based on cumulative counter metrics.
+    
+    Attributes
+    ----------
+    snapshots : List[Dict[str, Any]]
+        List of metric snapshots, each with 'timestamp' and 'metrics' keys
+    """
+    
+    def __init__(self):
+        self.snapshots: List[Dict[str, Any]] = []
+        
+    def add_snapshot(self, timestamp: float, metrics_data: Dict[str, Any]) -> None:
+        """
+        Add a metric snapshot with its timestamp.
+        
+        Parameters
+        ----------
+        timestamp : float
+            Unix timestamp (seconds since epoch) when metrics were captured
+        metrics_data : dict
+            The parsed metrics dictionary from JSON
+        """
+        self.snapshots.append({
+            'timestamp': timestamp,
+            'data': metrics_data
+        })
+        self.snapshots.sort(key=lambda x: x['timestamp'])
+        
+    def load_snapshots_from_files(self, file_list: List[str]) -> None:
+        """
+        Load multiple JSON snapshot files.
+        
+        Parameters
+        ----------
+        file_list : List[str]
+            List of JSON file paths with timestamps in filename
+            (e.g., '20260420_201205_seastore_dump.json')
+        """
+        import re
+        from datetime import datetime
+        
+        for fpath in file_list:
+            # Extract timestamp from filename (format: YYYYMMDD_HHMMSS)
+            match = re.search(r'(\d{8})_(\d{6})', os.path.basename(fpath))
+            if match:
+                date_str = match.group(1)
+                time_str = match.group(2)
+                dt = datetime.strptime(f"{date_str}{time_str}", "%Y%m%d%H%M%S")
+                timestamp = dt.timestamp()
+            else:
+                # Use file modification time as fallback
+                timestamp = os.path.getmtime(fpath)
+                
+            data = load_json(fpath)
+            if data:
+                self.add_snapshot(timestamp, data)
+                logger.info(f"Loaded snapshot from {fpath} at timestamp {timestamp}")
+    
+    def _get_metric_value(self, metrics_list: List[Dict], metric_name: str,
+                          filters: Optional[Dict[str, str]] = None) -> float:
+        """
+        Extract a metric value from the metrics list, optionally filtered by dimensions.
+        
+        Parameters
+        ----------
+        metrics_list : List[Dict]
+            The 'metrics' array from JSON
+        metric_name : str
+            Name of the metric to extract
+        filters : Optional[Dict[str, str]]
+            Optional dimension filters (e.g., {'src': 'MUTATE', 'shard': '0'})
+            
+        Returns
+        -------
+        float
+            Sum of all matching metric values
+        """
+        total = 0.0
+        for item in metrics_list:
+            if metric_name not in item:
+                continue
+            entry = item[metric_name]
+            if not isinstance(entry, dict):
+                continue
+                
+            # Check filters
+            if filters:
+                if not all(entry.get(k) == v for k, v in filters.items()):
+                    continue
+                    
+            value = entry.get('value', 0)
+            if isinstance(value, dict):
+                # Handle histogram values
+                count = value.get('count', 0)
+                value = value.get('sum', 0) / count if count else 0.0
+            total += float(value)
+            
+        return total
+    
+    def calculate_rates(self, snapshot_idx1: int = 0, snapshot_idx2: int = -1) -> Dict[str, Any]:
+        """
+        Calculate rates between two snapshots.
+        
+        Parameters
+        ----------
+        snapshot_idx1 : int
+            Index of first snapshot (default: 0, earliest)
+        snapshot_idx2 : int
+            Index of second snapshot (default: -1, latest)
+            
+        Returns
+        -------
+        Dict[str, Any]
+            Dictionary containing calculated rates for each component
+        """
+        if len(self.snapshots) < 2:
+            logger.error("Need at least 2 snapshots to calculate rates")
+            return {}
+            
+        snap1 = self.snapshots[snapshot_idx1]
+        snap2 = self.snapshots[snapshot_idx2]
+        
+        t1, t2 = snap1['timestamp'], snap2['timestamp']
+        time_delta = t2 - t1
+        
+        if time_delta <= 0:
+            logger.error("Invalid time delta between snapshots")
+            return {}
+            
+        metrics1 = snap1['data'].get('metrics', [])
+        metrics2 = snap2['data'].get('metrics', [])
+        
+        results = {
+            'time_delta_seconds': time_delta,
+            'timestamp_start': t1,
+            'timestamp_end': t2,
+            'messenger': self._calculate_messenger_rates(metrics1, metrics2, time_delta),
+            'transaction_manager': self._calculate_tm_rates(metrics1, metrics2, time_delta),
+            'object_store': self._calculate_os_rates(metrics1, metrics2, time_delta),
+        }
+        
+        return results
+    
+    def _calculate_messenger_rates(self, m1: List, m2: List, dt: float) -> Dict[str, float]:
+        """Calculate messenger (network) work rates."""
+        bytes_sent_1 = self._get_metric_value(m1, 'network_bytes_sent')
+        bytes_sent_2 = self._get_metric_value(m2, 'network_bytes_sent')
+        bytes_recv_1 = self._get_metric_value(m1, 'network_bytes_received')
+        bytes_recv_2 = self._get_metric_value(m2, 'network_bytes_received')
+        
+        msgs_sent_1 = self._get_metric_value(m1, 'alien_total_sent_messages')
+        msgs_sent_2 = self._get_metric_value(m2, 'alien_total_sent_messages')
+        msgs_recv_1 = self._get_metric_value(m1, 'alien_total_received_messages')
+        msgs_recv_2 = self._get_metric_value(m2, 'alien_total_received_messages')
+        
+        return {
+            'network_bytes_per_sec': (bytes_sent_2 - bytes_sent_1 + bytes_recv_2 - bytes_recv_1) / dt,
+            'network_send_bytes_per_sec': (bytes_sent_2 - bytes_sent_1) / dt,
+            'network_recv_bytes_per_sec': (bytes_recv_2 - bytes_recv_1) / dt,
+            'messages_per_sec': (msgs_sent_2 - msgs_sent_1 + msgs_recv_2 - msgs_recv_1) / dt,
+            'messages_sent_per_sec': (msgs_sent_2 - msgs_sent_1) / dt,
+            'messages_recv_per_sec': (msgs_recv_2 - msgs_recv_1) / dt,
+        }
+    
+    def _calculate_tm_rates(self, m1: List, m2: List, dt: float) -> Dict[str, Any]:
+        """Calculate transaction manager work rates."""
+        trans_created_1 = self._get_metric_value(m1, 'cache_trans_created')
+        trans_created_2 = self._get_metric_value(m2, 'cache_trans_created')
+        trans_committed_1 = self._get_metric_value(m1, 'cache_trans_committed')
+        trans_committed_2 = self._get_metric_value(m2, 'cache_trans_committed')
+        
+        cache_access_1 = self._get_metric_value(m1, 'cache_cache_access')
+        cache_access_2 = self._get_metric_value(m2, 'cache_cache_access')
+        cache_hit_1 = self._get_metric_value(m1, 'cache_cache_hit')
+        cache_hit_2 = self._get_metric_value(m2, 'cache_cache_hit')
+        
+        # Calculate rates by transaction source
+        sources = ['MUTATE', 'READ', 'TRIM_DIRTY', 'TRIM_ALLOC', 'CLEANER_MAIN', 'CLEANER_COLD']
+        by_source = {}
+        
+        for src in sources:
+            bytes_1 = self._get_metric_value(m1, 'cache_committed_extent_bytes', {'src': src})
+            bytes_2 = self._get_metric_value(m2, 'cache_committed_extent_bytes', {'src': src})
+            by_source[f'{src.lower()}_bytes_per_sec'] = (bytes_2 - bytes_1) / dt
+        
+        # Calculate cache efficiency
+        cache_accesses = cache_access_2 - cache_access_1
+        cache_hits = cache_hit_2 - cache_hit_1
+        cache_hit_rate = cache_hits / cache_accesses if cache_accesses > 0 else 0.0
+        
+        return {
+            'transactions_created_per_sec': (trans_created_2 - trans_created_1) / dt,
+            'transactions_committed_per_sec': (trans_committed_2 - trans_committed_1) / dt,
+            'cache_accesses_per_sec': cache_accesses / dt,
+            'cache_hit_rate': cache_hit_rate,
+            'by_source': by_source,
+        }
+    
+    def _calculate_os_rates(self, m1: List, m2: List, dt: float) -> Dict[str, Any]:
+        """Calculate object store (SeaStore) work rates."""
+        # Segment manager metrics
+        data_write_bytes_1 = self._get_metric_value(m1, 'segment_manager_data_write_bytes')
+        data_write_bytes_2 = self._get_metric_value(m2, 'segment_manager_data_write_bytes')
+        data_write_num_1 = self._get_metric_value(m1, 'segment_manager_data_write_num')
+        data_write_num_2 = self._get_metric_value(m2, 'segment_manager_data_write_num')
+        
+        meta_write_bytes_1 = self._get_metric_value(m1, 'segment_manager_metadata_write_bytes')
+        meta_write_bytes_2 = self._get_metric_value(m2, 'segment_manager_metadata_write_bytes')
+        meta_write_num_1 = self._get_metric_value(m1, 'segment_manager_metadata_write_num')
+        meta_write_num_2 = self._get_metric_value(m2, 'segment_manager_metadata_write_num')
+        
+        # Journal metrics
+        journal_records_1 = self._get_metric_value(m1, 'journal_record_num')
+        journal_records_2 = self._get_metric_value(m2, 'journal_record_num')
+        journal_data_bytes_1 = self._get_metric_value(m1, 'journal_record_group_data_bytes')
+        journal_data_bytes_2 = self._get_metric_value(m2, 'journal_record_group_data_bytes')
+        journal_meta_bytes_1 = self._get_metric_value(m1, 'journal_record_group_metadata_bytes')
+        journal_meta_bytes_2 = self._get_metric_value(m2, 'journal_record_group_metadata_bytes')
+        
+        # Segment cleaner (GC) metrics
+        reclaimed_bytes_1 = self._get_metric_value(m1, 'segment_cleaner_reclaimed_bytes')
+        reclaimed_bytes_2 = self._get_metric_value(m2, 'segment_cleaner_reclaimed_bytes')
+        closed_journal_1 = self._get_metric_value(m1, 'segment_cleaner_segments_count_close_journal')
+        closed_journal_2 = self._get_metric_value(m2, 'segment_cleaner_segments_count_close_journal')
+        closed_ool_1 = self._get_metric_value(m1, 'segment_cleaner_segments_count_close_ool')
+        closed_ool_2 = self._get_metric_value(m2, 'segment_cleaner_segments_count_close_ool')
+        
+        # LBA allocation metrics
+        lba_alloc_1 = self._get_metric_value(m1, 'LBA_alloc_extents')
+        lba_alloc_2 = self._get_metric_value(m2, 'LBA_alloc_extents')
+        lba_iter_1 = self._get_metric_value(m1, 'LBA_alloc_extents_iter_nexts')
+        lba_iter_2 = self._get_metric_value(m2, 'LBA_alloc_extents_iter_nexts')
+        
+        # Background process metrics
+        bg_io_1 = self._get_metric_value(m1, 'background_process_io_count')
+        bg_io_2 = self._get_metric_value(m2, 'background_process_io_count')
+        bg_blocked_1 = self._get_metric_value(m1, 'background_process_io_blocked_count')
+        bg_blocked_2 = self._get_metric_value(m2, 'background_process_io_blocked_count')
+        
+        # Calculate total write throughput
+        total_data_bytes = (data_write_bytes_2 - data_write_bytes_1)
+        total_meta_bytes = (meta_write_bytes_2 - meta_write_bytes_1)
+        total_write_bytes = total_data_bytes + total_meta_bytes
+        
+        # Calculate allocation efficiency
+        lba_allocs = lba_alloc_2 - lba_alloc_1
+        lba_iters = lba_iter_2 - lba_iter_1
+        alloc_efficiency = lba_allocs / lba_iters if lba_iters > 0 else 0.0
+        
+        # Calculate background IO blocking ratio
+        bg_ios = bg_io_2 - bg_io_1
+        bg_blocks = bg_blocked_2 - bg_blocked_1
+        bg_blocking_ratio = bg_blocks / bg_ios if bg_ios > 0 else 0.0
+        
+        return {
+            'write_throughput': {
+                'total_bytes_per_sec': total_write_bytes / dt,
+                'data_bytes_per_sec': total_data_bytes / dt,
+                'metadata_bytes_per_sec': total_meta_bytes / dt,
+                'data_ops_per_sec': (data_write_num_2 - data_write_num_1) / dt,
+                'metadata_ops_per_sec': (meta_write_num_2 - meta_write_num_1) / dt,
+            },
+            'journal': {
+                'records_per_sec': (journal_records_2 - journal_records_1) / dt,
+                'data_bytes_per_sec': (journal_data_bytes_2 - journal_data_bytes_1) / dt,
+                'metadata_bytes_per_sec': (journal_meta_bytes_2 - journal_meta_bytes_1) / dt,
+            },
+            'garbage_collection': {
+                'reclaimed_bytes_per_sec': (reclaimed_bytes_2 - reclaimed_bytes_1) / dt,
+                'segments_closed_per_sec': (closed_journal_2 - closed_journal_1 +
+                                           closed_ool_2 - closed_ool_1) / dt,
+            },
+            'lba_allocation': {
+                'allocations_per_sec': lba_allocs / dt,
+                'allocation_efficiency': alloc_efficiency,
+            },
+            'background_process': {
+                'io_per_sec': bg_ios / dt,
+                'blocking_ratio': bg_blocking_ratio,
+            },
+        }
+    
+    def generate_rate_report(self, output_file: Optional[str] = None) -> str:
+        """
+        Generate a human-readable rate analysis report.
+        
+        Parameters
+        ----------
+        output_file : Optional[str]
+            If provided, write report to this file
+            
+        Returns
+        -------
+        str
+            The formatted report text
+        """
+        if len(self.snapshots) < 2:
+            return "Error: Need at least 2 snapshots to generate rate report"
+            
+        rates = self.calculate_rates()
+        
+        report_lines = [
+            "=" * 80,
+            "CRIMSON OSD METRICS RATE ANALYSIS REPORT",
+            "=" * 80,
+            f"Time Period: {rates['time_delta_seconds']:.2f} seconds",
+            f"Start: {rates['timestamp_start']:.2f}",
+            f"End: {rates['timestamp_end']:.2f}",
+            "",
+            "-" * 80,
+            "MESSENGER (Network Layer)",
+            "-" * 80,
+            f"  Total Network Throughput: {rates['messenger']['network_bytes_per_sec']:.2f} bytes/sec",
+            f"  Send Rate: {rates['messenger']['network_send_bytes_per_sec']:.2f} bytes/sec",
+            f"  Receive Rate: {rates['messenger']['network_recv_bytes_per_sec']:.2f} bytes/sec",
+            f"  Message Rate: {rates['messenger']['messages_per_sec']:.2f} msgs/sec",
+            "",
+            "-" * 80,
+            "TRANSACTION MANAGER (Cache Layer)",
+            "-" * 80,
+            f"  Transaction Creation Rate: {rates['transaction_manager']['transactions_created_per_sec']:.2f} txns/sec",
+            f"  Transaction Commit Rate: {rates['transaction_manager']['transactions_committed_per_sec']:.2f} txns/sec",
+            f"  Cache Access Rate: {rates['transaction_manager']['cache_accesses_per_sec']:.2f} accesses/sec",
+            f"  Cache Hit Rate: {rates['transaction_manager']['cache_hit_rate']:.2%}",
+            "",
+            "  Data Processing by Source:",
+        ]
+        
+        for key, value in rates['transaction_manager']['by_source'].items():
+            report_lines.append(f"    {key}: {value:.2f} bytes/sec")
+        
+        report_lines.extend([
+            "",
+            "-" * 80,
+            "OBJECT STORE (SeaStore)",
+            "-" * 80,
+            "  Write Throughput:",
+            f"    Total: {rates['object_store']['write_throughput']['total_bytes_per_sec']:.2f} bytes/sec",
+            f"    Data: {rates['object_store']['write_throughput']['data_bytes_per_sec']:.2f} bytes/sec",
+            f"    Metadata: {rates['object_store']['write_throughput']['metadata_bytes_per_sec']:.2f} bytes/sec",
+            f"    Data Ops: {rates['object_store']['write_throughput']['data_ops_per_sec']:.2f} ops/sec",
+            f"    Metadata Ops: {rates['object_store']['write_throughput']['metadata_ops_per_sec']:.2f} ops/sec",
+            "",
+            "  Journal Activity:",
+            f"    Records: {rates['object_store']['journal']['records_per_sec']:.2f} records/sec",
+            f"    Data: {rates['object_store']['journal']['data_bytes_per_sec']:.2f} bytes/sec",
+            f"    Metadata: {rates['object_store']['journal']['metadata_bytes_per_sec']:.2f} bytes/sec",
+            "",
+            "  Garbage Collection:",
+            f"    Reclaimed: {rates['object_store']['garbage_collection']['reclaimed_bytes_per_sec']:.2f} bytes/sec",
+            f"    Segments Closed: {rates['object_store']['garbage_collection']['segments_closed_per_sec']:.2f} segs/sec",
+            "",
+            "  LBA Allocation:",
+            f"    Rate: {rates['object_store']['lba_allocation']['allocations_per_sec']:.2f} allocs/sec",
+            f"    Efficiency: {rates['object_store']['lba_allocation']['allocation_efficiency']:.4f}",
+            "",
+            "  Background Process:",
+            f"    I/O Rate: {rates['object_store']['background_process']['io_per_sec']:.2f} ops/sec",
+            f"    Blocking Ratio: {rates['object_store']['background_process']['blocking_ratio']:.2%}",
+            "",
+            "=" * 80,
+        ])
+        
+        report = "\n".join(report_lines)
+        
+        if output_file:
+            with open(output_file, 'w') as f:
+                f.write(report)
+            logger.info(f"Rate report written to {output_file}")
+        
+        return report
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -588,6 +972,9 @@ Examples:
 
     # Same but save SVG charts and print generated file list as JSON:
     python3 parse_crimson_dump_metrics.py -i crimson_dump_metrics_full.json -t svg -j
+    
+    # Analyze rate of work from multiple snapshots:
+    python3 parse_crimson_dump_metrics.py --rate-analysis -m snapshot1.json snapshot2.json -o rate_report.txt
     """
     parser = argparse.ArgumentParser(
         description="Parse Crimson OSD dump_metrics JSON files and produce charts",
@@ -598,7 +985,6 @@ Examples:
         "-i",
         "--input",
         type=str,
-        required=True,
         help="Input JSON file (e.g. crimson_dump_metrics_full.json)",
     )
     parser.add_argument(
@@ -637,6 +1023,25 @@ Examples:
         default=False,
         help="Enable verbose (DEBUG) logging",
     )
+    parser.add_argument(
+        "--rate-analysis",
+        action="store_true",
+        default=False,
+        help="Perform rate analysis on multiple metric snapshots",
+    )
+    parser.add_argument(
+        "-m",
+        "--multiple",
+        nargs="+",
+        type=str,
+        help="Multiple JSON snapshot files for rate analysis",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        help="Output file for rate analysis report",
+    )
 
     options = parser.parse_args(argv)
     log_level = logging.DEBUG if options.verbose else logging.INFO
@@ -651,8 +1056,32 @@ Examples:
 
     logger.debug(f"Options: {options}")
 
-    parser_obj = CrimsonDumpMetricsParser(options)
-    parser_obj.run()
+    # Rate analysis mode
+    if options.rate_analysis:
+        if not options.multiple or len(options.multiple) < 2:
+            logger.error("Rate analysis requires at least 2 snapshot files (use -m)")
+            sys.exit(1)
+        
+        analyzer = CrimsonMetricsRateAnalyzer()
+        analyzer.load_snapshots_from_files(options.multiple)
+        
+        report = analyzer.generate_rate_report(options.output)
+        print(report)
+        
+        # Also save rates as JSON
+        rates = analyzer.calculate_rates()
+        if options.output:
+            json_output = options.output.replace('.txt', '_rates.json')
+            save_json(json_output, rates)
+            logger.info(f"Rates data saved to {json_output}")
+    else:
+        # Standard chart generation mode
+        if not options.input:
+            logger.error("Input file required (use -i) for chart generation mode")
+            sys.exit(1)
+            
+        parser_obj = CrimsonDumpMetricsParser(options)
+        parser_obj.run()
 
 
 if __name__ == "__main__":
