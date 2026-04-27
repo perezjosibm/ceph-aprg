@@ -20,7 +20,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, Any # List,
 from pp_diskstat import load_diskstat_dataframe_from_content
-from parse_crimson_dump_metrics import load_crimson_dump_dataframe_from_content
+from parse_crimson_dump_metrics import (
+    load_crimson_dump_dataframe_from_content,
+    CrimsonMetricsRateAnalyzer
+)
 from perf_stats import load_perf_stat_dataframe_from_content
 # import sys
 # import glob
@@ -223,7 +226,7 @@ class PerfReporter(object):
         used in the .tex template.
         return os.path.join(dir_path, file_name)
         """
-        return f"{self.config["output"]["name"]}_{name}"
+        return f"{self.config['output']['name']}_{name}"
 
     def get_target_path(self, name: str, target_type: str) -> str:
         """
@@ -279,6 +282,93 @@ class PerfReporter(object):
                     "frame": df,
                 }
             )
+
+    def _calculate_crimson_rates(self, name: str, archive: zipfile.ZipFile) -> None:
+        """
+        Calculate work rates for Crimson OSD metrics from multiple dump snapshots.
+        
+        This method uses CrimsonMetricsRateAnalyzer to compute rates for:
+        - Messenger (network layer)
+        - Transaction Manager (cache layer)
+        - Object Store (SeaStore)
+        
+        Results are stored in self.ds_list[name]["crimson_rates"].
+        """
+        # Collect all crimson dump JSON files with their timestamps
+        crimson_snapshots = []
+        for member in archive.namelist():
+            base = os.path.basename(member)
+            if not re.search(r"_dump\.json$", base):
+                continue
+            
+            ts = self._extract_timestamp(base)
+            try:
+                content = archive.read(member).decode(encoding="utf-8")
+                data = json.loads(content)
+                
+                # Convert timestamp string to float (Unix timestamp)
+                # Format: YYYYMMDD_HHMMSS
+                from datetime import datetime
+                if ts != "unknown_ts":
+                    dt = datetime.strptime(ts, "%Y%m%d_%H%M%S")
+                    timestamp = dt.timestamp()
+                else:
+                    # Use a sequential counter if timestamp extraction fails
+                    timestamp = float(len(crimson_snapshots))
+                
+                crimson_snapshots.append({
+                    'timestamp': timestamp,
+                    'data': data,
+                    'source': member
+                })
+            except Exception as e:
+                logger.error(f"Error processing {member} for rate analysis: {e}")
+                continue
+        
+        # Need at least 2 snapshots to calculate rates
+        if len(crimson_snapshots) < 2:
+            logger.warning(f"Run {name}: Need at least 2 crimson dump snapshots for rate analysis, found {len(crimson_snapshots)}")
+            return
+        
+        # Sort by timestamp
+        crimson_snapshots.sort(key=lambda x: x['timestamp'])
+        
+        # Create analyzer and add snapshots
+        analyzer = CrimsonMetricsRateAnalyzer()
+        for snap in crimson_snapshots:
+            analyzer.add_snapshot(snap['timestamp'], snap['data'])
+        
+        logger.info(f"Run {name}: Calculating rates from {len(crimson_snapshots)} crimson dump snapshots")
+        
+        # Calculate rates between first and last snapshot
+        try:
+            rates = analyzer.calculate_rates(snapshot_idx1=0, snapshot_idx2=-1)
+            
+            # Store rates in ds_list for later use
+            self.ds_list[name]["crimson_rates"] = rates
+            
+            # Generate and save rate report
+            report_name = f"{name}_crimson_rates_report.txt"
+            report_path = self.get_target_path(report_name, "tables")
+            report = analyzer.generate_rate_report(report_path)
+            
+            # Also save rates as JSON
+            json_name = f"{name}_crimson_rates.json"
+            json_path = self.get_target_path(json_name, "tables")
+            with open(json_path, 'w') as f:
+                json.dump(rates, f, indent=2)
+            
+            logger.info(f"Run {name}: Crimson rates calculated and saved to {report_path}")
+            
+            # Log summary
+            logger.info(f"  Network throughput: {rates['messenger']['network_bytes_per_sec']:.2f} bytes/sec")
+            logger.info(f"  Transaction rate: {rates['transaction_manager']['transactions_committed_per_sec']:.2f} txns/sec")
+            logger.info(f"  Write throughput: {rates['object_store']['write_throughput']['total_bytes_per_sec']:.2f} bytes/sec")
+            
+        except Exception as e:
+            logger.error(f"Run {name}: Error calculating crimson rates: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
     def export_telemetry_csv_files(self) -> None:
         """
@@ -869,6 +959,8 @@ class PerfReporter(object):
                         "telemetry": defaultdict(list),
                     }
                     self._load_telemetry_from_archive(name, archive)
+                    # Calculate Crimson OSD work rates from dump snapshots
+                    self._calculate_crimson_rates(name, archive)
                     logger.info(
                         f"Loaded .csv file {test_d['test_run']} for {name} into dataframe"
                     )
