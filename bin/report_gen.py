@@ -53,6 +53,13 @@ def main(argv):
         default=False,
     )
     parser.add_argument(
+        "-k",
+        "--skip_plotting",
+        action="store_true",
+        help="True to skip plotting inline and only save the generatede plots",
+        default=False,
+    )
+    parser.add_argument(
         "-c",
         "--config",
         type=str,

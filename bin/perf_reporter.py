@@ -85,7 +85,7 @@ class PerfReporter(object):
     }
     """
 
-    def __init__(self, json_name: str = ""):
+    def __init__(self, json_name: str = "", skip_plotting: bool = False) -> None:
         """
         This class expects a config .json file containing:
         - description: free text to indicate the performance test and the
@@ -127,6 +127,7 @@ class PerfReporter(object):
         # \graphicspath{ {../figures/} }
         # f"{self.config["output"]["name"]}_{name}"
         self.document = {"tex":"", "md": ""}  # type: Dict[str, Any]
+        self.skip_plotting = skip_plotting
 
 
     def save_file(self, file_path: str, content: str) -> None:
@@ -817,6 +818,8 @@ class PerfReporter(object):
                     # Save df as csv in the output directory, with the name of the workload
                     plt.savefig(t_path, dpi=100, bbox_inches="tight")
                     # Add entry in the report
+                    # Add to the generated list of figures to be included in the .tex report,
+                    # with the expected name to be used in the .tex template
                     self.add_entry_figure(
                         key="tex",
                         title=title,
@@ -824,9 +827,8 @@ class PerfReporter(object):
                         dir_path=os.path.join("figures/",f"{self.config['output']['name']}/"),
                         label=f"fig:{workload}-{bs}-{style}-{ycol}-vs-{xcol}",
                     )
-                    plt.show()
-                    # Add to the generated list of figures to be included in the .tex report,
-                    # with the expected name to be used in the .tex template
+                    if not self.skip_plotting:
+                        plt.show()
                     plt.close()
                 except Exception as e:
                     logger.error(
@@ -999,6 +1001,7 @@ class PerfReporter(object):
 
         if "input" in self.config:
             if "kind" in self.config:
+                self.makedirs()
                 self.load_csv_files(self.config["input"])
             else:
                 logger.warning(
@@ -1036,7 +1039,7 @@ class PerfReporter(object):
         """
         self.load_config()
         if "kind" in self.config:
-            self.makedirs()
+            #self.makedirs()
             self.export_telemetry_csv_files()
             self.plot_telemetry_metrics()
             self.plot_csv_files()

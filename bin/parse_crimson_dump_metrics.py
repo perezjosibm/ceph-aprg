@@ -580,23 +580,77 @@ def load_crimson_dump_dataframe(json_fname: str) -> pd.DataFrame:
 # Rate Analysis and Work Attribution
 # ---------------------------------------------------------------------------
 
+# Import OSD-type-specific analyzers
+try:
+    from osd_rate_analyzers import (
+        create_rate_analyzer,
+        detect_osd_type,
+        CrimsonSeaStoreRateAnalyzer,
+        CrimsonBlueStoreRateAnalyzer,
+        ClassicOSDRateAnalyzer
+    )
+    _HAS_OSD_ANALYZERS = True
+except ImportError:
+    _HAS_OSD_ANALYZERS = False
+    logger.warning("osd_rate_analyzers module not found, using legacy analyzer")
+
+
 class CrimsonMetricsRateAnalyzer:
     """
     Analyzes rate of work for Crimson OSD subcomponents from time-series
     metric snapshots.
     
-    This class implements the recommended analysis approach for attributing
-    work rates to the messenger, transaction manager, and object store
-    components based on cumulative counter metrics.
+    This class now acts as a wrapper that automatically detects OSD type
+    and delegates to the appropriate OSD-specific analyzer.
+    
+    For backward compatibility, it defaults to Crimson SeaStore behavior
+    if OSD type cannot be detected.
     
     Attributes
     ----------
     snapshots : List[Dict[str, Any]]
         List of metric snapshots, each with 'timestamp' and 'metrics' keys
+    osd_type : str
+        Detected or specified OSD type
+    analyzer : BaseOSDRateAnalyzer
+        The OSD-specific analyzer instance
     """
     
-    def __init__(self):
+    def __init__(self, osd_type: Optional[str] = None):
+        """
+        Initialize the rate analyzer.
+        
+        Parameters
+        ----------
+        osd_type : Optional[str]
+            Explicitly specify OSD type ('seastore', 'bluestore', 'classic').
+            If None, will auto-detect from first snapshot added.
+        """
         self.snapshots: List[Dict[str, Any]] = []
+        self.osd_type = osd_type
+        self.analyzer = None
+        self._legacy_mode = not _HAS_OSD_ANALYZERS
+        
+        if self._legacy_mode:
+            logger.info("Using legacy CrimsonMetricsRateAnalyzer (SeaStore only)")
+        elif osd_type:
+            self._initialize_analyzer(osd_type)
+    
+    def _initialize_analyzer(self, osd_type: str):
+        """Initialize the OSD-specific analyzer."""
+        if self._legacy_mode:
+            return
+        self.osd_type = osd_type
+        self.analyzer = create_rate_analyzer(osd_type)
+        logger.info(f"Initialized {osd_type} rate analyzer")
+    
+    def _auto_detect_osd_type(self, data: Dict[str, Any]):
+        """Auto-detect OSD type from data if not already set."""
+        if self._legacy_mode or self.analyzer:
+            return
+        
+        detected_type = detect_osd_type(data)
+        self._initialize_analyzer(detected_type)
         
     def add_snapshot(self, timestamp: float, metrics_data: Dict[str, Any]) -> None:
         """
@@ -609,6 +663,15 @@ class CrimsonMetricsRateAnalyzer:
         metrics_data : dict
             The parsed metrics dictionary from JSON
         """
+        # Auto-detect OSD type from first snapshot if not set
+        if not self._legacy_mode and not self.analyzer:
+            self._auto_detect_osd_type(metrics_data)
+        
+        # Delegate to OSD-specific analyzer if available
+        if self.analyzer:
+            self.analyzer.add_snapshot(timestamp, metrics_data)
+        
+        # Also keep in legacy format for backward compatibility
         self.snapshots.append({
             'timestamp': timestamp,
             'data': metrics_data
@@ -702,6 +765,11 @@ class CrimsonMetricsRateAnalyzer:
         Dict[str, Any]
             Dictionary containing calculated rates for each component
         """
+        # Delegate to OSD-specific analyzer if available
+        if self.analyzer:
+            return self.analyzer.calculate_rates(snapshot_idx1, snapshot_idx2)
+        
+        # Legacy mode: SeaStore-only implementation
         if len(self.snapshots) < 2:
             logger.error("Need at least 2 snapshots to calculate rates")
             return {}
@@ -720,6 +788,7 @@ class CrimsonMetricsRateAnalyzer:
         metrics2 = snap2['data'].get('metrics', [])
         
         results = {
+            'osd_type': 'Crimson-SeaStore (legacy)',
             'time_delta_seconds': time_delta,
             'timestamp_start': t1,
             'timestamp_end': t2,
@@ -883,6 +952,11 @@ class CrimsonMetricsRateAnalyzer:
         str
             The formatted report text
         """
+        # Delegate to OSD-specific analyzer if available
+        if self.analyzer:
+            return self.analyzer.generate_rate_report(output_file)
+        
+        # Legacy mode
         if len(self.snapshots) < 2:
             return "Error: Need at least 2 snapshots to generate rate report"
             
