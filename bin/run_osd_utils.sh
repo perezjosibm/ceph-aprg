@@ -6,6 +6,8 @@
 #############################################################################################
 # Default values for the test plan, can be overridden by a .json file or command line args
 CACHE_ALG="LRU" # LRU or 2Q
+SEA_DEV_TYPE="RANDOM_BLOCK_SSD" # RANDOM_BLOCK_SSD or SSD -- currently not used, since we are using the same devices for both seastore and bluestore, but we might want to use different devices for the two backends in the future
+
 # Use a associative array to describe a test case, so we can recreate it faithfully
 # These default values should be overridden by the test plan .json file, but we
 # need to set some default values for the test plan generation and validation
@@ -66,7 +68,7 @@ declare -a order_keys=( default bal_osd bal_socket )
 declare -A osd_be_table
 osd_be_table["cyan"]="--cyanstore"
 osd_be_table["blue"]="--bluestore --bluestore-devs " #${STORE_DEVS}
-osd_be_table["sea"]="--seastore --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=${CACHE_ALG}\" --seastore-devs " 
+osd_be_table["sea"]="--seastore --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=${CACHE_ALG} --seastore_main_device_type=${SEA_DEV_TYPE}\" --seastore-devs "
 #${STORE_DEVS}
 #osd_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS} --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cache_lru_size=2G\""
 

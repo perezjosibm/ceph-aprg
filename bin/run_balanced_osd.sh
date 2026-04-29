@@ -34,7 +34,7 @@ trap 'echo "$(date)== INT received, exiting... =="; fun_stop ${fio_pid}; exit 1'
 
 STOP_AT_FIO=false
 # DEfine some FIO options, or a .json test plan instead
-while getopts 'ab:c:d:e:g:t:s:r:jlpxz:q' option; do
+while getopts 'ab:c:d:e:g:t:s:r:jlpxy:z:q' option; do
   case "$option" in
     a) fun_show_all_tests
        exit
@@ -65,6 +65,13 @@ while getopts 'ab:c:d:e:g:t:s:r:jlpxz:q' option; do
         ;;
     g) REGEN=true
         ;;
+        # Seastore options -- we might include these as part of the test plan instead?
+    y) SEA_DEV_TYPE=$OPTARG
+       if [ "$SEA_DEV_TYPE" != "RANDOM_BLOCK_SSD" ] && [ "$SEA_DEV_TYPE" != "SSD" ]; then
+         echo -e "${RED}== Invalid seastore backend: ${SEA_DEV_TYPE} ==${NC}"
+         exit 1
+       fi
+       ;;
     z) CACHE_ALG=$OPTARG
        if [ "$CACHE_ALG" != "LRU" ] && [ "$CACHE_ALG" != "2Q" ]; then
          echo -e "${RED}== Invalid cache algorithm: ${CACHE_ALG} ==${NC}"
