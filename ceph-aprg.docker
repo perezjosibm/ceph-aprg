@@ -76,3 +76,4 @@ RUN pip3 install -r /root/ceph-aprg/requirements.txt
 # When running the container, additional volume: c_results -> /tmp/results
 RUN cd /packages/fio && git config --global --add safe.directory /packages/fio
 RUN cd /ceph && git config --global --add safe.directory /ceph
+RUN export PATH=${PATH}:${HOME}/ceph-aprg/bin

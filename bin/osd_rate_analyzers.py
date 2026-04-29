@@ -43,6 +43,7 @@ class BaseOSDRateAnalyzer(ABC):
             'timestamp': timestamp,
             'data': metrics_data
         })
+        # Sort them at the end, we will define the order of snapshots by timestamp
         self.snapshots.sort(key=lambda x: x['timestamp'])
         
     def load_snapshots_from_files(self, file_list: List[str]) -> None:

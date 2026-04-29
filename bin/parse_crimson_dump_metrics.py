@@ -63,28 +63,50 @@ def _minmax_normalisation(df: pd.DataFrame) -> pd.DataFrame:
     return df_scaled
 
 
+# Import the new OSD-type-specific parsers
+try:
+    from osd_dump_parsers import (
+        BaseOSDDumpMetricsParser,
+        CrimsonSeaStoreParser,
+        CrimsonBlueStoreParser,
+        ClassicOSDParser,
+        OSDType,
+        detect_osd_type,
+        create_parser,
+    )
+    _HAS_OSD_DUMP_PARSERS = True
+except ImportError:
+    _HAS_OSD_DUMP_PARSERS = False
+    logger.warning("osd_dump_parsers module not available, using legacy parser")
+
+
 class CrimsonDumpMetricsParser:
     """
-    Parses a JSON file produced by the Crimson OSD dump_metrics command
-    (e.g. crimson_dump_metrics_full.json) and produces charts.
+    Parses a JSON file produced by OSD dump_metrics command and produces charts.
+    
+    This class now acts as a wrapper that auto-detects the OSD type and delegates
+    to the appropriate type-specific parser from osd_dump_parsers module.
+    
+    For backward compatibility, it maintains the original interface but internally
+    uses the new OSD-type-specific parser hierarchy.
 
-    The input JSON has the form::
-
+    The input JSON format varies by OSD type:
+    
+    Crimson (SeaStore/BlueStore):
         { "metrics": [ { "<name>": { "shard": "<N>", "value": <V>, ... } }, ... ] }
-
-    Each entry in the ``metrics`` array contains exactly one key (the metric
-    name) whose value is a dictionary with at least ``shard`` and ``value``
-    fields and optional dimension labels (``src``, ``ext``, ``effort``,
-    ``latency``, ``submitter``, etc.).
+    
+    Classic OSD:
+        { "subsystem1": { "metric1": value, ... }, "subsystem2": { ... }, ... }
 
     Attributes
     ----------
     METRIC_GROUPS : dict
         Mapping of group name to a compiled regex that selects metric names
         belonging to that group, together with display units.
+        Now delegated to the type-specific parser.
     """
 
-    # Metric groups: key -> {regex, unit}
+    # Legacy METRIC_GROUPS for backward compatibility (Crimson SeaStore)
     METRIC_GROUPS: Dict[str, Dict[str, Any]] = {
         "reactor_aio": {
             "regex": re.compile(r"^reactor_aio_(reads|writes|retries)$"),
@@ -205,6 +227,14 @@ class CrimsonDumpMetricsParser:
         self.directory = options.directory
         self.generated_files: List[str] = []
 
+        # Type-specific parser (will be set after detecting OSD type)
+        if _HAS_OSD_DUMP_PARSERS:
+            self._parser: Optional[Any] = None  # BaseOSDDumpMetricsParser
+            self._osd_type: Optional[Any] = None  # OSDType
+        else:
+            self._parser = None
+            self._osd_type = None
+        
         # Parsed data: metric_name -> shard -> list of values
         self._raw: Dict[str, Dict[str, List[float]]] = defaultdict(
             lambda: defaultdict(list)
@@ -232,14 +262,44 @@ class CrimsonDumpMetricsParser:
 
     def parse(self, data: Dict[str, Any]) -> None:
         """
-        Parse the metrics list from *data* (the loaded JSON dict).
+        Parse the metrics from *data* (the loaded JSON dict).
+        
+        Auto-detects OSD type and delegates to appropriate parser.
 
         Parameters
         ----------
         data : dict
-            Dict with key ``"metrics"`` whose value is a list of metric
-            entries as described in the module docstring.
+            The loaded JSON data structure (format varies by OSD type).
         """
+        # Use new parser hierarchy if available
+        if _HAS_OSD_DUMP_PARSERS and self._parser is None:
+            # Auto-detect OSD type and create parser
+            self._osd_type = detect_osd_type(data)
+            self._parser = create_parser(self._osd_type)
+            logger.info(f"Detected OSD type: {self._osd_type}")
+        
+        if self._parser is not None:
+            # Use type-specific parser
+            self._parser.parse(data)
+            # Copy parsed data to our structures
+            raw, multi, shards, metrics = self._parser.get_parsed_data()
+            self._raw = raw
+            self._multi = multi
+            self._shards_seen = shards
+            self._metrics_seen = metrics
+            # Update METRIC_GROUPS to match parser's groups
+            self.METRIC_GROUPS = self._parser.get_metric_groups()
+        else:
+            # Fallback to legacy parsing (Crimson SeaStore format)
+            self._parse_legacy(data)
+        
+        logger.info(
+            f"Parsed {len(self._metrics_seen)} unique metrics across "
+            f"{len(self._shards_seen)} shards"
+        )
+    
+    def _parse_legacy(self, data: Dict[str, Any]) -> None:
+        """Legacy parsing method for Crimson SeaStore format."""
         metrics_list = data.get("metrics", [])
         if not metrics_list:
             logger.warning("No 'metrics' key found or list is empty")
@@ -268,11 +328,6 @@ class CrimsonDumpMetricsParser:
                     self._multi[metric_name].append(row)
                 else:
                     self._raw[metric_name][shard].append(float(value))
-
-        logger.info(
-            f"Parsed {len(self._metrics_seen)} unique metrics across "
-            f"{len(self._shards_seen)} shards"
-        )
 
     # ------------------------------------------------------------------
     # DataFrame construction
@@ -676,6 +731,7 @@ class CrimsonMetricsRateAnalyzer:
             'timestamp': timestamp,
             'data': metrics_data
         })
+        # Could be more efficient if we sort them once we load them all
         self.snapshots.sort(key=lambda x: x['timestamp'])
         
     def load_snapshots_from_files(self, file_list: List[str]) -> None:
