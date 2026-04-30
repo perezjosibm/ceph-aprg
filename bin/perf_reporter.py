@@ -21,9 +21,12 @@ import seaborn as sns
 from typing import Dict, Any # List,
 from pp_diskstat import load_diskstat_dataframe_from_content
 from parse_crimson_dump_metrics import (
-    load_crimson_dump_dataframe_from_content,
+    load_crimson_dump_dataframe_from_content,  # Now supports all OSD types via auto-detection
     CrimsonMetricsRateAnalyzer
 )
+# Note: load_crimson_dump_dataframe_from_content() now auto-detects OSD type
+# (Crimson SeaStore, Crimson BlueStore, or Classic OSD) and uses the appropriate
+# parser from osd_dump_parsers.py module
 from perf_stats import load_perf_stat_dataframe_from_content
 # import sys
 # import glob

@@ -594,9 +594,87 @@ def _get_metric_group(metric_name: str) -> str:
 
 def load_crimson_dump_dataframe_from_content(json_content: str) -> pd.DataFrame:
     """
-    Load Crimson dump_metrics JSON content into a flat DataFrame.
+    Load OSD dump_metrics JSON content into a flat DataFrame.
+    
+    Auto-detects OSD type and uses appropriate parser to handle different
+    JSON formats (Crimson SeaStore, Crimson BlueStore, Classic OSD).
+    
+    Parameters
+    ----------
+    json_content : str
+        JSON string content from dump file.
+        
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: metric, group, shard, value, and any extra dimensions.
     """
     data = json.loads(json_content)
+    
+    # Use new parser hierarchy if available
+    if _HAS_OSD_DUMP_PARSERS:
+        try:
+            # Auto-detect OSD type and create appropriate parser
+            osd_type = detect_osd_type(data)
+            parser = create_parser(osd_type)
+            parser.parse(data)
+            
+            # Get parsed data
+            raw, multi, shards, metrics = parser.get_parsed_data()
+            metric_groups = parser.get_metric_groups()
+            
+            # Convert to DataFrame format expected by perf_reporter
+            rows: List[Dict[str, Any]] = []
+            
+            # Process simple metrics (raw)
+            for metric_name, shard_data in raw.items():
+                # Determine group
+                group = None
+                for group_name, spec in metric_groups.items():
+                    if spec["regex"].match(metric_name):
+                        group = group_name
+                        break
+                if group is None:
+                    group = "ungrouped"
+                
+                for shard, values in shard_data.items():
+                    for value in values:
+                        row = {
+                            "metric": metric_name,
+                            "group": group,
+                            "shard": int(shard) if isinstance(shard, str) and shard.isdigit() else shard,
+                            "value": float(value),
+                        }
+                        rows.append(row)
+            
+            # Process multi-dimensional metrics
+            for metric_name, entries in multi.items():
+                # Determine group
+                group = None
+                for group_name, spec in metric_groups.items():
+                    if spec["regex"].match(metric_name):
+                        group = group_name
+                        break
+                if group is None:
+                    group = "ungrouped"
+                
+                for entry in entries:
+                    row = {
+                        "metric": metric_name,
+                        "group": group,
+                    }
+                    row.update(entry)
+                    # Ensure shard is int if possible
+                    if "shard" in row and isinstance(row["shard"], str) and row["shard"].isdigit():
+                        row["shard"] = int(row["shard"])
+                    rows.append(row)
+            
+            return pd.DataFrame(rows)
+            
+        except Exception as e:
+            logger.warning(f"Failed to use new parser hierarchy: {e}, falling back to legacy")
+    
+    # Fallback to legacy parsing (Crimson format only)
     metrics = data.get("metrics", [])
     rows: List[Dict[str, Any]] = []
     for item in metrics:
