@@ -126,7 +126,7 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
     
     METRIC_GROUPS: Dict[str, Dict[str, Any]] = {
         "reactor_aio": {
-            "regex": re.compile(r"^reactor_aio_(reads|writes|retries)$"),
+            "regex": re.compile(r"^reactor_aio_"), #(reads|writes|retries)$
             "unit": "operations",
         },
         "reactor_aio_bytes": {
@@ -140,16 +140,28 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
             "unit": "ms",
         },
         "reactor_cpu": {
-            "regex": re.compile(r"^reactor_cpu_"),
+            "regex": re.compile(r"^(reactor_cpu_.*|reactor_sleep_time_ms_total)"),
             "unit": "ms",
         },
         "reactor_polls": {
-            "regex": re.compile(r"^reactor_(polls|tasks_processed|cpp_exceptions)$"),
-            "unit": "polls",
+            "regex": re.compile(r"^reactor_(polls|tasks_processed|tasks_pending|timers_pending)$"),
+            "unit": "operations",
         },
         "reactor_utilization": {
             "regex": re.compile(r"^reactor_utilization$"),
             "unit": "pc",
+        },
+        "reactor_fails": {
+            "regex": re.compile(r"^reactor_(fsyncs|internal_errors|io_threaded_fallbacks|logging_failures|stalls|cpp_exceptions)$"),
+            "unit": "operations",
+        },
+        "reactor_fstream_bytes": {
+            "regex": re.compile(r"^reactor_fstream(.*_bytes_.*)$"),
+            "unit": "bytes",
+        },
+        "reactor_fstream_ops": {
+            "regex": re.compile(r"^reactor_fstream_reads(_aheads_discarded|_blocked)?$"),
+            "unit": "opserations",
         },
         "scheduler_time": {
             "regex": re.compile(r"^scheduler_.*_ms$"),
@@ -173,12 +185,12 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
             ),
             "unit": "operations",
         },
-        "cache_cached": {
-            "regex": re.compile(r"^cache_(cached|dirty)"),
-            "unit": "operations",
-        },
         "cache_lru": {
             "regex": re.compile(r"^cache_lru"),
+            "unit": "operations",
+        },
+        "cache_cached": {
+            "regex": re.compile(r"^cache_(cached|dirty)"),
             "unit": "operations",
         },
         "cache_committed": {
@@ -200,6 +212,14 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
         "cache_tree": {
             "regex": re.compile(r"^cache_tree_"),
             "unit": "operations",
+        },
+        "cache_successful": {
+            "regex": re.compile(r"^cache_(cache_|successful|version)"),
+            "unit": "operations",
+        },
+        "lba_alloc_extents": {
+            "regex": re.compile(r"^LBA_alloc_extents"),
+            "unit": "extents",
         },
         "journal_bytes": {
             "regex": re.compile(r"^journal_.*_bytes$"),
@@ -231,6 +251,18 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
         },
         "segment_manager": {
             "regex": re.compile(r"^segment_manager_"),
+            "unit": "bytes",
+        },
+        "segment_cleaner_bytes": {
+            "regex": re.compile(r"^segment_cleaner_(.*_bytes.*)$"),
+            "unit": "bytes",
+        },
+        "segment_cleaner_segments": {
+            "regex": re.compile(r"^segment_cleaner_segments"),
+            "unit": "bytes",
+        },
+        "segment_cleaner_info": {
+            "regex": re.compile(r"^segment_cleaner_(available_ratio|reclaim_ratio|segment_size|projected_count)"),
             "unit": "bytes",
         },
     }
@@ -326,6 +358,18 @@ class CrimsonBlueStoreParser(BaseOSDDumpMetricsParser):
         "reactor_utilization": {
             "regex": re.compile(r"^reactor_utilization$"),
             "unit": "pc",
+        },
+        "reactor_fails": {
+            "regex": re.compile(r"^reactor_(fsyncs|internal_errors|io_threaded_fallbacks|logging_failures|stalls|cpp_exceptions)$"),
+            "unit": "operations",
+        },
+        "reactor_fstream_bytes": {
+            "regex": re.compile(r"^reactor_fstream(.*_bytes_.*)$"),
+            "unit": "bytes",
+        },
+        "reactor_fstream_ops": {
+            "regex": re.compile(r"^reactor_fstream_reads(_aheads_discarded|_blocked)?$"),
+            "unit": "opserations",
         },
         "scheduler_time": {
             "regex": re.compile(r"^scheduler_.*_ms$"),

@@ -336,6 +336,30 @@ class PerfMetricEntry(object):
             "unit": "ms",
             "reduce": "difference",
         },
+        "reactor_cpu": {
+            "regex": re.compile(r"^(reactor_cpu_.*|reactor_sleep_time_ms_total)"),
+            "normalisation": "minmax",
+            "unit": "ms",
+            "reduce": "difference",
+        },
+        "reactor_polls": {
+            "regex": re.compile(r"^reactor_(polls|tasks_processed|tasks_pending|timers_pending)$"),
+            "normalisation": "minmax",
+            "unit": "polls",
+            "reduce": "difference",
+        },
+        "reactor_utilization": {
+            "regex": re.compile(r"^(reactor_utilization)"),
+            "normalisation": "minmax",
+            "unit": "pc",
+            "reduce": "average",
+        },
+        "reactor_fails": {
+            "regex": re.compile(r"^reactor_(fsyncs|internal_errors|io_threaded_fallbacks|logging_failures|stalls|cpp_exceptions)$"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
         "scheduler_time": {
             "regex": re.compile(r"^(scheduler_.*_ms)"),
             "normalisation": "minmax",
@@ -377,20 +401,20 @@ class PerfMetricEntry(object):
             "unit": "operations",
             "reduce": "difference",
         },
-        "cache_tree": {
-            "regex": re.compile(r"^(cache_tree.*)"),
-            "normalisation": "minmax",
-            "unit": "operations",
-            "reduce": "difference",
-        },
         "cache_cached": {
             "regex": re.compile(r"^(cache_(cached.*|dirty.*))"),
             "normalisation": "minmax",
             "unit": "operations",
             "reduce": "difference",
         },
+        "cache_tree": {
+            "regex": re.compile(r"^(cache_tree.*)"),
+            "normalisation": "minmax",
+            "unit": "operations",
+            "reduce": "difference",
+        },
         "cache_commited": {
-            "regex": re.compile(r"^(cache_committed_delta_bytes)"),
+            "regex": re.compile(r"^(cache_committed_)"),
             "normalisation": "minmax",
             "unit": "operations",
             "reduce": "difference",
@@ -402,28 +426,10 @@ class PerfMetricEntry(object):
             "reduce": "difference",
         },
         "cache_successful": {
-            "regex": re.compile(r"^(cache_refresh.*|cache_successful.*|cache_trans_.*)"),
+            "regex": re.compile(r"^cache_(cache_|successful|version)"),
             "normalisation": "minmax",
             "unit": "operations",
             "reduce": "difference",
-        },
-        "reactor_cpu": {
-            "regex": re.compile(r"^(reactor_cpu_.*|reactor_sleep_time_ms_total)"),
-            "normalisation": "minmax",
-            "unit": "ms",
-            "reduce": "difference",
-        },
-        "reactor_polls": {
-            "regex": re.compile(r"^(reactor_(polls|tasks_processed|cpp_exceptions))"),
-            "normalisation": "minmax",
-            "unit": "polls",
-            "reduce": "difference",
-        },
-        "reactor_utilization": {
-            "regex": re.compile(r"^(reactor_utilization)"),
-            "normalisation": "minmax",
-            "unit": "pc",
-            "reduce": "average",
         },
         "journal_bytes": {
             "regex": re.compile(r"^(journal_.*_bytes)"),
@@ -435,12 +441,6 @@ class PerfMetricEntry(object):
             "regex": re.compile(r"^(journal_.*_num)"),
             "normalisation": "minmax",
             "unit": "operations",
-            "reduce": "average",
-        },
-        "segment_cleaner": {
-            "regex": re.compile(r"^(segment_cleaner_.*)"),
-            "normalisation": "minmax",
-            "unit": "bytes",
             "reduce": "average",
         },
         # This is a simple metric with single value per shard
@@ -499,6 +499,12 @@ class PerfMetricEntry(object):
             "normalisation": "minmax",
             "unit": "unknown",
             "reduce": "difference",
+        },
+        "segment_cleaner": {
+            "regex": re.compile(r"^(segment_cleaner_.*)"),
+            "normalisation": "minmax",
+            "unit": "bytes",
+            "reduce": "average",
         },
          "journal": {
             "regex": re.compile(r"^(journal_.*)"),
