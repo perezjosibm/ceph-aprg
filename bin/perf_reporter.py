@@ -15,10 +15,11 @@ import pprint
 import zipfile
 from io import StringIO
 from collections import defaultdict
+from datetime import datetime
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import Dict, Any # List,
+from typing import Dict, Any, List
 from pp_diskstat import load_diskstat_dataframe_from_content
 from parse_crimson_dump_metrics import (
     load_crimson_dump_dataframe_from_content,  # Now supports all OSD types via auto-detection
@@ -28,6 +29,7 @@ from parse_crimson_dump_metrics import (
 # (Crimson SeaStore, Crimson BlueStore, or Classic OSD) and uses the appropriate
 # parser from osd_dump_parsers.py module
 from perf_stats import load_perf_stat_dataframe_from_content
+from fio_job_parser import FioJobParser, WorkloadInterval
 # import sys
 # import glob
 # import subprocess
@@ -612,6 +614,7 @@ class PerfReporter(object):
                 ax.set_xlabel("Timestamp")
                 ax.set_ylabel(ylabel)
                 ax.tick_params(axis="x", rotation=45)
+                ax.set_xticks(ax.get_xticks()[::5]) # every 5th tick to avoid clutter
                 plt.tight_layout()
                 file_name = f"{run_name}_crimson_dump_{group_name}.png"
                 t_path = self.get_target_path(file_name, "figures")
@@ -715,13 +718,445 @@ class PerfReporter(object):
                 )
                 plt.close()
 
+    # ------------------------------------------------------------------
+    # Per-Workload Analysis Methods
+    # ------------------------------------------------------------------
+
+    def _extract_workload_intervals(self, name: str, archive: zipfile.ZipFile) -> Dict[str, Dict[int, WorkloadInterval]]:
+        """
+        Extract workload time intervals from FIO job JSON files in the archive.
+        
+        This method scans the archive for FIO job JSON files (matching pattern
+        *_p0.json) and parses them to extract timing information for each workload
+        (seqwrite, randwrite, randread, seqread) at each iodepth level.
+        
+        Args:
+            name: Test run name (used for logging)
+            archive: ZipFile object containing FIO job files
+            
+        Returns:
+            Dictionary structure:
+            {
+                'workload_name': {
+                    iodepth: WorkloadInterval object
+                }
+            }
+            
+        Example:
+            {
+                'seqwrite': {
+                    1: WorkloadInterval(...),
+                    2: WorkloadInterval(...),
+                    ...
+                },
+                'randwrite': {...},
+                ...
+            }
+        """
+        workload_intervals = defaultdict(dict)
+        fio_parser = FioJobParser()
+        
+        # Find all FIO job JSON files in the archive
+        fio_job_files = [
+            member for member in archive.namelist()
+            if member.endswith('_p0.json') and '/FIO/' in member
+        ]
+        
+        if not fio_job_files:
+            logger.warning(f"Run {name}: No FIO job files found in archive")
+            return workload_intervals
+        
+        logger.info(f"Run {name}: Found {len(fio_job_files)} FIO job files")
+        
+        for fio_file in fio_job_files:
+            try:
+                # Read and parse FIO JSON
+                content = archive.read(fio_file).decode('utf-8')
+                intervals = fio_parser.parse_fio_json(content)
+                
+                # Store intervals by workload and iodepth
+                for interval in intervals:
+                    workload_intervals[interval.workload_name][interval.iodepth] = interval
+                    logger.debug(f"  {fio_file}: {interval}")
+                    
+            except Exception as e:
+                logger.error(f"Run {name}: Error parsing FIO job file {fio_file}: {e}")
+                continue
+        
+        # Log summary
+        for workload, iodepth_dict in workload_intervals.items():
+            logger.info(f"Run {name}: Workload '{workload}' has {len(iodepth_dict)} iodepth levels")
+        
+        return dict(workload_intervals)
+
+    def _filter_telemetry_by_interval(
+        self, 
+        telemetry_entries: List[Dict[str, Any]], 
+        interval: WorkloadInterval
+    ) -> List[Dict[str, Any]]:
+        """
+        Filter telemetry entries to only include those within a workload's time interval.
+        
+        Args:
+            telemetry_entries: List of telemetry entry dicts with 'timestamp', 'source', 'frame'
+            interval: WorkloadInterval defining the time range
+            
+        Returns:
+            Filtered list of telemetry entries
+        """
+        filtered = []
+        
+        for entry in telemetry_entries:
+            # Convert timestamp string to Unix timestamp for comparison
+            ts_str = entry['timestamp']
+            try:
+                # Parse timestamp format: YYYYMMDD_HHMMSS
+                dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+                ts_unix = dt.timestamp()
+                
+                # Check if timestamp falls within interval
+                if interval.start_time <= ts_unix <= interval.end_time:
+                    filtered.append(entry)
+                    
+            except Exception as e:
+                logger.warning(f"Could not parse timestamp {ts_str}: {e}")
+                continue
+        
+        return filtered
+
+    def _aggregate_metrics_by_workload(self, name: str) -> None:
+        """
+        Aggregate telemetry metrics by workload and iodepth.
+        
+        This method processes the telemetry data for a test run and groups it
+        by workload type and iodepth level. For each workload/iodepth combination,
+        it filters the telemetry to the relevant time interval and computes
+        aggregate statistics.
+        
+        Results are stored in self.ds_list[name]['workload_metrics'].
+        
+        Args:
+            name: Test run name
+        """
+        run_data = self.ds_list.get(name)
+        if not run_data:
+            logger.warning(f"Run {name}: No data found in ds_list")
+            return
+        
+        # Get workload intervals
+        workload_intervals = run_data.get('workload_intervals', {})
+        if not workload_intervals:
+            logger.warning(f"Run {name}: No workload intervals found")
+            return
+        
+        # Get telemetry data
+        telemetry = run_data.get('telemetry', {})
+        if not telemetry:
+            logger.warning(f"Run {name}: No telemetry data found")
+            return
+        
+        # Initialize workload metrics storage
+        workload_metrics = defaultdict(lambda: defaultdict(dict))
+        
+        # Process each workload and iodepth
+        for workload_name, iodepth_dict in workload_intervals.items():
+            for iodepth, interval in iodepth_dict.items():
+                logger.info(f"Run {name}: Processing {workload_name} at iodepth={iodepth}")
+                
+                # Filter each telemetry type to the workload interval
+                for telem_kind, entries in telemetry.items():
+                    filtered_entries = self._filter_telemetry_by_interval(entries, interval)
+                    
+                    if not filtered_entries:
+                        logger.debug(f"  No {telem_kind} data in interval")
+                        continue
+                    
+                    # Combine filtered dataframes
+                    frames = [entry['frame'] for entry in filtered_entries]
+                    if not frames:
+                        continue
+                    
+                    combined_df = pd.concat(frames, ignore_index=True)
+                    
+                    # Compute aggregate statistics
+                    if telem_kind == 'diskstat':
+                        # For diskstat, compute mean values per device
+                        if 'device' in combined_df.columns:
+                            agg_df = combined_df.groupby('device').mean(numeric_only=True)
+                        else:
+                            agg_df = combined_df.mean(numeric_only=True).to_frame().T
+                    elif telem_kind == 'crimson_dump':
+                        # For crimson metrics, compute mean per metric/shard
+                        if 'metric' in combined_df.columns and 'shard' in combined_df.columns:
+                            agg_df = combined_df.groupby(['metric', 'shard']).mean(numeric_only=True)
+                        else:
+                            agg_df = combined_df.mean(numeric_only=True).to_frame().T
+                    else:
+                        # Generic aggregation
+                        agg_df = combined_df.mean(numeric_only=True).to_frame().T
+                    
+                    # Store aggregated data
+                    workload_metrics[workload_name][iodepth][telem_kind] = {
+                        'aggregated': agg_df,
+                        'sample_count': len(filtered_entries),
+                        'interval': interval
+                    }
+                    
+                    logger.debug(f"  {telem_kind}: {len(filtered_entries)} samples aggregated")
+        
+        # Store in ds_list
+        run_data['workload_metrics'] = dict(workload_metrics)
+        logger.info(f"Run {name}: Workload metrics aggregation complete")
+
+    def _calculate_workload_rates(self, name: str) -> None:
+        """
+        Calculate work rates for each workload and iodepth.
+        
+        This method computes per-second rates for messenger, transaction manager,
+        and object store metrics within each workload's time interval.
+        
+        Results are stored in self.ds_list[name]['workload_rates'].
+        
+        Args:
+            name: Test run name
+        """
+        run_data = self.ds_list.get(name)
+        if not run_data:
+            return
+        
+        workload_intervals = run_data.get('workload_intervals', {})
+        if not workload_intervals:
+            logger.warning(f"Run {name}: No workload intervals for rate calculation")
+            return
+        
+        telemetry = run_data.get('telemetry', {})
+        crimson_entries = telemetry.get('crimson_dump', [])
+        if not crimson_entries:
+            logger.warning(f"Run {name}: No crimson dump data for rate calculation")
+            return
+        
+        workload_rates = defaultdict(lambda: defaultdict(dict))
+        
+        # Process each workload and iodepth
+        for workload_name, iodepth_dict in workload_intervals.items():
+            for iodepth, interval in iodepth_dict.items():
+                logger.info(f"Run {name}: Calculating rates for {workload_name} at iodepth={iodepth}")
+                
+                # Filter crimson dumps to workload interval
+                filtered_entries = self._filter_telemetry_by_interval(crimson_entries, interval)
+                
+                if len(filtered_entries) < 2:
+                    logger.warning(f"  Need at least 2 snapshots, found {len(filtered_entries)}")
+                    continue
+                
+                # Create rate analyzer and add snapshots
+                analyzer = CrimsonMetricsRateAnalyzer()
+                
+                for entry in filtered_entries:
+                    ts_str = entry['timestamp']
+                    dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+                    ts_unix = dt.timestamp()
+                    
+                    # Load the original JSON data for rate calculation
+                    # We need to reconstruct it from the dataframe or load from source
+                    # For now, we'll skip this and note it needs the raw JSON
+                    logger.warning(f"  Rate calculation requires raw JSON data - not yet implemented")
+                    # TODO: Store raw JSON in telemetry entries or reload from archive
+                
+                # Store placeholder
+                workload_rates[workload_name][iodepth] = {
+                    'status': 'not_implemented',
+                    'interval': interval
+                }
+        
+        run_data['workload_rates'] = dict(workload_rates)
+
+    def _plot_workload_metrics(self, workload_name: str, metric_type: str) -> None:
+        """
+        Generate comparison charts for a specific workload across test runs.
+        
+        This method creates charts comparing metrics (OSD metrics, disk stats, or
+        work rates) for a given workload across different test runs, with separate
+        lines/bars for each iodepth level.
+        
+        Args:
+            workload_name: Name of workload (e.g., 'seqwrite', 'randread')
+            metric_type: Type of metric ('osd_metrics', 'disk_stats', 'work_rates')
+        """
+        # Collect data from all runs for this workload
+        plot_data = []
+        
+        for run_name, run_data in self.ds_list.items():
+            workload_metrics = run_data.get('workload_metrics', {})
+            if workload_name not in workload_metrics:
+                continue
+            
+            for iodepth, metrics in workload_metrics[workload_name].items():
+                if metric_type not in metrics:
+                    continue
+                
+                # Extract relevant metrics based on type
+                if metric_type == 'diskstat':
+                    agg_df = metrics[metric_type]['aggregated']
+                    # Add metadata columns
+                    agg_df = agg_df.copy()
+                    agg_df['run_name'] = run_name
+                    agg_df['iodepth'] = iodepth
+                    plot_data.append(agg_df)
+                elif metric_type == 'crimson_dump':
+                    agg_df = metrics[metric_type]['aggregated']
+                    agg_df = agg_df.copy()
+                    agg_df['run_name'] = run_name
+                    agg_df['iodepth'] = iodepth
+                    plot_data.append(agg_df)
+        
+        if not plot_data:
+            logger.warning(f"No data to plot for workload={workload_name}, metric_type={metric_type}")
+            return
+        
+        # Combine all data
+        combined_df = pd.concat(plot_data, ignore_index=True)
+        
+        # Generate chart based on metric type
+        try:
+            if metric_type == 'diskstat':
+                self._plot_workload_diskstat(workload_name, combined_df)
+            elif metric_type == 'crimson_dump':
+                self._plot_workload_crimson_metrics(workload_name, combined_df)
+        except Exception as e:
+            logger.error(f"Error plotting {metric_type} for {workload_name}: {e}")
+
+    def _plot_workload_diskstat(self, workload_name: str, df: pd.DataFrame) -> None:
+        """Plot disk statistics for a workload across runs and iodepths."""
+        # Select key metrics to plot
+        metric_cols = ['reads_completed', 'writes_completed', 'read_time_ms', 'write_time_ms']
+        available_cols = [col for col in metric_cols if col in df.columns]
+        
+        if not available_cols:
+            logger.warning(f"No disk stat metrics found for {workload_name}")
+            return
+        
+        # Create bar chart comparing runs and iodepths
+        for metric in available_cols:
+            try:
+                sns.set_theme(style="darkgrid")
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # Prepare data for plotting
+                plot_df = df[['run_name', 'iodepth', metric]].copy()
+                plot_df['iodepth'] = plot_df['iodepth'].astype(str)
+                
+                sns.barplot(
+                    data=plot_df,
+                    x='iodepth',
+                    y=metric,
+                    hue='run_name',
+                    ax=ax
+                )
+                
+                ax.set_title(f"{workload_name} - {metric}")
+                ax.set_xlabel("I/O Depth")
+                ax.set_ylabel(metric.replace('_', ' ').title())
+                plt.tight_layout()
+                
+                file_name = f"workload_{workload_name}_diskstat_{metric}.png"
+                t_path = self.get_target_path(file_name, "figures")
+                plt.savefig(t_path, dpi=100, bbox_inches="tight")
+                
+                self.add_entry_figure(
+                    key="tex",
+                    title=f"{workload_name} {metric}",
+                    file_name=file_name,
+                    dir_path=os.path.join("figures/", f"{self.config['output']['name']}/"),
+                    label=f"fig:workload-{workload_name}-diskstat-{metric}"
+                )
+                
+                plt.close()
+                logger.info(f"Generated chart: {file_name}")
+                
+            except Exception as e:
+                logger.error(f"Error plotting {metric} for {workload_name}: {e}")
+                plt.close()
+
+    def _plot_workload_crimson_metrics(self, workload_name: str, df: pd.DataFrame) -> None:
+        """Plot Crimson OSD metrics for a workload across runs and iodepths."""
+        # This would plot selected crimson metrics
+        # Implementation similar to _plot_workload_diskstat
+        logger.info(f"Crimson metrics plotting for {workload_name} - to be implemented")
+
+    def analyze_workload_metrics(self) -> None:
+        """
+        Main entry point for per-workload analysis.
+        
+        This method orchestrates the complete per-workload analysis pipeline:
+        1. Extract workload intervals from FIO job files
+        2. Filter telemetry to workload intervals
+        3. Aggregate metrics by workload and iodepth
+        4. Calculate work rates per workload
+        5. Generate comparison charts
+        
+        Should be called after load_csv_files() and before gen_report().
+        """
+        logger.info("Starting per-workload analysis")
+        
+        for run_name, run_data in self.ds_list.items():
+            # Get the archive path from config
+            test_config = None
+            for name, config in self.config.get('input', {}).items():
+                if name == run_name:
+                    test_config = config
+                    break
+            
+            if not test_config:
+                logger.warning(f"Run {run_name}: No config found")
+                continue
+            
+            archive_path = test_config.get('path')
+            if not archive_path or not os.path.exists(archive_path):
+                logger.warning(f"Run {run_name}: Archive not found at {archive_path}")
+                continue
+            
+            try:
+                with zipfile.ZipFile(archive_path, mode='r') as archive:
+                    # Step 1: Extract workload intervals
+                    logger.info(f"Run {run_name}: Extracting workload intervals")
+                    workload_intervals = self._extract_workload_intervals(run_name, archive)
+                    run_data['workload_intervals'] = workload_intervals
+                    
+                    # Step 2 & 3: Aggregate metrics by workload
+                    logger.info(f"Run {run_name}: Aggregating metrics by workload")
+                    self._aggregate_metrics_by_workload(run_name)
+                    
+                    # Step 4: Calculate work rates
+                    logger.info(f"Run {run_name}: Calculating workload rates")
+                    self._calculate_workload_rates(run_name)
+                    
+            except Exception as e:
+                logger.error(f"Run {run_name}: Error in workload analysis: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                continue
+        
+        # Step 5: Generate comparison charts for each workload
+        logger.info("Generating per-workload comparison charts")
+        workload_list = ['seqwrite', 'randwrite', 'randread', 'seqread']
+        
+        for workload in workload_list:
+            for metric_type in ['diskstat', 'crimson_dump']:
+                try:
+                    self._plot_workload_metrics(workload, metric_type)
+                except Exception as e:
+                    logger.error(f"Error plotting {workload}/{metric_type}: {e}")
+        
+        logger.info("Per-workload analysis complete")
+
     def plot_csv_files(self):
         """
         Plot the dataframes loaded from the .csv files in the input_dirs.
         """
         # Styles of custom plots:
         styles = {
-            "rc": {
+            "rc_log": {
                 "xcols": ["bw", "iops"],
                 "ycol": "clat_ms",
                 "logy": True,
@@ -729,10 +1164,22 @@ class PerfReporter(object):
                 "style": "iodepth",
                 "name": "Response curve",
             },
-            "iops": {
+            "iops_log": {
                 "xcols": ["iodepth"],
                 "ycol": "iops",
                 "logy": True,
+                "style": "type",
+                "name": "Throughput",
+            },
+            "rc": {
+                "xcols": ["bw", "iops"],
+                "ycol": "clat_ms",
+                "style": "iodepth",
+                "name": "Response curve",
+            },
+            "iops": {
+                "xcols": ["iodepth"],
+                "ycol": "iops",
                 "style": "type",
                 "name": "Throughput",
             },
@@ -809,7 +1256,7 @@ class PerfReporter(object):
                         legend="full",
                     ).set(title=title)  # f"{workload}_{bs}": {ycol} vs {xcol}
                     # g.set_axis_labels("IOPS", "Latency (ms)")
-                    g.set(xticks=df[xcol].unique())
+                    # g.set(xticks=df[xcol].unique())
                     # # df.dataframe(df.style.format(subset=['Position', 'Marks'], formatter="{:.2f}"))
                     g.set_xticklabels(rotation=45)
                     # g.legend.remove()
@@ -1045,6 +1492,8 @@ class PerfReporter(object):
             #self.makedirs()
             self.export_telemetry_csv_files()
             self.plot_telemetry_metrics()
+            # Perform per-workload analysis
+            self.analyze_workload_metrics()
             self.plot_csv_files()
         else:
             logger.warning(

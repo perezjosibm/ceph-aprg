@@ -134,6 +134,18 @@ class CrimsonDumpMetricsParser:
             "regex": re.compile(r"^reactor_utilization$"),
             "unit": "pc",
         },
+        "reactor_fails": {
+            "regex": re.compile(r"^reactor_(fsyncs|internal_errors|io_threaded_fallbacks|logging_failures|stalls|cpp_exceptions)$"),
+            "unit": "operations",
+        },
+        "reactor_fstream_bytes": {
+            "regex": re.compile(r"^reactor_fstream(.*_bytes_.*)$"),
+            "unit": "bytes",
+        },
+        "reactor_fstream_ops": {
+            "regex": re.compile(r"^reactor_fstream_reads(_aheads_discarded|_blocked)?$"),
+            "unit": "opserations",
+        },
         "scheduler_time": {
             "regex": re.compile(r"^scheduler_.*_ms$"),
             "unit": "ms",
@@ -184,6 +196,14 @@ class CrimsonDumpMetricsParser:
             "regex": re.compile(r"^cache_tree_"),
             "unit": "operations",
         },
+        "cache_successful": {
+            "regex": re.compile(r"^cache_(cache_|successful|version)"),
+            "unit": "operations",
+        },
+        "lba_alloc_extents": {
+            "regex": re.compile(r"^LBA_alloc_extents"),
+            "unit": "extents",
+        },
         "journal_bytes": {
             "regex": re.compile(r"^journal_.*_bytes$"),
             "unit": "bytes",
@@ -218,6 +238,18 @@ class CrimsonDumpMetricsParser:
         },
         "segment_manager": {
             "regex": re.compile(r"^segment_manager_"),
+            "unit": "bytes",
+        },
+        "segment_cleaner_bytes": {
+            "regex": re.compile(r"^segment_cleaner_(.*_bytes.*)$"),
+            "unit": "bytes",
+        },
+        "segment_cleaner_segments": {
+            "regex": re.compile(r"^segment_cleaner_segments"),
+            "unit": "bytes",
+        },
+        "segment_cleaner_info": {
+            "regex": re.compile(r"^segment_cleaner_(available_ratio|reclaim_ratio|segment_size|projected_count)"),
             "unit": "bytes",
         },
     }

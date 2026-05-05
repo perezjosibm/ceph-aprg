@@ -508,7 +508,7 @@ def create_rate_analyzer(osd_type: str) -> BaseOSDRateAnalyzer:
         raise ValueError(f"Unknown OSD type: {osd_type}. Use 'seastore', 'bluestore', or 'classic'")
 
 
-def detect_osd_type(data: Dict[str, Any]) -> str:
+def _detect_osd_type(data: Dict[str, Any]) -> str:
     """
     Detect OSD type from metrics data structure.
     
