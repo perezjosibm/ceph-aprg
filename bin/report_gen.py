@@ -56,7 +56,7 @@ def main(argv):
         "-k",
         "--skip_plotting",
         action="store_true",
-        help="True to skip plotting inline and only save the generatede plots",
+        help="True to skip plotting inline and only save the generated plots",
         default=False,
     )
     parser.add_argument(
@@ -64,7 +64,7 @@ def main(argv):
         "--config",
         type=str,
         required=True,
-        help="Input config .json describing the config schema: [list] of input .json files,",
+        help="Input config .json describing the report config schema: [list] of input .json files,",
         default=None,
     )
 

@@ -42,6 +42,7 @@ RUN yum install python3-yaml -y
 RUN yum install python3-debug.x86_64 -y
 RUN yum install gnuplot -y
 RUN yum install vim -y
+RUN yum install nvme-cli -y
 # Ceph: on its own volume as well
 RUN git clone --depth=1 https://github.com/ceph/ceph.git
 RUN cd ceph && WITH_CRIMSON=true ./install-deps.sh

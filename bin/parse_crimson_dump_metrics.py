@@ -749,15 +749,16 @@ def load_crimson_dump_dataframe(json_fname: str) -> pd.DataFrame:
 try:
     from osd_rate_analyzers import (
         create_rate_analyzer,
-        detect_osd_type,
+        _detect_osd_type,# Probably redundant since we have detect_osd_type in dump_parsers, but keeping it separate for now
         CrimsonSeaStoreRateAnalyzer,
         CrimsonBlueStoreRateAnalyzer,
         ClassicOSDRateAnalyzer
     )
     _HAS_OSD_ANALYZERS = True
+    logger.info("osd_rate_analyzers loaded")
 except ImportError:
     _HAS_OSD_ANALYZERS = False
-    logger.warning("osd_rate_analyzers module not found, using legacy analyzer")
+    logger.warning("Error when importing osd_rate_analyzers, using legacy analyzer")
 
 
 class CrimsonMetricsRateAnalyzer:
