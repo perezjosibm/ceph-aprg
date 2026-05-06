@@ -526,7 +526,8 @@ def _detect_osd_type(data: Dict[str, Any]) -> str:
     if 'metrics' in data and isinstance(data['metrics'], list):
         # Check for SeaStore-specific metrics
         metrics_list = data['metrics']
-        has_seastore = any('segment_manager' in str(item) or 'cache_trans' in str(item) 
+        # TODO: replace this condition with a regex like we use for the grouping of metrics in the analyzer
+        has_seastore = any('LBA_alloc_extents' in str(item) or 'cache_trans' in str(item) 
                           for item in metrics_list[:100])  # Check first 100 items
         
         if has_seastore:

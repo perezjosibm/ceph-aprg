@@ -624,7 +624,7 @@ def _get_metric_group(metric_name: str) -> str:
     return "ungrouped"
 
 
-def load_crimson_dump_dataframe_from_content(json_content: str) -> pd.DataFrame:
+def load_crimson_dump_dataframe_from_content(json_content: str) -> tuple: #pd.DataFrame:
     """
     Load OSD dump_metrics JSON content into a flat DataFrame.
     
@@ -638,6 +638,7 @@ def load_crimson_dump_dataframe_from_content(json_content: str) -> pd.DataFrame:
         
     Returns
     -------
+    osd_type : str
     pd.DataFrame
         DataFrame with columns: metric, group, shard, value, and any extra dimensions.
     """
@@ -701,11 +702,12 @@ def load_crimson_dump_dataframe_from_content(json_content: str) -> pd.DataFrame:
                         row["shard"] = int(row["shard"])
                     rows.append(row)
             
-            return pd.DataFrame(rows)
+            return osd_type, pd.DataFrame(rows)
             
         except Exception as e:
             logger.warning(f"Failed to use new parser hierarchy: {e}, falling back to legacy")
     
+    osd_type = "Crimson-SeaStore (legacy)"
     # Fallback to legacy parsing (Crimson format only)
     metrics = data.get("metrics", [])
     rows: List[Dict[str, Any]] = []
@@ -730,7 +732,7 @@ def load_crimson_dump_dataframe_from_content(json_content: str) -> pd.DataFrame:
             }
             row.update({k: v for k, v in entry.items() if k not in {"shard", "value"}})
             rows.append(row)
-    return pd.DataFrame(rows)
+    return osd_type, pd.DataFrame(rows)
 
 
 def load_crimson_dump_dataframe(json_fname: str) -> pd.DataFrame:
@@ -815,7 +817,7 @@ class CrimsonMetricsRateAnalyzer:
         if self._legacy_mode or self.analyzer:
             return
         
-        detected_type = detect_osd_type(data)
+        detected_type = _detect_osd_type(data)
         self._initialize_analyzer(detected_type)
         
     def add_snapshot(self, timestamp: float, metrics_data: Dict[str, Any]) -> None:
@@ -831,6 +833,7 @@ class CrimsonMetricsRateAnalyzer:
         """
         # Auto-detect OSD type from first snapshot if not set
         if not self._legacy_mode and not self.analyzer:
+            logger.info(f"Autodetecting osd_type")
             self._auto_detect_osd_type(metrics_data)
         
         # Delegate to OSD-specific analyzer if available
@@ -842,6 +845,8 @@ class CrimsonMetricsRateAnalyzer:
             'timestamp': timestamp,
             'data': metrics_data
         })
+
+    def sort_snapshots(self) -> None:
         # Could be more efficient if we sort them once we load them all
         self.snapshots.sort(key=lambda x: x['timestamp'])
         
@@ -1108,6 +1113,7 @@ class CrimsonMetricsRateAnalyzer:
     def generate_rate_report(self, output_file: Optional[str] = None) -> str:
         """
         Generate a human-readable rate analysis report.
+        TODO: convert it to LaTeX or Markdown format for better formatting and potential PDF output.
         
         Parameters
         ----------

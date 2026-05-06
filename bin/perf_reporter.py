@@ -271,8 +271,9 @@ class PerfReporter(object):
                 df = load_diskstat_dataframe_from_content(content)
                 kind = "diskstat"
             elif re.search(r"_dump\.json$", base):
-                df = load_crimson_dump_dataframe_from_content(content)
-                kind = "crimson_dump"
+                osd_type, df = load_crimson_dump_dataframe_from_content(content)
+                # kind = f"{osd_type}_dump" 
+                kind = "crimson_dump" # The OSD type is now detected inside the loader, and returned along with the DataFrame
             elif re.search(r"_perf_stat\.json$", base):
                 df = load_perf_stat_dataframe_from_content(content)
                 kind = "perf_stat"
@@ -286,6 +287,7 @@ class PerfReporter(object):
                     "timestamp": ts,
                     "source": member,
                     "frame": df,
+                    "osd_type": osd_type if kind == "crimson_dump" else None,
                 }
             )
 
@@ -343,7 +345,8 @@ class PerfReporter(object):
         analyzer = CrimsonMetricsRateAnalyzer()
         for snap in crimson_snapshots:
             analyzer.add_snapshot(snap['timestamp'], snap['data'])
-        
+        analyzer.sort_snapshots()
+
         logger.info(f"Run {name}: Calculating rates from {len(crimson_snapshots)} crimson dump snapshots")
         
         # Calculate rates between first and last snapshot
@@ -759,7 +762,7 @@ class PerfReporter(object):
         # Find all FIO job JSON files in the archive
         fio_job_files = [
             member for member in archive.namelist()
-            if member.endswith('_p0.json') and '/FIO/' in member
+            if member.endswith('_p0.json') and 'FIO/' in member
         ]
         
         if not fio_job_files:
