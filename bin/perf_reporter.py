@@ -15,7 +15,7 @@ import pprint
 import zipfile
 from io import StringIO
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -315,10 +315,9 @@ class PerfReporter(object):
                 data = json.loads(content)
                 
                 # Convert timestamp string to float (Unix timestamp)
-                # Format: YYYYMMDD_HHMMSS
-                from datetime import datetime
+                # Format: YYYYMMDD_HHMMSS (assumed to be in UTC)
                 if ts != "unknown_ts":
-                    dt = datetime.strptime(ts, "%Y%m%d_%H%M%S")
+                    dt = datetime.strptime(ts, "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
                     timestamp = dt.timestamp()
                 else:
                     # Use a sequential counter if timestamp extraction fails
@@ -813,8 +812,8 @@ class PerfReporter(object):
             # Convert timestamp string to Unix timestamp for comparison
             ts_str = entry['timestamp']
             try:
-                # Parse timestamp format: YYYYMMDD_HHMMSS
-                dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+                # Parse timestamp format: YYYYMMDD_HHMMSS (assumed to be in UTC)
+                dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
                 ts_unix = dt.timestamp()
                 
                 # Check if timestamp falls within interval
@@ -957,7 +956,7 @@ class PerfReporter(object):
                 
                 for entry in filtered_entries:
                     ts_str = entry['timestamp']
-                    dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+                    dt = datetime.strptime(ts_str, "%Y%m%d_%H%M%S").replace(tzinfo=timezone.utc)
                     ts_unix = dt.timestamp()
                     
                     # Load the original JSON data for rate calculation

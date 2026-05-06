@@ -17,7 +17,7 @@ Author: Jose J Palacios-Perez
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 
@@ -48,8 +48,8 @@ class WorkloadInterval:
     def __repr__(self) -> str:
         return (f"WorkloadInterval(workload={self.workload_name}, "
                 f"iodepth={self.iodepth}, "
-                f"start={datetime.fromtimestamp(self.start_time).strftime('%H:%M:%S')}, "
-                f"end={datetime.fromtimestamp(self.end_time).strftime('%H:%M:%S')}, "
+                f"start={datetime.fromtimestamp(self.start_time, tz=timezone.utc).strftime('%H:%M:%S')}, "
+                f"end={datetime.fromtimestamp(self.end_time, tz=timezone.utc).strftime('%H:%M:%S')}, "
                 f"duration={self.duration_ms}ms)")
 
 
@@ -129,6 +129,11 @@ class FioJobParser:
             raise ValueError("FIO JSON missing 'timestamp' field")
         
         completion_timestamp = float(data['timestamp'])
+        # Log completion time in UTC
+        completion_time_utc = datetime.fromtimestamp(completion_timestamp, tz=timezone.utc)
+        time_str = data.get('time', 'N/A')
+        logger.info(f"FIO test completed at timestamp: {completion_timestamp} "
+                   f"(UTC: {completion_time_utc.isoformat()}) -- Original: {time_str}")
         
         # Extract iodepth from global options
         iodepth = 1  # default
@@ -165,10 +170,12 @@ class FioJobParser:
             # Extract runtime (in milliseconds)
             # Check both read and write sections
             runtime_ms = 0
-            if 'write' in job and 'runtime' in job['write']:
+            if 'write' in workload_name and 'runtime' in job['write']: # job
                 runtime_ms = job['write']['runtime']
-            elif 'read' in job and 'runtime' in job['read']:
+            elif 'read' in workload_name and 'runtime' in job['read']: # job 
                 runtime_ms = job['read']['runtime']
+            elif 'job_runtime' in job:
+                runtime_ms = job['job_runtime']
             
             if runtime_ms == 0:
                 logger.warning(f"Job {job_name} has zero runtime, skipping")
@@ -247,8 +254,8 @@ class FioJobParser:
                 'start_time': interval.start_time,
                 'end_time': interval.end_time,
                 'duration_ms': interval.duration_ms,
-                'start_time_iso': datetime.fromtimestamp(interval.start_time).isoformat(),
-                'end_time_iso': datetime.fromtimestamp(interval.end_time).isoformat(),
+                'start_time_iso': datetime.fromtimestamp(interval.start_time, tz=timezone.utc).isoformat(),
+                'end_time_iso': datetime.fromtimestamp(interval.end_time, tz=timezone.utc).isoformat(),
             }
         return result
 

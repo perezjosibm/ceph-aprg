@@ -84,7 +84,7 @@ def main(argv):
     logger.debug(f"Got options: {options}")
 
     os.chdir(options.directory)
-    report = PerfReporter(options.config)
+    report = PerfReporter(options.config, options.skip_plotting) # options.latarget,
     report.start()
     report.compile()
 
