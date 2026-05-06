@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
 
+__author__ = "Jose J Palacios-Perez"
 logger = logging.getLogger(__name__)
 
 

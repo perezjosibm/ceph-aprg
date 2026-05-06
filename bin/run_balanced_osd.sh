@@ -103,9 +103,6 @@ while getopts 'ab:c:d:e:g:t:s:r:jlpxy:z:q' option; do
  if [ "$REGEN" = true ]; then
      fun_run_regen_fio_files
  fi
- if [ "$PRECOND" = true ]; then
-     fun_run_precond "precond"
- fi
  if [ "$OSD_TYPE" == "all" ]; then
      for OSD_TYPE in classic sea; do # cyan blue 
          fun_run_bal_vs_default_tests ${OSD_TYPE} ${BALANCE}

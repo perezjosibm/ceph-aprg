@@ -413,6 +413,13 @@ fun_run_fixed_bal_tests() {
   for NUM_OSD in ${sorted_keys}; do
     eval "${test_table["${NUM_OSD}"]}"
     for x in "${!test_row[@]}"; do printf "[%s]=%s\n" "$x" "${test_row[$x]}" ; done
+    
+    # Invoke the preconditioning:
+     if [ "$PRECOND" = true ]; then
+        fun_run_precond "${OSD_TYPE}_${NUM_OSD}osd_${SUFFIX}"  "${test_row[store_devs]}" && \ 
+            echo -e "${GREEN}== Preconditioning completed for ${OSD_TYPE} ${NUM_OSD} OSDs ==${NC}" || \
+            echo -e "${RED}== Preconditioning failed for ${OSD_TYPE} ${NUM_OSD} OSDs ==${NC}"
+     fi
 
     if [ "${test_row['fio_type']}" == "custom" ]; then
         FIO_SPEC="${test_row['fio_type']}"
@@ -566,18 +573,41 @@ fun_run_bal_vs_default_tests() {
 # Remember to regenerate the radwrite64k.fio for the config of drives
 fun_run_precond(){
     local TEST_NAME=$1
+    local STORE_DEVS=$2
 
     echo -e "${GREEN}== Preconditioning ==${NC}"
     jc --pretty /proc/diskstats > ${RUN_DIR}/${TEST_NAME}_precond.json
     #fun_get_diskstats ${TEST_NAME}
-    fio ${FIO_JOBS}randwrite64k.fio --output=${RUN_DIR}/precond_${TEST_NAME}.json --output-format=json
+    # 1. Secure Erase (Warning: Destroys all data): split STORE_DEVS by comma and run for each of them, since nvme format does not support multiple namespaces
+    #nvme format /dev/nvme0n1 -s 1
+    for dev in $(IFS=','; echo ${STORE_DEVS}); do 
+        echo -e "${GREEN}== Secure Erase $dev ==${NC}"
+        nvme format $dev -s 1
+    done
+
+    # 2. Sequential Precondition (2 passes): 
+    for dev in $(IFS=','; echo ${STORE_DEVS}); do 
+        fio --name=precond_seq --filename=$dev --ioengine=libaio --direct=1 \
+            --rw=write --bs=1M --loops=2 --numjobs=1 &
+    done
+    wait # wait for all preconditioning jobs to finish
+
+    # 3. Random Precondition (The "Steady State" soak)
+    echo -e "${GREEN}== Preconditioning one hour soak $(date) ==${NC}"
+    for dev in $(IFS=','; echo ${STORE_DEVS}); do 
+        fio --name=precond_rand --filename=$dev --ioengine=libaio --direct=1 \
+            --rw=randwrite --bs=4k --runtime=3600 --time_based --numjobs=4 --iodepth=32 &
+    done
+    wait # wait for all preconditioning jobs to finish
+    #fio ${FIO_JOBS}randwrite64k.fio --output=${RUN_DIR}/precond_${TEST_NAME}.json --output-format=json
     if [ $? -ne 0 ]; then
         echo -e "${RED}== FIO preconditioning failed ==${NC}"
-        exit 1
+        return 1
     fi
     #fun_get_diskstats ${TEST_NAME}
     # We might need to exted to get a non-destructive option since we might need to look at further measurements
     jc --pretty /proc/diskstats | python3 ${SCRIPT_DIR}/diskstat_diff.py -d ${RUN_DIR} -a  ${TEST_NAME}_precond.json 
+    return 0
 }
 
 #############################################################################################
