@@ -16,12 +16,12 @@ export DELAY_SAMPLES=20 # sec delay between samples
 # This is just the ration RUNTIME div by DELAY_SAMPLES:
 export NUM_SAMPLES=$(( RUNTIME / DELAY_SAMPLES ))
 export FIO_CPU_CORES="96-191"
-export VSTART_CPU_CORES="0-0"
+export VSTART_CPU_CORES="0-1"
 # Test plan: to be extended to a .json file
 # The index of the table indicates the number of drives/OSDs
 
 test_row['osd']="1"
-test_row['reactor_range']="1" # Number of reactors, can be a ','-sep range
+test_row['reactor_range']="1,2" # Number of reactors, can be a ','-sep range
 #test_row['nat']="$NUM_ALIEN_THREADS" ## do not apply for Seastore
 test_row['store_devs']='/dev/nvme0n1'
 test_row['vstart_cpu_set']="${VSTART_CPU_CORES}"
@@ -34,7 +34,7 @@ test_row['fio_numjobs']="1" # Number of threads per job, can be a ','-sep range,
 test_row['fio_blocksize']="4k"
 test_row['fio_iodepth']="1,2,4,8,16,32,64,128" #1,2,3,4,5,6,7,8,9,10"
 #test_row['fio_workload']="rados -p ${RADOS_POOL_NAME} -t 16 -d 1 -w randrw -r 70% -a -m"
-test_row['classic_cpu_set']="0-0"
+test_row['classic_cpu_set']="0-1"
 #test_row['fio_workload']="-j -a -r"
 string=$(declare -p test_row)
 test_table["1"]=${string}

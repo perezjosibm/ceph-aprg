@@ -495,9 +495,11 @@ fun_run_fixed_bal_tests() {
                   # Simply create a pool for RADOS
                   #ceph osd pool create crimsonpool 128 128 && \; 
                   #pool_name="${RBD_POOL_NAME:-crimsonpool}"
+                  echo "ceph osd pool create ${test_row['pool_type']} ${test_row['pool_size']} && ceph status;"
                   ceph osd pool create ${test_row['pool_type']} ${test_row['pool_size']} && ceph status;
                   ceph osd pool ls;
                   rados df; 
+                  echo "ceph osd pool set noautoscale"
                   ceph osd pool set noautoscale
                   ;;
               rbd)

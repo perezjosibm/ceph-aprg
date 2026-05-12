@@ -495,7 +495,7 @@ class Scrappy:
         """
         Show the number of occurrences of the given pattern in the log file.
         """
-        cmd = f"grep -c -e {pattern} {log_file}"
+        cmd = f"grep -c -e '{pattern}' {log_file}"
         logger.debug(f"Executing: {cmd}")
         proc = subprocess.Popen(
             cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE

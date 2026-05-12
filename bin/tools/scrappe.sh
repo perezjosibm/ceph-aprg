@@ -95,5 +95,6 @@ for x in ($FAILED); do
 	wait; 
 	echo "== job ${x} completed scan =="
 done
-find ./ -size 0 -delete
+#find ./ -size 0 -delete
+find . -type f -name "*.log" -size 0c -exec rm {} \;
 
