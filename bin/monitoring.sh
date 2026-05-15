@@ -49,10 +49,11 @@ mon_dump_osd_threads() {
 function mon_start_monitor() {
     local run_dir=$1
     local OSD_TYPE=$2
+    local queued=$3
 
     mon_get_osd_pids
     local ts=$(date +%Y%m%d_%H%M%S)
-    local osd_out="${run_dir}/${ts}_dump.json"
+    local osd_out="${run_dir}/${ts}_${queued}qd_dump.json"
     if [ "${OSD_TYPE}" == "classic" ]; then
         cmd="/ceph/build/bin/ceph tell osd.0 perf dump"
     else
@@ -67,8 +68,8 @@ function mon_start_monitor() {
         PID=${osd_id[$i]}
         #echo -e "${GREEN}== Starting perf stat for PID: ${PID} ==${NC}"
         ts=$(date +%Y%m%d_%H%M%S)
-        perf_out="${run_dir}/${i}_${ts}_perf_stat.json"
-        top_out="${run_dir}/${i}_${ts}_top.out"
+        perf_out="${run_dir}/${i}_${ts}_${queued}qd_perf_stat.json"
+        top_out="${run_dir}/${i}_${ts}_${queued}qd_top.out"
         # need more resolution
         #perf stat -e "${perf_options[default]}" -i -p ${PID} -j -o ${perf_out} -- sleep ${RUNTIME} 2>&1 >/dev/null & 
         # Need something like this:
@@ -79,8 +80,8 @@ function mon_start_monitor() {
     # Collect OSD performance metrics during the test run
     for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
         ts=$(date +%Y%m%d_%H%M%S)
-        ds_out="${run_dir}/${ts}_ds.json"
-        osd_out="${run_dir}/${ts}_dump.json"
+        ds_out="${run_dir}/${ts}_${queued}qd_ds.json"
+        osd_out="${run_dir}/${ts}_${queued}qd_dump.json"
         ( $cmd > ${osd_out} )
         jc --pretty /proc/diskstats > ${ds_out}
         # Disabling reactor_utilization in favour of full dumps

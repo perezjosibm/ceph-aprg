@@ -253,7 +253,7 @@ fun_run_fio_custom(){
                     --output=${json_name}  --output-format=json ) &
             fi
             fio_pid=$!
-            ( mon_start_monitor ${run_dir} ${OSD_TYPE}) &
+            ( mon_start_monitor ${run_dir} ${OSD_TYPE} $io) &
             mon_pid=$!
             fun_wait_fio $fio_pid
             echo "$(date) Killing monitoring jobs (pid ${mon_pid})..."
@@ -496,11 +496,18 @@ fun_run_fixed_bal_tests() {
                   #ceph osd pool create crimsonpool 128 128 && \; 
                   #pool_name="${RBD_POOL_NAME:-crimsonpool}"
                   echo "ceph osd pool create ${test_row['pool_type']} ${test_row['pool_size']} && ceph status;"
-                  ceph osd pool create ${test_row['pool_type']} ${test_row['pool_size']} && ceph status;
+                  ceph osd pool create ${test_row['pool_type']} ${test_row['pool_size']} 
+                  ceph osd pool set ${test_row['pool_type']} size 1 --yes-i-really-mean-it && ceph status;
                   ceph osd pool ls;
                   rados df; 
                   echo "ceph osd pool set noautoscale"
                   ceph osd pool set noautoscale
+                  # Turn off balancer to avoid moving PGs
+                  ceph balancer off
+                  # Turn off deep scrub
+                  ceph osd set nodeep-scrub
+                  # Turn off scrub
+                  ceph osd set noscrub
                   ;;
               rbd)
                   echo "$(date) RBD..."
@@ -584,13 +591,13 @@ fun_run_precond(){
     #nvme format /dev/nvme0n1 -s 1
     for dev in $(IFS=','; echo ${STORE_DEVS}); do 
         echo -e "${GREEN}== Secure Erase $dev ==${NC}"
-        nvme format $dev -s 1 --force
+        nvme format $dev -s 1 --force --lbaf=1
     done
 
     # 2. Sequential Precondition (2 passes): 
     for dev in $(IFS=','; echo ${STORE_DEVS}); do 
         fio --name=precond_seq --filename=$dev --ioengine=libaio --direct=1 \
-            --rw=write --bs=1M --loops=2 --numjobs=1 &
+            --rw=write --bs=1M --loops=2 --numjobs=1  --size=100% &
     done
     wait # wait for all preconditioning jobs to finish
 
