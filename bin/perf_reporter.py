@@ -572,6 +572,58 @@ class PerfReporter(object):
                 )
                 plt.close()
 
+    def _get_agg_df(self, entries: list) -> pd.DataFrame:
+        """
+        Auxiliar method to combine the crimson dump snapshots into a single
+        DataFrame, and aggregate the values per (timestamp, metric, group,
+        shard)
+        """
+        
+        frames = []
+        for entry in entries:
+            df = entry["frame"].copy()
+            df["timestamp"] = entry["timestamp"]
+            frames.append(df)
+        if not frames:
+            return pd.DataFrame()
+
+        combined = pd.concat(frames, ignore_index=True)
+        ts_order = sorted(combined["timestamp"].unique())
+        combined["timestamp"] = pd.Categorical(
+            combined["timestamp"], categories=ts_order, ordered=True
+        )
+        combined["shard"] = combined["shard"].astype(str)
+
+        agg = (
+            combined.groupby(["timestamp", "metric", "group", "shard"], observed=True)[
+                "value"
+            ]
+            .mean()
+            .reset_index()
+        )
+        return agg
+
+    def _normalise_grp(self, grp: pd.DataFrame) -> str: #pd.DataFrame:
+        """
+        Min-max normalise the "value" column of the group if it contains multiple metrics with different magnitudes.
+        if grp["value"].max() == grp["value"].min():
+            return grp
+        grp["value"] = (grp["value"] - grp["value"].min()) / (
+            grp["value"].max() - grp["value"].min()
+        )
+        return grp 
+        """
+        if grp["metric"].nunique() > 1:
+            min_v = grp["value"].min()
+            max_v = grp["value"].max()
+            denom = max_v - min_v
+            grp["value"] = (grp["value"] - min_v) / denom if denom > 0 else 0.0
+            ylabel = "value (normalised)"
+        else:
+            ylabel = "value"
+
+        return ylabel
+
     def _plot_crimson_dump_over_time(self, run_name: str, entries: list) -> None:
         """
         Plot Crimson OSD dump metrics over time.
@@ -588,7 +640,6 @@ class PerfReporter(object):
             Label for this FIO run.
         entries : list
             Telemetry entries (timestamp, source, frame).
-        """
         frames = []
         for entry in entries:
             df = entry["frame"].copy()
@@ -611,20 +662,14 @@ class PerfReporter(object):
             .mean()
             .reset_index()
         )
+        """
+        agg = self._get_agg_df(entries)
 
         for group_name in agg["group"].unique():
             grp = agg[agg["group"] == group_name].copy()
             if grp.empty:
                 continue
-
-            if grp["metric"].nunique() > 1:
-                min_v = grp["value"].min()
-                max_v = grp["value"].max()
-                denom = max_v - min_v
-                grp["value"] = (grp["value"] - min_v) / denom if denom > 0 else 0.0
-                ylabel = "value (normalised)"
-            else:
-                ylabel = "value"
+            ylabel = self._normalise_grp(agg)
 
             try:
                 sns.set_theme(style="darkgrid")
@@ -1074,7 +1119,8 @@ class PerfReporter(object):
             return
 
         # Combine all data
-        combined_df = pd.concat(plot_data, ignore_index=True)
+        combined_df = pd.concat(plot_data) #, ignore_index=True)# lost columns, why?
+        logger.debug(f"Combined data for {workload_name} ({metric_type}): {pp.pformat(combined_df.columns)}\n{pp.pformat(combined_df)}")
 
         # Generate chart based on metric type
         try:
@@ -1084,6 +1130,7 @@ class PerfReporter(object):
                 self._plot_workload_crimson_metrics(workload_name, combined_df)
         except Exception as e:
             logger.error(f"Error plotting {metric_type} for {workload_name}: {e}")
+
 
     def _plot_workload_diskstat(self, workload_name: str, df: pd.DataFrame) -> None:
         """Plot disk statistics for a workload across runs and iodepths."""
@@ -1108,7 +1155,7 @@ class PerfReporter(object):
 
                 # Prepare data for plotting
                 plot_df = df[["run_name", "iodepth", metric]].copy()
-                plot_df["iodepth"] = plot_df["iodepth"].astype(str)
+                plot_df["iodepth"] = plot_df["iodepth"].astype(int)
 
                 sns.barplot(data=plot_df, x="iodepth", y=metric, hue="run_name", ax=ax)
 
@@ -1117,7 +1164,7 @@ class PerfReporter(object):
                 ax.set_ylabel(metric.replace("_", " ").title())
                 plt.tight_layout()
 
-                file_name = f"workload_{workload_name}_diskstat_{metric}.png"
+                file_name = f"{workload_name}_diskstat_{metric}.png"
                 t_path = self.get_target_path(file_name, "figures")
                 plt.savefig(t_path, dpi=100, bbox_inches="tight")
 
@@ -1138,13 +1185,101 @@ class PerfReporter(object):
                 logger.error(f"Error plotting {metric} for {workload_name}: {e}")
                 plt.close()
 
+
     def _plot_workload_crimson_metrics(
         self, workload_name: str, df: pd.DataFrame
     ) -> None:
         """Plot Crimson OSD metrics for a workload across runs and iodepths."""
-        # This would plot selected crimson metrics
-        # Implementation similar to _plot_workload_diskstat
-        logger.info(f"Crimson metrics plotting for {workload_name} - to be implemented")
+        # This would plot selected crimson metrics Implementation similar to
+        # _plot_workload_diskstat but with different metrics and possibly line
+        # plots instead of bars
+        def _plot_single_df_grp(
+            df: pd.DataFrame, workload_name: str # metric: str,
+        ):
+            # if metric not in df.columns:
+            #     logger.warning(f"Metric {metric} not found for {workload_name}")
+            #     return
+            sns.set_theme(style="darkgrid")
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            # plot_df = df[["run_name", "iodepth", metric]].copy()
+            # plot_df["iodepth"] = plot_df["iodepth"].astype(int)
+            agg = (
+                df.groupby(["iodepth", "metric", "group", "shard"], observed=True)[
+                    "value"
+                ]
+                .mean()
+                .reset_index()
+            )
+
+            for group_name in agg["group"].unique():
+                grp = agg[agg["group"] == group_name].copy()
+                if grp.empty:
+                    continue
+                ylabel = self._normalise_grp(grp)
+                logger.debug(f"{group_name}: {pp.pformat(grp)}")
+
+                try:
+                    # This plots per single metric, we rather try plotting by metriic group
+                    sns.lineplot(
+                        data=grp,
+                        x="iodepth",
+                        y="value", #metric,
+                        hue="run_name",
+                        marker="o",
+                        ax=ax
+                    )
+                    ax.set_title(f"{workload_name} - {metric}:{group_name}")
+                    ax.set_xlabel("I/O Depth")
+                    ax.set_ylabel(ylabel)
+                    ax.tick_params(axis="x", rotation=45)
+                    ax.set_xticks(ax.get_xticks()[::5])  # every 5th tick to avoid clutter
+                    #ax.set_ylabel(metric.replace("_", " ").title())
+                    plt.tight_layout()
+                except Exception as e:
+                    logger.error(
+                        f"Error plotting crimson_dump {group_name} for {metric}: {e}"
+                    )
+
+                file_name = f"{workload_name}_crimson_{metric}.png"
+                t_path = self.get_target_path(file_name, "figures")
+                plt.savefig(t_path, dpi=100, bbox_inches="tight")
+
+                self.add_entry_figure(
+                    key="tex",
+                    title=f"{workload_name}:{metric} Crimson OSD {group_name}",
+                    file_name=file_name,
+                    dir_path=os.path.join(
+                        "figures/", f"{self.config['output']['name']}/"
+                    ),
+                    label=f"fig:{workload_name}-{group_name}-{metric}",
+                )
+                plt.show()
+                plt.close()
+                logger.info(f"Generated chart: {file_name}")
+
+        logger.debug(f"{workload_name}: {pp.pformat(df.columns)}\n{pp.pformat(df.head())}")
+        _plot_single_df_grp(df, workload_name)
+        # Identify the metrics from the OSD group dataframe
+        # if "metric" in df.columns and "value" in df.columns:
+        #     logger.info(f"Plotting Crimson OSD metrics for {workload_name}: {pp.pformat(df['metric'].unique())}")
+        #     for metric in df["metric"].unique():
+        #         metric_df = df[df["metric"] == metric]
+        #         _plot_single_df_grp(metric_df, metric, workload_name)
+
+
+    def _gen_comparison_charts_per_workload(self):
+        # Step 5: Generate comparison charts for each workload
+        logger.info("Generating per-workload comparison charts")
+        workload_list = ["seqwrite", "randwrite", "randread", "seqread"]
+
+        for workload in workload_list:
+            for metric_type in [ "crimson_dump"]: #"diskstat",
+                try:
+                    self._plot_workload_metrics(workload, metric_type)
+                except Exception as e:
+                    logger.error(f"Error plotting {workload}/{metric_type}: {e}")
+
 
     def analyze_workload_metrics(self) -> None:
         """
@@ -1201,17 +1336,9 @@ class PerfReporter(object):
 
                 logger.error(traceback.format_exc())
                 continue
-
+        
         # Step 5: Generate comparison charts for each workload
-        logger.info("Generating per-workload comparison charts")
-        workload_list = ["seqwrite", "randwrite", "randread", "seqread"]
-
-        for workload in workload_list:
-            for metric_type in ["diskstat", "crimson_dump"]:
-                try:
-                    self._plot_workload_metrics(workload, metric_type)
-                except Exception as e:
-                    logger.error(f"Error plotting {workload}/{metric_type}: {e}")
+        self._gen_comparison_charts_per_workload()
 
         logger.info("Per-workload analysis complete")
 
@@ -1621,6 +1748,7 @@ class PerfReporter(object):
             if "kind" in self.config:
                 self.makedirs()
                 self.load_csv_files(self.config["input"])
+                self._gen_comparison_charts_per_workload()
             else:
                 logger.warning("No 'kind' key in config, skipping Legacy style")
                 # This would be from the PerfReporterLegacy class

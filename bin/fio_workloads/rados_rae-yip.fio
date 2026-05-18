@@ -34,7 +34,7 @@ runtime=60
 stonewall
 
 [rados-seqread]
-rw=write
+rw=read
 io_size=256m
 nrfiles=32
 time_based=1
