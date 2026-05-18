@@ -43,6 +43,7 @@ class WorkloadInterval:
     start_time: float
     end_time: float
     duration_ms: int
+    duration_sec: int
     job_index: int
     
     def __repr__(self) -> str:
@@ -50,7 +51,7 @@ class WorkloadInterval:
                 f"iodepth={self.iodepth}, "
                 f"start={datetime.fromtimestamp(self.start_time, tz=timezone.utc).strftime('%H:%M:%S')}, "
                 f"end={datetime.fromtimestamp(self.end_time, tz=timezone.utc).strftime('%H:%M:%S')}, "
-                f"duration={self.duration_ms}ms)")
+                f"duration={self.duration_sec}s)")
 
 
 class FioJobParser:
@@ -192,6 +193,7 @@ class FioJobParser:
                 start_time=start_time,
                 end_time=end_time,
                 duration_ms=runtime_ms,
+                duration_sec=duration_sec,
                 job_index=job_idx
             )
             

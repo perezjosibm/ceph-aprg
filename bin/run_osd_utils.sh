@@ -439,7 +439,9 @@ fun_run_fixed_bal_tests() {
           else
               title="(${OSD_TYPE}) $NUM_OSD OSD crimson, $NUM_REACTORS reactor,  fixed ${FIO_SPEC}" 
               # Default does not respect the balance test_row[vstart_cpu_set], but balanced does
-              cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac '${test_row[vstart_cpu_set]}' /ceph/src/vstart.sh\
+              # # Disabling taskset for Crimson
+              #cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 taskset -ac '${test_row[vstart_cpu_set]}' /ceph/src/vstart.sh\
+              cmd="MDS=0 MON=1 OSD=${NUM_OSD} MGR=1 /ceph/src/vstart.sh\
  --new -x --localhost --without-dashboard --redirect-output ${osd_be_table[${OSD_TYPE}]} ${test_row[store_devs]}\
  --crimson ${bal_ops_table[${BAL_KEY}]} --crimson-smp ${NUM_REACTORS} --no-restart"
 

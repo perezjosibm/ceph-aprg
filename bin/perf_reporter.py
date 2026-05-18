@@ -947,12 +947,12 @@ class PerfReporter(object):
                     }
 
                     logger.debug(
-                        f"  {telem_kind}: {len(filtered_entries)} samples aggregated {pp.pformat(agg_df.to_dict())}"
+                        f"  {telem_kind}: {len(filtered_entries)} samples aggregated" # {pp.pformat(agg_df.to_dict())}
                     )
 
         # Store in ds_list
         run_data["workload_metrics"] = dict(workload_metrics)
-        logger.info(f"Run {name}: Workload metrics aggregation completed {pp.pformat(run_data['workload_metrics'])}")
+        logger.info(f"Run {name}: Workload metrics aggregation completed ") #{pp.pformat(run_data['workload_metrics'])}
 
     def _calculate_workload_rates(self, name: str) -> None:
         """
@@ -1053,19 +1053,19 @@ class PerfReporter(object):
                     continue
 
                 # Extract relevant metrics based on type
-                if metric_type == "diskstat":
-                    agg_df = metrics[metric_type]["aggregated"]
-                    # Add metadata columns
-                    agg_df = agg_df.copy()
-                    agg_df["run_name"] = run_name
-                    agg_df["iodepth"] = iodepth
-                    plot_data.append(agg_df)
-                elif metric_type == "crimson_dump":
-                    agg_df = metrics[metric_type]["aggregated"]
-                    agg_df = agg_df.copy()
-                    agg_df["run_name"] = run_name
-                    agg_df["iodepth"] = iodepth
-                    plot_data.append(agg_df)
+                # if metric_type == "diskstat":
+                #     agg_df = metrics[metric_type]["aggregated"]
+                #     # Add metadata columns
+                #     agg_df = agg_df.copy()
+                #     agg_df["run_name"] = run_name
+                #     agg_df["iodepth"] = iodepth
+                #     plot_data.append(agg_df)
+                # elif metric_type == "crimson_dump":
+                agg_df = metrics[metric_type]["aggregated"]
+                agg_df = agg_df.copy()
+                agg_df["run_name"] = run_name
+                agg_df["iodepth"] = iodepth
+                plot_data.append(agg_df)
 
         if not plot_data:
             logger.warning(
@@ -1463,6 +1463,16 @@ class PerfReporter(object):
             t_path = self.get_target_path(f"{workload}.tex", "tables")
             selected_columns = ['type', 'iodepth', 'bw', 'iops', 'total_ios', 'clat_ms', 'clat_stdev_ms']
             df_selected = df[selected_columns]
+            df_selected = df_selected.copy()
+            # df_selected = df_selected.rename(columns={
+            #     'type': 'type',
+            #     'iodepth': 'iodepth',
+            #     'bw': 'bw',
+            #     'iops': 'iops',
+            #     'total_ios': 'total_ios',
+            #     'clat_ms': 'clat_ms',
+            #     'clat_stdev_ms': 'clat_stdev_ms'
+            # })
             df_selected['type'] = df_selected['type'].str.replace('_', '.', regex=False)
             header=["Type", "IO Depth", "Bandwidth (MB/s)", "IOPS", "Total IOs", "Latency (ms)", "Latency Stdev (ms)"]
             df_selected.to_latex(t_path, index=False, float_format="%.2f", 
@@ -1653,9 +1663,17 @@ class PerfReporter(object):
         if "kind" in self.config:
             # self.makedirs()
             self.plot_csv_files()
+            #self.plot_telemetry_per_workload()
             # Disabling temporarly for testing
             # self.export_telemetry_csv_files()
-            # self.plot_telemetry_metrics()
+            # self.plot_telemetry_metrics() 
+            # this is by time, we might want to plot the telemetry metrics for
+            # each workload, so we can compare the performance of the different
+            # builds for each workload, and see how the performance evolves
+            # over time for each workload.  We can also plot the work rates for
+            # each workload, to see how the work rates evolve over time for
+            # each workload, and compare the work rates of the different builds
+            # for each workload.
             # # Perform per-workload analysis
             # self.analyze_workload_metrics()
         else:

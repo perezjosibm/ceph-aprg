@@ -28,6 +28,17 @@ numjobs=${num_jobs}
 rw=write
 io_size=256m
 nrfiles=32
+time_based=1
+runtime=60
+#verify=crc32c
+stonewall
+
+[rados-seqread]
+rw=write
+io_size=256m
+nrfiles=32
+time_based=1
+runtime=60
 #verify=crc32c
 stonewall
 
