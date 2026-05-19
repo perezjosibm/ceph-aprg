@@ -1189,83 +1189,154 @@ class PerfReporter(object):
     def _plot_workload_crimson_metrics(
         self, workload_name: str, df: pd.DataFrame
     ) -> None:
-        """Plot Crimson OSD metrics for a workload across runs and iodepths."""
-        # This would plot selected crimson metrics Implementation similar to
-        # _plot_workload_diskstat but with different metrics and possibly line
-        # plots instead of bars
-        def _plot_single_df_grp(
-            df: pd.DataFrame, workload_name: str # metric: str,
-        ):
-            # if metric not in df.columns:
-            #     logger.warning(f"Metric {metric} not found for {workload_name}")
-            #     return
-            sns.set_theme(style="darkgrid")
-            fig, ax = plt.subplots(figsize=(10, 6))
-
-            # plot_df = df[["run_name", "iodepth", metric]].copy()
-            # plot_df["iodepth"] = plot_df["iodepth"].astype(int)
-            agg = (
-                df.groupby(["iodepth", "metric", "group", "shard"], observed=True)[
-                    "value"
-                ]
-                .mean()
-                .reset_index()
-            )
-
-            for group_name in agg["group"].unique():
-                grp = agg[agg["group"] == group_name].copy()
-                if grp.empty:
-                    continue
-                ylabel = self._normalise_grp(grp)
-                logger.debug(f"{group_name}: {pp.pformat(grp)}")
-
-                try:
-                    # This plots per single metric, we rather try plotting by metriic group
+        """
+        Plot Crimson OSD metrics for a workload across runs and iodepths.
+        
+        This method organizes metrics by groups (using METRIC_GROUPS from
+        parse_crimson_dump_metrics), creates comparison charts with:
+        - X-axis: iodepth levels
+        - Y-axis: metric values (normalized if multiple metrics in group)
+        - Hue: run_name (for comparing different test runs)
+        - Style: metric name (for distinguishing metrics within a group)
+        
+        Args:
+            workload_name: Name of workload (e.g., 'seqwrite', 'randread')
+            df: DataFrame with columns: run_name, iodepth, metric, group, shard, value
+        """
+        from parse_crimson_dump_metrics import CrimsonDumpMetricsParser
+        
+        logger.info(f"Plotting Crimson OSD metrics for workload: {workload_name}")
+        logger.debug(f"Input DataFrame shape: {df.shape}, columns: {df.columns.tolist()}")
+        
+        # Verify required columns
+        required_cols = ['run_name', 'iodepth', 'metric', 'group', 'value']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            logger.error(f"Missing required columns: {missing_cols}")
+            return
+        
+        # Get metric groups from CrimsonDumpMetricsParser
+        METRIC_GROUPS = CrimsonDumpMetricsParser.METRIC_GROUPS
+        
+        # Aggregate data: average across shards for each (run_name, iodepth, metric, group)
+        agg_cols = ['run_name', 'iodepth', 'metric', 'group']
+        if 'shard' in df.columns:
+            # Average across shards
+            agg_df = df.groupby(agg_cols, observed=True)['value'].mean().reset_index()
+        else:
+            agg_df = df[agg_cols + ['value']].copy()
+        
+        logger.info(f"Aggregated data shape: {agg_df.shape}")
+        logger.debug(f"Unique groups: {sorted(agg_df['group'].unique())}")
+        
+        # Plot each metric group separately
+        for group_name in sorted(agg_df['group'].unique()):
+            group_df = agg_df[agg_df['group'] == group_name].copy()
+            
+            if group_df.empty:
+                logger.warning(f"No data for group: {group_name}")
+                continue
+            
+            # Get unit for this group
+            unit = METRIC_GROUPS.get(group_name, {}).get('unit', 'value')
+            
+            # Determine if normalization is needed
+            num_metrics = group_df['metric'].nunique()
+            if num_metrics > 1:
+                # Normalize values for comparison
+                min_val = group_df['value'].min()
+                max_val = group_df['value'].max()
+                denom = max_val - min_val
+                if denom > 0:
+                    group_df['value'] = (group_df['value'] - min_val) / denom
+                    ylabel = f"{unit} (normalized)"
+                else:
+                    ylabel = unit
+            else:
+                ylabel = unit
+            
+            logger.info(f"Plotting group '{group_name}' with {num_metrics} metrics, "
+                       f"{group_df['run_name'].nunique()} runs, "
+                       f"{group_df['iodepth'].nunique()} iodepth levels")
+            
+            try:
+                # Create figure
+                sns.set_theme(style="darkgrid")
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                # Convert iodepth to int for proper ordering
+                group_df['iodepth'] = group_df['iodepth'].astype(int)
+                group_df = group_df.sort_values('iodepth')
+                
+                # Plot with run_name as hue and metric as style
+                if num_metrics > 1:
+                    # Multiple metrics: use both hue and style
                     sns.lineplot(
-                        data=grp,
-                        x="iodepth",
-                        y="value", #metric,
-                        hue="run_name",
-                        marker="o",
+                        data=group_df,
+                        x='iodepth',
+                        y='value',
+                        hue='run_name',
+                        style='metric',
+                        markers=True,
+                        dashes=False,
                         ax=ax
                     )
-                    ax.set_title(f"{workload_name} - {metric}:{group_name}")
-                    ax.set_xlabel("I/O Depth")
-                    ax.set_ylabel(ylabel)
-                    ax.tick_params(axis="x", rotation=45)
-                    ax.set_xticks(ax.get_xticks()[::5])  # every 5th tick to avoid clutter
-                    #ax.set_ylabel(metric.replace("_", " ").title())
-                    plt.tight_layout()
-                except Exception as e:
-                    logger.error(
-                        f"Error plotting crimson_dump {group_name} for {metric}: {e}"
+                else:
+                    # Single metric: only use hue for run_name
+                    sns.lineplot(
+                        data=group_df,
+                        x='iodepth',
+                        y='value',
+                        hue='run_name',
+                        markers=True,
+                        marker='o',
+                        ax=ax
                     )
-
-                file_name = f"{workload_name}_crimson_{metric}.png"
+                
+                # Customize plot
+                ax.set_title(f"{workload_name} - {group_name}", fontsize=14, fontweight='bold')
+                ax.set_xlabel("I/O Depth", fontsize=12)
+                ax.set_ylabel(ylabel, fontsize=12)
+                ax.grid(True, alpha=0.3)
+                
+                # Set x-axis to show all iodepth values
+                iodepth_values = sorted(group_df['iodepth'].unique())
+                ax.set_xticks(iodepth_values)
+                ax.set_xticklabels(iodepth_values)
+                
+                # Adjust legend
+                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
+                
+                plt.tight_layout()
+                
+                # Save figure
+                safe_group_name = group_name.replace('/', '_').replace(' ', '_')
+                file_name = f"workload_{workload_name}_crimson_{safe_group_name}.png"
                 t_path = self.get_target_path(file_name, "figures")
                 plt.savefig(t_path, dpi=100, bbox_inches="tight")
-
+                
+                # Add to report
                 self.add_entry_figure(
                     key="tex",
-                    title=f"{workload_name}:{metric} Crimson OSD {group_name}",
+                    title=f"{workload_name} - Crimson OSD {group_name}",
                     file_name=file_name,
-                    dir_path=os.path.join(
-                        "figures/", f"{self.config['output']['name']}/"
-                    ),
-                    label=f"fig:{workload_name}-{group_name}-{metric}",
+                    dir_path=os.path.join("figures/", f"{self.config['output']['name']}/"),
+                    label=f"fig:workload-{workload_name}-crimson-{safe_group_name}"
                 )
-                plt.show()
+                
+                if not self.skip_plotting:
+                    plt.show()
                 plt.close()
+                
                 logger.info(f"Generated chart: {file_name}")
-
-        logger.debug(f"{workload_name}: {pp.pformat(df.columns)}\n{pp.pformat(df.head())}")
-        _plot_single_df_grp(df, workload_name)
-        # Identify the metrics from the OSD group dataframe
-        # if "metric" in df.columns and "value" in df.columns:
-        #     logger.info(f"Plotting Crimson OSD metrics for {workload_name}: {pp.pformat(df['metric'].unique())}")
-        #     for metric in df["metric"].unique():
-        #         metric_df = df[df["metric"] == metric]
-        #         _plot_single_df_grp(metric_df, metric, workload_name)
+                
+            except Exception as e:
+                logger.error(f"Error plotting group '{group_name}' for {workload_name}: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                plt.close()
+        
+        logger.info(f"Completed plotting Crimson OSD metrics for {workload_name}")
 
 
     def _gen_comparison_charts_per_workload(self):
