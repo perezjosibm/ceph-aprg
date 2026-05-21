@@ -2,6 +2,25 @@
   "osd":
   [
     {
+      "tracker": "76524",
+      "pattern": [ "AddressSanitizer: heap-buffer-overflow .* in write.part.0"],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "76287",
+      "pattern": [ "void _handle_dups.* ceph_assert(i->version > other.tail)"],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "71786",
+      "pattern": [ "Assertion `interrupt_cond.get() ic.get()' failed"],
+        "description": "",
+        "status": "open"
+    },
+
+    {
       "tracker": "75521",
       "pattern": [ "LogManager::omap_set_keys(.*Assertion `ret Transaction::get_extent_ret::PRESENT' failed.*"],
         "description": "",

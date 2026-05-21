@@ -1206,8 +1206,13 @@ class PerfReporter(object):
         from parse_crimson_dump_metrics import CrimsonDumpMetricsParser
         
         logger.info(f"Plotting Crimson OSD metrics for workload: {workload_name}")
-        logger.debug(f"Input DataFrame shape: {df.shape}, columns: {df.columns.tolist()}")
+        # logger.debug(f"Input DataFrame shape: {df.shape},\n"
+        #     f"columns: {df.columns.tolist()}\n"
+        #     f"df.dtypes:\n{df.dtypes}\n"
+        #     f"df.info():\n{pp.pformat(df.info())}\n"
+        #     f"df.head():\n{pp.pformat(df.head())}")
         
+        # The df has MultiIndex (metric, shard), we can use them to form groups
         # Verify required columns
         required_cols = ['run_name', 'iodepth', 'metric', 'group', 'value']
         missing_cols = [col for col in required_cols if col not in df.columns]
@@ -1215,7 +1220,7 @@ class PerfReporter(object):
             logger.error(f"Missing required columns: {missing_cols}")
             return
         
-        # Get metric groups from CrimsonDumpMetricsParser
+        #metric groups from CrimsonDumpMetricsParser
         METRIC_GROUPS = CrimsonDumpMetricsParser.METRIC_GROUPS
         
         # Aggregate data: average across shards for each (run_name, iodepth, metric, group)
