@@ -65,6 +65,7 @@ ADD bashrc /root/.bashrc
 RUN cd /root && \
     git clone https://github.com/perezjosibm/ceph-aprg && \
     pip3 install --no-cache-dir -r /root/ceph-aprg/requirements.txt
+ENV PATH="$PATH:/root/ceph-aprg/bin"
 
 # Global git safety configs for mounted volumes
 RUN git config --global --add safe.directory /packages/fio && \
