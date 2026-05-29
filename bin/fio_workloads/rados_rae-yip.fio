@@ -2,6 +2,7 @@
 ioengine=rados
 #clustername=6a13fa8f-f35c-11f0-a10a-6c92cfd8e45a
 clientname=admin
+conf=/ceph/build/ceph.conf
 pool=${pool_name}
 filename_format=$clientuid.rados_test.$jobnum.$filenum
 touch_objects=0
@@ -23,6 +24,7 @@ numjobs=${num_jobs}
 # unfortunately these are run one per instance, which is a lot!
 #exec_prerun=start_monitor.sh
 #exec_postrun=stop_monitor.sh
+##REMEMBER: we might need to set 64k fixed for seq workloads
 
 [rados-seqwrite]
 rw=write
