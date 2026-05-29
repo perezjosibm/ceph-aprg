@@ -105,6 +105,8 @@ class CrimsonDumpMetricsParser:
         belonging to that group, together with display units.
         Now delegated to the type-specific parser.
     """
+    # Special groups: can be plotted against io_queue depth since they contain a single value per shard, so we can compare them on the same scale without normalisation.
+    SPECIAL_GROUPS = ["reactor_cpu", "reactor_utilization", "scheduler_tasks", "seastore_transactions", "io_queue"]
 
     # Legacy METRIC_GROUPS for backward compatibility (Crimson SeaStore)
     METRIC_GROUPS: Dict[str, Dict[str, Any]] = {
@@ -643,6 +645,7 @@ def load_crimson_dump_dataframe_from_content(json_content: str) -> tuple: #pd.Da
         DataFrame with columns: metric, group, shard, value, and any extra dimensions.
     """
     data = json.loads(json_content)
+    #debug_print = False
     
     # Use new parser hierarchy if available
     if _HAS_OSD_DUMP_PARSERS:
@@ -651,10 +654,16 @@ def load_crimson_dump_dataframe_from_content(json_content: str) -> tuple: #pd.Da
             osd_type = detect_osd_type(data)
             parser = create_parser(osd_type)
             parser.parse(data)
+            if not parser.get_parsed_data()[0]:  # Check if any metrics were parsed
+                raise ValueError("No metrics parsed with new parser")
             
             # Get parsed data
             raw, multi, shards, metrics = parser.get_parsed_data()
             metric_groups = parser.get_metric_groups()
+            
+            # if not debug_print:
+            #     logger.info(f"Detected OSD type: {osd_type}, {metric_groups.keys()} groups, {len(metrics)} unique metrics, {len(shards)} shards")
+            #     debug_print = True
             
             # Convert to DataFrame format expected by perf_reporter
             rows: List[Dict[str, Any]] = []

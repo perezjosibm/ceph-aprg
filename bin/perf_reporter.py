@@ -19,12 +19,14 @@ from datetime import datetime, timezone
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-#import seaborn.objects as so
+
+# import seaborn.objects as so
 from typing import Dict, Any, List
 from pp_diskstat import load_diskstat_dataframe_from_content
 from parse_crimson_dump_metrics import (
     load_crimson_dump_dataframe_from_content,  # Now supports all OSD types via auto-detection
     CrimsonMetricsRateAnalyzer,
+    CrimsonDumpMetricsParser,
 )
 
 # Note: load_crimson_dump_dataframe_from_content() now auto-detects OSD type
@@ -265,6 +267,7 @@ class PerfReporter(object):
         """
         Load timestamped telemetry JSON files from an archive into DataFrames.
         """
+        # debug_printed = False
         telemetry = self.ds_list[name].setdefault("telemetry", defaultdict(list))
         for member in archive.namelist():
             base = os.path.basename(member)
@@ -282,8 +285,13 @@ class PerfReporter(object):
                 kind = "diskstat"
             elif re.search(r"_dump\.json$", base):
                 osd_type, df = load_crimson_dump_dataframe_from_content(content)
-                # kind = f"{osd_type}_dump"
                 kind = "crimson_dump"  # The OSD type is now detected inside the loader, and returned along with the DataFrame
+                # kind = f"{osd_type}_dump"
+                # if not debug_printed:
+                #     logger.debug(
+                #         f"Example of loaded telemetry entry from {member} (OSD type: {osd_type}):\n{df.head()}"
+                #     )
+                #     debug_printed = True
             elif re.search(r"_perf_stat\.json$", base):
                 df = load_perf_stat_dataframe_from_content(content)
                 kind = "perf_stat"
@@ -296,7 +304,7 @@ class PerfReporter(object):
                 {
                     "timestamp": ts,
                     "source": member,
-                    "frame": df,
+                    "frame": df,  # should already have a group column
                     "osd_type": osd_type if kind == "crimson_dump" else None,
                 }
             )
@@ -578,7 +586,7 @@ class PerfReporter(object):
         DataFrame, and aggregate the values per (timestamp, metric, group,
         shard)
         """
-        
+
         frames = []
         for entry in entries:
             df = entry["frame"].copy()
@@ -603,7 +611,7 @@ class PerfReporter(object):
         )
         return agg
 
-    def _normalise_grp(self, grp: pd.DataFrame) -> str: #pd.DataFrame:
+    def _normalise_grp(self, grp: pd.DataFrame) -> str:  # pd.DataFrame:
         """
         Min-max normalise the "value" column of the group if it contains multiple metrics with different magnitudes.
         if grp["value"].max() == grp["value"].min():
@@ -611,7 +619,7 @@ class PerfReporter(object):
         grp["value"] = (grp["value"] - grp["value"].min()) / (
             grp["value"].max() - grp["value"].min()
         )
-        return grp 
+        return grp
         """
         if grp["metric"].nunique() > 1:
             min_v = grp["value"].min()
@@ -640,6 +648,7 @@ class PerfReporter(object):
             Label for this FIO run.
         entries : list
             Telemetry entries (timestamp, source, frame).
+        ---
         frames = []
         for entry in entries:
             df = entry["frame"].copy()
@@ -936,6 +945,8 @@ class PerfReporter(object):
         # Initialize workload metrics storage
         workload_metrics = defaultdict(lambda: defaultdict(dict))
 
+        # Flag to debug print a single resulting dataframe per workload/iodepth
+        debug_printed = False
         # Process each workload and iodepth
         for workload_name, iodepth_dict in workload_intervals.items():
             for iodepth, interval in iodepth_dict.items():
@@ -958,7 +969,13 @@ class PerfReporter(object):
                     if not frames:
                         continue
 
-                    combined_df = pd.concat(frames, ignore_index=True)
+                    combined_df = pd.concat(frames)  # , ignore_index=True
+                    if not debug_printed and telem_kind == "crimson_dump":
+                        logger.debug(
+                            f" combined {telem_kind} dataframe shape: "
+                            f"{combined_df.shape} for {len(filtered_entries)} entries:"
+                            f"{pp.pformat(combined_df.head())}"
+                        )
 
                     # Compute aggregate statistics
                     if telem_kind == "diskstat":
@@ -975,8 +992,16 @@ class PerfReporter(object):
                             "metric" in combined_df.columns
                             and "shard" in combined_df.columns
                         ):
-                            agg_df = combined_df.groupby(["metric", "shard"]).mean(
-                                numeric_only=True
+                            # here is probably when the resulting dataframe gets MultiIndex
+                            # We need to preserve the'group' column:
+                            agg_df = combined_df.groupby(["metric", "shard"]).agg(
+                                {"value": "mean", "group": "first"}
+                            )
+                            # .mean(
+                            #     numeric_only=True
+                            # )
+                            logger.debug(
+                                "  Aggregated crimson_dump by metric and shard"
                             )
                         else:
                             agg_df = combined_df.mean(numeric_only=True).to_frame().T
@@ -984,7 +1009,8 @@ class PerfReporter(object):
                         # Generic aggregation
                         agg_df = combined_df.mean(numeric_only=True).to_frame().T
 
-                    # Store aggregated data
+                    # Store aggregated data: index is MultiIndex (metric,shard),
+                    # columns are the aggregated values, shoudl have group column if crimson_dump
                     workload_metrics[workload_name][iodepth][telem_kind] = {
                         "aggregated": agg_df,
                         "sample_count": len(filtered_entries),
@@ -992,12 +1018,20 @@ class PerfReporter(object):
                     }
 
                     logger.debug(
-                        f"  {telem_kind}: {len(filtered_entries)} samples aggregated" # {pp.pformat(agg_df.to_dict())}
+                        f"  {telem_kind}: {len(filtered_entries)} samples aggregated"  # {pp.pformat(agg_df.to_dict())}
                     )
+                    # Debug print the resulting dataframe for the first workload/iodepth
+                    if not debug_printed and telem_kind == "crimson_dump":
+                        logger.debug(
+                            f"  Aggregated dataframe for {workload_name} iodepth={iodepth} telem_kind={telem_kind}:\n{pp.pformat(agg_df)}"
+                        )
+                        debug_printed = True
 
         # Store in ds_list
         run_data["workload_metrics"] = dict(workload_metrics)
-        logger.info(f"Run {name}: Workload metrics aggregation completed ") #{pp.pformat(run_data['workload_metrics'])}
+        logger.info(
+            f"Run {name}: Workload metrics aggregation completed "
+        )  # {pp.pformat(run_data['workload_metrics'])}
 
     def _calculate_workload_rates(self, name: str) -> None:
         """
@@ -1048,7 +1082,9 @@ class PerfReporter(object):
 
                 # Create rate analyzer and add snapshots
                 analyzer = CrimsonMetricsRateAnalyzer()
-                logger.debug(f"  {pp.pformat(analyzer)}: Adding {len(filtered_entries)} snapshots to rate analyzer {pp.pformat([entry['timestamp'] for entry in filtered_entries])}")
+                logger.debug(
+                    f"  {pp.pformat(analyzer)}: Adding {len(filtered_entries)} snapshots to rate analyzer {pp.pformat([entry['timestamp'] for entry in filtered_entries])}"
+                )
 
                 for entry in filtered_entries:
                     ts_str = entry["timestamp"]
@@ -1087,6 +1123,7 @@ class PerfReporter(object):
         """
         # Collect data from all runs for this workload
         plot_data = []
+        debug_printed = False
 
         for run_name, run_data in self.ds_list.items():
             workload_metrics = run_data.get("workload_metrics", {})
@@ -1118,11 +1155,15 @@ class PerfReporter(object):
             )
             return
 
-        # Combine all data
-        combined_df = pd.concat(plot_data) #, ignore_index=True)# lost columns, why?
-        logger.debug(f"Combined data for {workload_name} ({metric_type}): {pp.pformat(combined_df.columns)}\n{pp.pformat(combined_df)}")
+        # Combine all data: should still have column 'group' for crimson_dump metrics, and index with metric/shard
+        combined_df = pd.concat(plot_data)
+        if not debug_printed:
+            logger.debug(
+                f"Combined data for {workload_name} ({metric_type}):\n columns:{pp.pformat(combined_df.columns)}\n{pp.pformat(combined_df)}"
+            )
+            debug_printed = True
 
-        # Generate chart based on metric type
+        # Generate chart based on metric type/aka telem_kind
         try:
             if metric_type == "diskstat":
                 self._plot_workload_diskstat(workload_name, combined_df)
@@ -1130,7 +1171,6 @@ class PerfReporter(object):
                 self._plot_workload_crimson_metrics(workload_name, combined_df)
         except Exception as e:
             logger.error(f"Error plotting {metric_type} for {workload_name}: {e}")
-
 
     def _plot_workload_diskstat(self, workload_name: str, df: pd.DataFrame) -> None:
         """Plot disk statistics for a workload across runs and iodepths."""
@@ -1185,164 +1225,200 @@ class PerfReporter(object):
                 logger.error(f"Error plotting {metric} for {workload_name}: {e}")
                 plt.close()
 
-
     def _plot_workload_crimson_metrics(
         self, workload_name: str, df: pd.DataFrame
     ) -> None:
         """
         Plot Crimson OSD metrics for a workload across runs and iodepths.
-        
+
         This method organizes metrics by groups (using METRIC_GROUPS from
         parse_crimson_dump_metrics), creates comparison charts with:
         - X-axis: iodepth levels
         - Y-axis: metric values (normalized if multiple metrics in group)
         - Hue: run_name (for comparing different test runs)
         - Style: metric name (for distinguishing metrics within a group)
-        
+
         Args:
             workload_name: Name of workload (e.g., 'seqwrite', 'randread')
             df: DataFrame with columns: run_name, iodepth, metric, group, shard, value
         """
-        from parse_crimson_dump_metrics import CrimsonDumpMetricsParser
-        
+        # metric groups from CrimsonDumpMetricsParser
+        METRIC_GROUPS = CrimsonDumpMetricsParser.METRIC_GROUPS
+        SPECIAL_GROUPS = CrimsonDumpMetricsParser.SPECIAL_GROUPS
+
+        # from parse_crimson_dump_metrics import CrimsonDumpMetricsParser
+        def _plot_single_group(group_name: str, group_df: pd.DataFrame) -> None:
+            """
+            Plot a single metric group for the workload,
+            with metric on x-axis, value on y-axis, hue by run_name and style by metric.
+            """
+            # Get unit for this group
+            unit = METRIC_GROUPS.get(group_name, {}).get("unit", "value")
+
+            # Determine if normalization is needed
+            num_metrics = group_df["metric"].nunique()
+            if num_metrics > 1:
+                # Normalize values for comparison
+                min_val = group_df["value"].min()
+                max_val = group_df["value"].max()
+                denom = max_val - min_val
+                if denom > 0:
+                    group_df["value"] = (group_df["value"] - min_val) / denom
+                    ylabel = f"{unit} (normalized)"
+                else:
+                    ylabel = unit
+            else:
+                ylabel = unit
+
+            logger.info(
+                f"Plotting group '{group_name}' with {num_metrics} metrics, "
+                f"{group_df['run_name'].nunique()} runs, "
+                f"{group_df['iodepth'].nunique()} iodepth levels"
+            )
+
+            try:
+                # Create figure
+                sns.set_theme(style="darkgrid")
+                fig, ax = plt.subplots(figsize=(12, 6))
+
+                # Convert iodepth to int for proper ordering
+                group_df["iodepth"] = group_df["iodepth"].astype(int)
+                group_df = group_df.sort_values("iodepth")
+
+                # Plot with run_name as hue and metric as style
+                if num_metrics > 1:
+                    # Multiple metrics: use both hue and style
+                    sns.lineplot(
+                        data=group_df,
+                        x="iodepth",
+                        y="value",
+                        hue="run_name",
+                        style="metric",
+                        markers=True,
+                        dashes=False,
+                        ax=ax,
+                    )
+                else:
+                    # Single metric: only use hue for run_name
+                    sns.lineplot(
+                        data=group_df,
+                        x="iodepth",
+                        y="value",
+                        hue="run_name",
+                        markers=True,
+                        marker="o",
+                        ax=ax,
+                    )
+
+                # Customize plot
+                ax.set_title(
+                    f"{workload_name} - {group_name}", fontsize=14, fontweight="bold"
+                )
+                ax.set_xlabel("I/O Depth", fontsize=12)
+                ax.set_ylabel(ylabel, fontsize=12)
+                ax.grid(True, alpha=0.3)
+
+                # Set x-axis to show all iodepth values
+                iodepth_values = sorted(group_df["iodepth"].unique())
+                ax.set_xticks(iodepth_values)
+                ax.set_xticklabels(iodepth_values)
+
+                # Adjust legend
+                ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=10)
+
+                plt.tight_layout()
+
+                # Save figure
+                safe_group_name = group_name.replace("/", "_").replace(" ", "_")
+                file_name = f"workload_{workload_name}_crimson_{safe_group_name}.png"
+                t_path = self.get_target_path(file_name, "figures")
+                plt.savefig(t_path, dpi=100, bbox_inches="tight")
+
+                # Add to report
+                self.add_entry_figure(
+                    key="tex",
+                    title=f"{workload_name} - Crimson OSD {group_name}",
+                    file_name=file_name,
+                    dir_path=os.path.join(
+                        "figures/", f"{self.config['output']['name']}/"
+                    ),
+                    label=f"fig:workload-{workload_name}-crimson-{safe_group_name}",
+                )
+
+                if not self.skip_plotting:
+                    plt.show()
+                plt.close()
+
+                logger.info(f"Generated chart: {file_name}")
+
+            except Exception as e:
+                logger.error(
+                    f"Error plotting group '{group_name}' for {workload_name}: {e}"
+                )
+                import traceback
+
+                logger.error(traceback.format_exc())
+                plt.close()
+
+        def _plot_special_group(group_name: str, group_df: pd.DataFrame) -> None:
+            """
+            Plot a sigle metric group for the workload,
+            with iodepth on x-axis, value on y-axis, hue by run_name and style by shard.
+            """
+            pass
+
         logger.info(f"Plotting Crimson OSD metrics for workload: {workload_name}")
         # logger.debug(f"Input DataFrame shape: {df.shape},\n"
         #     f"columns: {df.columns.tolist()}\n"
         #     f"df.dtypes:\n{df.dtypes}\n"
         #     f"df.info():\n{pp.pformat(df.info())}\n"
         #     f"df.head():\n{pp.pformat(df.head())}")
-        
+
         # The df has MultiIndex (metric, shard), we can use them to form groups
         # Verify required columns
-        required_cols = ['run_name', 'iodepth', 'metric', 'group', 'value']
+        required_cols = ["run_name", "iodepth", "group", "value"]  #'metric',
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
             logger.error(f"Missing required columns: {missing_cols}")
             return
-        
-        #metric groups from CrimsonDumpMetricsParser
-        METRIC_GROUPS = CrimsonDumpMetricsParser.METRIC_GROUPS
-        
+
         # Aggregate data: average across shards for each (run_name, iodepth, metric, group)
-        agg_cols = ['run_name', 'iodepth', 'metric', 'group']
-        if 'shard' in df.columns:
-            # Average across shards
-            agg_df = df.groupby(agg_cols, observed=True)['value'].mean().reset_index()
+        # Disabling temporarily this code
+        agg_cols = ["run_name", "iodepth", "metric", "group"]  #
+        if "shard" in df.index.names:
+            # Average across shards: reset_index() transform the MultiIndex
+            # into columns, so we can group by metric and shard
+            agg_df = df.groupby(agg_cols, observed=True)["value"].mean().reset_index()
         else:
-            agg_df = df[agg_cols + ['value']].copy()
-        
-        logger.info(f"Aggregated data shape: {agg_df.shape}")
-        logger.debug(f"Unique groups: {sorted(agg_df['group'].unique())}")
-        
-        # Plot each metric group separately
-        for group_name in sorted(agg_df['group'].unique()):
-            group_df = agg_df[agg_df['group'] == group_name].copy()
-            
+            agg_df = df[agg_cols + ["value"]].copy()
+
+        sorted_groups = sorted(agg_df["group"].unique())
+        logger.info(f"Aggregated data shape: {agg_df.shape}:, {pp.pformat(agg_df)}")
+        # sorted_groups = sorted(df['group'].unique())
+        # logger.info(f"data shape: {df.shape}")
+        # logger.debug(f"Unique groups: {sorted_groups}")
+
+        # Plot each metric group separately: for special groups (eg.
+        # reactor_utilization) we plot them using x-axis the iodepth, for the
+        # others, use x-axis the metric and bar height the value, with hue the
+        # run_name and style the shard
+        for group_name in sorted_groups:
+            group_df = agg_df[agg_df["group"] == group_name].copy()
+            # group_df = df[df['group'] == group_name].copy()
+
             if group_df.empty:
                 logger.warning(f"No data for group: {group_name}")
                 continue
-            
-            # Get unit for this group
-            unit = METRIC_GROUPS.get(group_name, {}).get('unit', 'value')
-            
-            # Determine if normalization is needed
-            num_metrics = group_df['metric'].nunique()
-            if num_metrics > 1:
-                # Normalize values for comparison
-                min_val = group_df['value'].min()
-                max_val = group_df['value'].max()
-                denom = max_val - min_val
-                if denom > 0:
-                    group_df['value'] = (group_df['value'] - min_val) / denom
-                    ylabel = f"{unit} (normalized)"
-                else:
-                    ylabel = unit
-            else:
-                ylabel = unit
-            
-            logger.info(f"Plotting group '{group_name}' with {num_metrics} metrics, "
-                       f"{group_df['run_name'].nunique()} runs, "
-                       f"{group_df['iodepth'].nunique()} iodepth levels")
-            
-            try:
-                # Create figure
-                sns.set_theme(style="darkgrid")
-                fig, ax = plt.subplots(figsize=(12, 6))
-                
-                # Convert iodepth to int for proper ordering
-                group_df['iodepth'] = group_df['iodepth'].astype(int)
-                group_df = group_df.sort_values('iodepth')
-                
-                # Plot with run_name as hue and metric as style
-                if num_metrics > 1:
-                    # Multiple metrics: use both hue and style
-                    sns.lineplot(
-                        data=group_df,
-                        x='iodepth',
-                        y='value',
-                        hue='run_name',
-                        style='metric',
-                        markers=True,
-                        dashes=False,
-                        ax=ax
-                    )
-                else:
-                    # Single metric: only use hue for run_name
-                    sns.lineplot(
-                        data=group_df,
-                        x='iodepth',
-                        y='value',
-                        hue='run_name',
-                        markers=True,
-                        marker='o',
-                        ax=ax
-                    )
-                
-                # Customize plot
-                ax.set_title(f"{workload_name} - {group_name}", fontsize=14, fontweight='bold')
-                ax.set_xlabel("I/O Depth", fontsize=12)
-                ax.set_ylabel(ylabel, fontsize=12)
-                ax.grid(True, alpha=0.3)
-                
-                # Set x-axis to show all iodepth values
-                iodepth_values = sorted(group_df['iodepth'].unique())
-                ax.set_xticks(iodepth_values)
-                ax.set_xticklabels(iodepth_values)
-                
-                # Adjust legend
-                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
-                
-                plt.tight_layout()
-                
-                # Save figure
-                safe_group_name = group_name.replace('/', '_').replace(' ', '_')
-                file_name = f"workload_{workload_name}_crimson_{safe_group_name}.png"
-                t_path = self.get_target_path(file_name, "figures")
-                plt.savefig(t_path, dpi=100, bbox_inches="tight")
-                
-                # Add to report
-                self.add_entry_figure(
-                    key="tex",
-                    title=f"{workload_name} - Crimson OSD {group_name}",
-                    file_name=file_name,
-                    dir_path=os.path.join("figures/", f"{self.config['output']['name']}/"),
-                    label=f"fig:workload-{workload_name}-crimson-{safe_group_name}"
-                )
-                
-                if not self.skip_plotting:
-                    plt.show()
-                plt.close()
-                
-                logger.info(f"Generated chart: {file_name}")
-                
-            except Exception as e:
-                logger.error(f"Error plotting group '{group_name}' for {workload_name}: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
-                plt.close()
-        
-        logger.info(f"Completed plotting Crimson OSD metrics for {workload_name}")
 
+            # Disabled since the function recognises whether there is a single metric in the group
+            # if group_name in SPECIAL_GROUPS:
+            #     logger.info(f"Skipping special group '{group_name}' for workload '{workload_name}'")
+            #     _plot_special_group(group_name, group_df)
+            # else:
+            #     _plot_single_group(group_name, group_df)
+            _plot_single_group(group_name, group_df)
+
+        logger.info(f"Completed plotting Crimson OSD metrics for {workload_name}")
 
     def _gen_comparison_charts_per_workload(self):
         # Step 5: Generate comparison charts for each workload
@@ -1350,12 +1426,11 @@ class PerfReporter(object):
         workload_list = ["seqwrite", "randwrite", "randread", "seqread"]
 
         for workload in workload_list:
-            for metric_type in [ "crimson_dump"]: #"diskstat",
+            for metric_type in ["crimson_dump"]:  # "diskstat",
                 try:
                     self._plot_workload_metrics(workload, metric_type)
                 except Exception as e:
                     logger.error(f"Error plotting {workload}/{metric_type}: {e}")
-
 
     def analyze_workload_metrics(self) -> None:
         """
@@ -1412,7 +1487,7 @@ class PerfReporter(object):
 
                 logger.error(traceback.format_exc())
                 continue
-        
+
         # Step 5: Generate comparison charts for each workload
         self._gen_comparison_charts_per_workload()
 
@@ -1518,7 +1593,7 @@ class PerfReporter(object):
                     f"Style {style} not found in styles dictionary, using default style 'rc'"
                 )
                 style = "rc"
-            #xcols = styles[style]["xcols"]
+            # xcols = styles[style]["xcols"]
             ycol = styles[style]["ycol"]
             bs = df["bs"].iloc[0] if "bs" in df.columns else ""
             xcol = "iops" if bs == "4k" else "bw"
@@ -1532,7 +1607,7 @@ class PerfReporter(object):
             fig, ax1 = plt.subplots(1, 1, figsize=(6, 4))
             ax2 = ax1.twinx()
             ax1.tick_params(axis="x", labelrotation=45)
-            #for xcol in xcols:
+            # for xcol in xcols:
             title = f"{workload} {bs} {style} {name}"  # - {ycol} vs {xcol}
             file_name = f"{workload}_{bs}_{style}_{ycol}_vs_{xcol}.png"
             t_path = self.get_target_path(file_name, "figures")
@@ -1569,9 +1644,9 @@ class PerfReporter(object):
                 ).set(title=title)  # f"{workload}_{bs}": {ycol} vs {xcol}
 
                 sns.scatterplot(
-                    data=df, 
-                    x=xcol, 
-                    y="iodepth", 
+                    data=df,
+                    x=xcol,
+                    y="iodepth",
                     hue="type",
                     legend=False,
                     ax=ax2,
@@ -1579,7 +1654,7 @@ class PerfReporter(object):
                 # g.set_axis_labels("IOPS", "Latency (ms)")
                 # g.set(xticks=df[xcol].unique())
                 # # df.dataframe(df.style.format(subset=['Position', 'Marks'], formatter="{:.2f}"))
-                #g.set_xticklabels(rotation=45)
+                # g.set_xticklabels(rotation=45)
                 ax2.grid(False)
                 ax2.yaxis.tick_right()
                 # g.legend.remove()
@@ -1618,7 +1693,6 @@ class PerfReporter(object):
                     f"Exception {e} plotting dataframe for workload {workload}... skipping"
                 )
 
-        
         WORKLOAD_LIST = ["randread", "randwrite", "seqwrite"]  #  "seqread",
         for workload in WORKLOAD_LIST:
             df_list = []
@@ -1661,10 +1735,18 @@ class PerfReporter(object):
             # Lead the table to show only th emost important columns
             df.to_csv(t_path, index=False)
             # latex_filename = f"{dp}_{workload}.tex"
-            #t_name = self.get_target_name(f"{workload}.tex")
+            # t_name = self.get_target_name(f"{workload}.tex")
             t_name = f"{workload}.tex"
             t_path = self.get_target_path(f"{workload}.tex", "tables")
-            selected_columns = ['type', 'iodepth', 'bw', 'iops', 'total_ios', 'clat_ms', 'clat_stdev_ms']
+            selected_columns = [
+                "type",
+                "iodepth",
+                "bw",
+                "iops",
+                "total_ios",
+                "clat_ms",
+                "clat_stdev_ms",
+            ]
             df_selected = df[selected_columns]
             df_selected = df_selected.copy()
             # df_selected = df_selected.rename(columns={
@@ -1676,22 +1758,33 @@ class PerfReporter(object):
             #     'clat_ms': 'clat_ms',
             #     'clat_stdev_ms': 'clat_stdev_ms'
             # })
-            df_selected['type'] = df_selected['type'].str.replace('_', '.', regex=False)
-            header=["Type", "IO Depth", "Bandwidth (MB/s)", "IOPS", "Total IOs", "Latency (ms)", "Latency Stdev (ms)"]
-            df_selected.to_latex(t_path, index=False, float_format="%.2f", 
-                         header=header,
-                         #caption="FIO Results", label="tab:fio_results"
-                         )
-            #df.to_latex(t_path, index=False)
+            df_selected["type"] = df_selected["type"].str.replace("_", ".", regex=False)
+            header = [
+                "Type",
+                "IO Depth",
+                "Bandwidth (MB/s)",
+                "IOPS",
+                "Total IOs",
+                "Latency (ms)",
+                "Latency Stdev (ms)",
+            ]
+            df_selected.to_latex(
+                t_path,
+                index=False,
+                float_format="%.2f",
+                header=header,
+                # caption="FIO Results", label="tab:fio_results"
+            )
+            # df.to_latex(t_path, index=False)
             self.document["tex"] += f"\\input{{{t_name}}}\n"
 
             logger.info(f"Plotting df for {workload} for response curves...")
-            #_plot_single_df_rc(df, workload)
+            # _plot_single_df_rc(df, workload)
 
             # for style in styles.keys():
             #     logger.info(f"Plotting df for {workload} with style {style}")
             #     _plot_single_df(df, workload, style)
-            _plot_single_df(df, workload, "rc") # it works!
+            _plot_single_df(df, workload, "rc")  # it works!
 
     def load_csv_files(self, input_dirs: Dict[str, Any]):
         """
@@ -1764,9 +1857,9 @@ class PerfReporter(object):
                         continue
                     # Add the new column "name" to the dataframe, with the value of the name key in the input_dirs
                     # dictionary, to be used as hue in the plots
-                    df["type"] = name # aka "participant"
+                    df["type"] = name  # aka "participant"
                     self.ds_list[name] = {
-                        "frame": df, # FIO results dataframe
+                        "frame": df,  # FIO results dataframe
                         "telemetry": defaultdict(list),
                     }
                     self._load_telemetry_from_archive(name, archive)
@@ -1774,8 +1867,8 @@ class PerfReporter(object):
                     logger.info(f"Run {name}: Extracting workload intervals")
                     # run_data = self.ds_list[name] #.get(name)
                     # run_data["workload_intervals"] = workload_intervals
-                    self.ds_list[name]["workload_intervals"] = self._extract_workload_intervals(
-                        name, archive
+                    self.ds_list[name]["workload_intervals"] = (
+                        self._extract_workload_intervals(name, archive)
                     )
                     # Step 2 & 3: Aggregate metrics by workload
                     logger.info(f"Run {name}: Aggregating metrics by workload")
@@ -1784,7 +1877,7 @@ class PerfReporter(object):
                     # Calculate Crimson OSD work rates from telemetry data, and store in ds_list[name]['workload_rates']
                     # Disabled temporarily since it we might define a new version that uses the telemetry dataframes
                     # instead of the raw JSON data
-                    #self._calculate_crimson_rates(name, archive)
+                    # self._calculate_crimson_rates(name, archive)
                     logger.info(
                         f"Loaded .csv file {test_d['test_run']} for {name} into dataframe"
                     )
@@ -1867,10 +1960,10 @@ class PerfReporter(object):
         if "kind" in self.config:
             # self.makedirs()
             self.plot_csv_files()
-            #self.plot_telemetry_per_workload()
+            # self.plot_telemetry_per_workload()
             # Disabling temporarly for testing
             # self.export_telemetry_csv_files()
-            # self.plot_telemetry_metrics() 
+            # self.plot_telemetry_metrics()
             # this is by time, we might want to plot the telemetry metrics for
             # each workload, so we can compare the performance of the different
             # builds for each workload, and see how the performance evolves

@@ -59,9 +59,19 @@ declare -a global_fio_id=()
 # Default values that can be changed via arg options
 # Or even betterm via test_plan.json
 FIO_JOBS=${SCRIPT_DIR}/fio_workloads/
-FIO_CORES="0-31" # unrestricted
+# The following *must* be set by the test plan:
+#FIO_CPU_CORES="0-31" # unrestricted
+if [[ ! -v FIO_CPU_CORES ]]; then
+    echo "== FIO_CPU_CORES is not set, exiting... =="
+    exit 1
+fi
 FIO_JOB_SPEC="rbd_"
-OSD_CORES="0-31" # range of CPU cores to monitor
+#VSTART_CPU_CORES="0-31" # range of CPU cores to monitor
+if [[ ! -v VSTART_CPU_CORES ]]; then
+    echo "== VSTART_CPU_CORES is not set, exiting... =="
+    exit 1
+fi
+
 NUM_PROCS=8 # num FIO processes
 TEST_PREFIX="4cores_8img"
 RUN_DIR="/tmp"
@@ -250,7 +260,7 @@ fun_run_workload() {
         # Execute FIO: for multijob/vols, we do not need to indicate the RBD_NAME
         # Note the test duration is specified in the .fio file!
         ( LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} \
-            taskset -ac ${FIO_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json \
+            taskset -ac ${FIO_CPU_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json \
             --output-format=json 2> fio_${TEST_NAME}.err ) &
         # Capture the pid of the FIO instance
         lastfio_pid=$!
@@ -262,7 +272,7 @@ fun_run_workload() {
         global_fio_id+=( $lastfio_pid  )
         fio_pids+=( $lastfio_pid  )
         echo "== $(date) == Launched FIO (pid: $lastfio_pid) ${fio_name}, num_threads: ${num_threads} \
-            with RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} on cores ${FIO_CORES} ==";
+            with RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} on cores ${FIO_CPU_CORES} ==";
         # Check return code from FIO
     done # loop NUM_PROCS
 
@@ -412,7 +422,7 @@ fun_run_workload_loop() {
 fun_post_process() {
     # local TEST_PREFIX=$1
     # local TEST_RESULT=$2
-    # local OSD_CORES=$3
+    # local VSTART_CPU_CORES=$3
     # local OSD_CPU_AVG=$4
     #
     # Refactor into two subroutines
@@ -603,7 +613,7 @@ fun_post_process_cold() {
     [ -f "${OSD_CPU_AVG}" ] && rm -f ${OSD_CPU_AVG}
     if [ -f "${TEST_RESULT}_top.json" ]; then
       echo "== Reconstructing ${OSD_CPU_AVG}:"
-      python3 ${SCRIPT_DIR}/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${OSD_CORES}" \
+      python3 ${SCRIPT_DIR}/parse-top.py --config=${TEST_RESULT}_top.json --cpu="${VSTART_CPU_CORES}" \
         --avg=${OSD_CPU_AVG} --pids=${TOP_PID_JSON} 2>&1 > /dev/null
     fi
     # Post processing: FIO .json

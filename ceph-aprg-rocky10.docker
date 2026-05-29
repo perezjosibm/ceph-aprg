@@ -73,4 +73,7 @@ RUN git config --global --add safe.directory /packages/fio && \
 
 WORKDIR /root
 CMD ["/bin/bash", "-l"]
+#CMD ["/bin/bash", "-c", "source /etc/profile && exec /bin/bash -l"]
+# Workaround issue with tab complete quoting when expanding paths:
+#CMD ["shopt", "-u", "progcomp"]
 

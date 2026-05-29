@@ -22,7 +22,7 @@ OSD_CPU=${VSTART_CPU_CORES} # Currently used for Classic only
 ##VSTART_CPU_CORES="0-27" # 56 reactors Latency target comparison vs Classic-- fails recently in Crimson
 #VSTART_CPU_CORES="0-51,56-107" # inc HT
 
-# Invariant: number of CPU cores for FIO
+# Invariant: number of CPU cores for FIO -- will be overriden by the test_plan
 FIO_CPU_CORES="96-191" #"28-55,84-111" # inc HT
 #FIO_CPU_CORES="52-55,108-111" # inc HT
 #FIO_CPU_CORES="14-27,70-83,42-55,98-111" # inc HT
