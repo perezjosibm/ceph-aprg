@@ -1250,7 +1250,7 @@ class PerfReporter(object):
         def _plot_single_group(group_name: str, group_df: pd.DataFrame) -> None:
             """
             Plot a single metric group for the workload,
-            with metric on x-axis, value on y-axis, hue by run_name and style by metric.
+            with iodepth on x-axis, value on y-axis, hue by run_name and style by metric.
             """
             # Get unit for this group
             unit = METRIC_GROUPS.get(group_name, {}).get("unit", "value")
@@ -1325,12 +1325,11 @@ class PerfReporter(object):
 
                 # Adjust legend
                 ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=10)
-
                 plt.tight_layout()
 
                 # Save figure
                 safe_group_name = group_name.replace("/", "_").replace(" ", "_")
-                file_name = f"workload_{workload_name}_crimson_{safe_group_name}.png"
+                file_name = f"{workload_name}_iodepth_{safe_group_name}.png"
                 t_path = self.get_target_path(file_name, "figures")
                 plt.savefig(t_path, dpi=100, bbox_inches="tight")
 
@@ -1342,7 +1341,7 @@ class PerfReporter(object):
                     dir_path=os.path.join(
                         "figures/", f"{self.config['output']['name']}/"
                     ),
-                    label=f"fig:workload-{workload_name}-crimson-{safe_group_name}",
+                    label=f"fig:{workload_name}-iodepth-{safe_group_name}",
                 )
 
                 if not self.skip_plotting:
@@ -1360,12 +1359,120 @@ class PerfReporter(object):
                 logger.error(traceback.format_exc())
                 plt.close()
 
-        def _plot_special_group(group_name: str, group_df: pd.DataFrame) -> None:
+        def _plot_group(group_name: str, group_df: pd.DataFrame) -> None:
             """
-            Plot a sigle metric group for the workload,
-            with iodepth on x-axis, value on y-axis, hue by run_name and style by shard.
+            Plot a single metric group for the workload,
+            with metric on x-axis, value on y-axis, hue by run_name.
+            For most of the metric groups, we need to rotate or reduce the lenght of x-axis labels (how?).
             """
-            pass
+            # Get unit for this group
+            unit = METRIC_GROUPS.get(group_name, {}).get("unit", "value")
+
+            # Determine if normalization is needed
+            num_metrics = group_df["metric"].nunique()
+            if num_metrics > 1:
+                # Normalize values for comparison
+                min_val = group_df["value"].min()
+                max_val = group_df["value"].max()
+                denom = max_val - min_val
+                if denom > 0:
+                    group_df["value"] = (group_df["value"] - min_val) / denom
+                    ylabel = f"{unit} (normalized)"
+                else:
+                    ylabel = unit
+            else:
+                ylabel = unit
+
+            # logger.info(
+            #     f"Plotting group '{group_name}' with {num_metrics} metrics, "
+            #     f"{group_df['run_name'].nunique()} runs, "
+            #     f"{group_df['iodepth'].nunique()} iodepth levels"
+            # )
+
+            try:
+                # Create figure
+                sns.set_theme(style="darkgrid")
+                fig, ax = plt.subplots(figsize=(12, 6))
+
+                # Convert iodepth to int for proper ordering
+                # group_df["iodepth"] = group_df["iodepth"].astype(int)
+                # group_df = group_df.sort_values("iodepth")
+
+                # Plot with run_name as hue and metric as style
+                if num_metrics > 1:
+                    # Multiple metrics: use both hue and style
+                    sns.barplot(
+                        data=group_df,
+                        x="value",
+                        y="metric",
+                        hue="run_name",
+                        palette="viridis",
+                        ax=ax,
+                    )
+                else:
+                    # Single metric: only use hue for run_name
+                    sns.barplot(
+                        data=group_df,
+                        x="metric",
+                        y="value",
+                        hue="run_name",
+                        palette="viridis",
+                        ax=ax,
+                    )
+
+                # Customize plot
+                ax.set_title(
+                    f"{workload_name} - {group_name}", fontsize=14, fontweight="bold"
+                )
+                ax.set_xlabel(ylabel, fontsize=12)
+                ax.set_ylabel("Metric", fontsize=12)
+                ax.grid(True, alpha=0.3)
+
+                # Add the numeric values onto the bars
+                ax.bar_label(ax.containers[0], padding=3)
+
+                # Optional: Add a limit to the x-axis so labels don't get cut off
+                ax.set_xlim(0, max(df["Values"]) + 10)
+                # Set x-axis to show all iodepth values
+                # iodepth_values = sorted(group_df["iodepth"].unique())
+                # ax.set_xticks(iodepth_values)
+                # ax.set_xticklabels(iodepth_values)
+
+                # Adjust legend
+                ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=10)
+                plt.tight_layout()
+
+                # Save figure
+                safe_group_name = group_name.replace("/", "_").replace(" ", "_")
+                file_name = f"{workload_name}_{safe_group_name}.png"
+                t_path = self.get_target_path(file_name, "figures")
+                plt.savefig(t_path, dpi=100, bbox_inches="tight")
+
+                # Add to report
+                self.add_entry_figure(
+                    key="tex",
+                    title=f"{workload_name} - Crimson OSD {group_name}",
+                    file_name=file_name,
+                    dir_path=os.path.join(
+                        "figures/", f"{self.config['output']['name']}/"
+                    ),
+                    label=f"fig:{workload_name}-{safe_group_name}",
+                )
+
+                if not self.skip_plotting:
+                    plt.show()
+                plt.close()
+
+                logger.info(f"Generated chart: {file_name}")
+
+            except Exception as e:
+                logger.error(
+                    f"Error plotting group '{group_name}' for {workload_name}: {e}"
+                )
+                import traceback
+
+                logger.error(traceback.format_exc())
+                plt.close()
 
         logger.info(f"Plotting Crimson OSD metrics for workload: {workload_name}")
         # logger.debug(f"Input DataFrame shape: {df.shape},\n"
@@ -1417,6 +1524,7 @@ class PerfReporter(object):
             # else:
             #     _plot_single_group(group_name, group_df)
             _plot_single_group(group_name, group_df)
+            _plot_group(group_name, group_df)
 
         logger.info(f"Completed plotting Crimson OSD metrics for {workload_name}")
 
@@ -1604,9 +1712,9 @@ class PerfReporter(object):
             sns.set_theme(style="darkgrid")
             # fig, ax1 = plt.subplots(figsize=(10, 6))
 
-            fig, ax1 = plt.subplots(1, 1, figsize=(6, 4))
+            fig, ax1 = plt.subplots(1, 1, figsize=(12, 6))
             ax2 = ax1.twinx()
-            ax1.tick_params(axis="x", labelrotation=45)
+            ax1.tick_params(axis="x", labelrotation=315)
             # for xcol in xcols:
             title = f"{workload} {bs} {style} {name}"  # - {ycol} vs {xcol}
             file_name = f"{workload}_{bs}_{style}_{ycol}_vs_{xcol}.png"
@@ -1633,8 +1741,8 @@ class PerfReporter(object):
                     y=ycol,  # "clat_ms",
                     hue="type",
                     # size="iodepth",# does not fucking work!
-                    style="type",
-                    markers=True,
+                    # style="type",
+                    # markers=True,
                     # estimator=None,
                     sort=sort,
                     legend="full",
@@ -1693,7 +1801,11 @@ class PerfReporter(object):
                     f"Exception {e} plotting dataframe for workload {workload}... skipping"
                 )
 
-        WORKLOAD_LIST = ["randread", "randwrite", "seqwrite"]  #  "seqread",
+        # TODO: extract this list from the dataframes, by looking at the
+        # "jobname" column and extracting the workload name from it, using
+        # regex or string matching
+
+        WORKLOAD_LIST = ["randread", "randwrite", "seqread", "seqwrite"]
         for workload in WORKLOAD_LIST:
             df_list = []
             # We need to specify the output path, eg report_dir/figures
@@ -1719,7 +1831,7 @@ class PerfReporter(object):
                 logger.info(f"filtered:\n{filtered}")
                 df_list.append(filtered)
 
-            # logger.info(f"ds_list:\n{df_list}")
+            logger.info(f"ds_list:\n{df_list}")
             try:
                 df = pd.concat(df_list)  # , ignore_index=True)
             except Exception as e:
@@ -1727,6 +1839,10 @@ class PerfReporter(object):
                     f"Exception {e} concatenating dataframes for {workload}... skipping"
                 )
                 continue
+            logger.info(f"catenated:\n{pp.pformat(df)}")
+
+            # TODO:
+            # Move ot a different method since some columns are being lost from the original dataframes
             # Filter the dataframe to skip data points with latency values higher than 100 ms
             # df = df[df["clat_ms"] < 100]
             # t_name = self.get_target_name(f"{workload}.csv")
@@ -1917,7 +2033,7 @@ class PerfReporter(object):
             if "kind" in self.config:
                 self.makedirs()
                 self.load_csv_files(self.config["input"])
-                self._gen_comparison_charts_per_workload()
+                # self._gen_comparison_charts_per_workload()
             else:
                 logger.warning("No 'kind' key in config, skipping Legacy style")
                 # This would be from the PerfReporterLegacy class
@@ -1960,6 +2076,7 @@ class PerfReporter(object):
         if "kind" in self.config:
             # self.makedirs()
             self.plot_csv_files()
+            self._gen_comparison_charts_per_workload()
             # self.plot_telemetry_per_workload()
             # Disabling temporarly for testing
             # self.export_telemetry_csv_files()
