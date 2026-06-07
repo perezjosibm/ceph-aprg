@@ -23,10 +23,10 @@
 
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
 source ${SCRIPT_DIR}/common.sh
 source ${SCRIPT_DIR}/monitoring.sh
 source ${SCRIPT_DIR}/run_osd_utils.sh
-
 #########################################
 # Main:
 #
@@ -47,6 +47,7 @@ while getopts 'ab:c:d:e:g:t:s:r:jlpxy:z:q' option; do
         ;;
     e) if [ ! -z "${OPTARG}" ] && [ -f "${TEST_PLAN_DIR}/${OPTARG}" ]; then
         TEST_PLAN="${TEST_PLAN_DIR}/${OPTARG}"
+        source $TEST_PLAN
        fi
         ;;
     r) fun_run_fio $OPTARG
@@ -92,11 +93,10 @@ while getopts 'ab:c:d:e:g:t:s:r:jlpxy:z:q' option; do
  echo -e "${GREEN}== OSD_TYPE ${OSD_TYPE} BALANCE ${BALANCE} ==${NC}"
  echo -e "${GREEN}== Loading test plan from ${TEST_PLAN} ==${NC}"
  export RUN_DIR=${RUN_DIR:-/tmp/runs/$(date +%Y%m%d_%H%M%S)}
- source $TEST_PLAN
 
  # Create the run directory if it does not exist
  [ ! -d "${RUN_DIR}" ] && mkdir -p ${RUN_DIR}
- 
+
  fun_save_test_plan
  cd /ceph/build/
 
