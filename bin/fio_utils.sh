@@ -330,7 +330,7 @@ fun_run_workload() {
     # Measure the diskstats after the completion of FIO instances
     jc --pretty /proc/diskstats | python3 ${SCRIPT_DIR}/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
     # Filter FIO .json: remove any error line not in .json format
-    sed -i '/^fio: .*/d' fio_${TEST_NAME}.json
+    sed -i '/^fio: .*/d' FIO/fio_${TEST_NAME}.json
     # eg if the latency_target was not met or any other error
     # for x in $(cat fio_${TEST_NAME}.err | grep 'error=' | awk -F= '{print $2}' | sort -u); do
     #     if [ "$x" != "0" ]; then
@@ -510,7 +510,7 @@ fun_tidyup() {
     # Remove empty .err files
     find . -type f -name "fio*.err" -size 0c -exec rm {} \;
     # Remove empty tmp  files
-    find . -type f -name "tmp*" -size 0c -exec rm {} \;
+    find . -type f -name "/tmp/tmp*" -size 0c -exec rm {} \;
     #Archive FIO err files:
     zip -9mqj fio_${TEST_RESULT}_err.zip *.err *_threads.out
     # Generate report: use the template, integrate the tables/charts -- per workload
@@ -521,8 +521,8 @@ fun_tidyup() {
     cd FIO/
     find . -type f -size 0c -exec rm {} \;
     # Minor processing: convert into .csv table via fio_parse_jsons.py:
-    ls -rt *.json > fio_list && \
-        ${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c fio_list -v --csv -t ${TEST_RESULT} 
+    ls -rt *.json > ${TEST_RESULT}_list && \
+        ${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c ${TEST_RESULT}_list -v --csv -t ${TEST_RESULT} 
     # TODO: generate response curves from the .csv data, using gnuplot or python scripts
     cd ..
 
