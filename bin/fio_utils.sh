@@ -260,7 +260,7 @@ fun_run_workload() {
         # Execute FIO: for multijob/vols, we do not need to indicate the RBD_NAME
         # Note the test duration is specified in the .fio file!
         ( LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} \
-            taskset -ac ${FIO_CPU_CORES} fio ${fio_name} --output=fio_${TEST_NAME}.json \
+            taskset -ac ${FIO_CPU_CORES} fio ${fio_name} --output=FIO/fio_${TEST_NAME}.json \
             --output-format=json 2> fio_${TEST_NAME}.err ) &
         # Capture the pid of the FIO instance
         lastfio_pid=$!
@@ -348,7 +348,7 @@ fun_run_workload() {
         # Simplified less stringent condition:
         #covar=$(jq ".jobs | .[] | .${mop}.clat_ns.mean/1000000 < ${MAX_LATENCY}" fio_${TEST_NAME}.json)
         echo "$(date) == Checking latency for workload ${WORKLOAD} (${mop}) with job ${job} and io depth ${io} =="
-        latency=$(jq ".jobs | .[] | .${mop}.clat_ns.mean/1000000 " fio_${TEST_NAME}.json)
+        latency=$(jq ".jobs | .[] | .${mop}.clat_ns.mean/1000000 " FIO/fio_${TEST_NAME}.json)
         if (( $(echo $latency $MAX_LATENCY | awk '{if ($1 > $2) print 1;}') )); then
             echo "== Latency: ${latency}(ms) too high, failing this attempt =="
             return $FAILURE
@@ -512,12 +512,23 @@ fun_tidyup() {
     # Remove empty tmp  files
     find . -type f -name "tmp*" -size 0c -exec rm {} \;
     #Archive FIO err files:
-    zip -9mqj fio_${TEST_RESULT}_err.zip *.err
+    zip -9mqj fio_${TEST_RESULT}_err.zip *.err *_threads.out
     # Generate report: use the template, integrate the tables/charts -- per workload
     # /root/tinytex/tools/texlive/bin/x86_64-linux/pdflatex -interaction=nonstopmode ${TEST_RESULT}.tex
     # Run it again to get the references, TOC, etc
+    # Remove empty files
+    find . -type f -size 0c -exec rm {} \;
+    cd FIO/
+    find . -type f -size 0c -exec rm {} \;
+    # Minor processing: convert into .csv table via fio_parse_jsons.py:
+    ls -rt *.json > fio_list && \
+        ${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c fio_list -v --csv -t ${TEST_RESULT} 
+    # TODO: generate response curves from the .csv data, using gnuplot or python scripts
+    cd ..
+
     # Archiving:
-    zip -9mqj ${TEST_RESULT}${stat}.zip ${_TEST_LIST} ${TEST_RESULT}_json.out \
+    zip -9mrq ${TEST_RESULT}${stat}.zip ${_TEST_LIST} ${TEST_RESULT}_json.out \
+        FIO/* \
         *_top.out *.json *.plot *.dat *.png *.gif  *.svg *.tex *.md ${TOP_OUT_LIST} \
         osd*_threads.out *_list ${TOP_PID_LIST} numa_args*.out *_diskstat.out
     # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target

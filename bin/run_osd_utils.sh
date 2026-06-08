@@ -302,7 +302,8 @@ fun_run_fio(){
 	  if [ "$LATENCY_TARGET" = true ]; then
 		  OPTS="${OPTS} -l "
 	  else
-		  OPTS="${OPTS} -w hockey -r -a "
+		  OPTS="${OPTS} -r -a "
+		  #OPTS="${OPTS} -w hockey -r -a "
 	  fi
   fi
   #MULTI_VOL Debug flag in place since recent RBD hangs -- temporarily disabling in favour of prefilling via rbd bench at cephmkrbd.sh

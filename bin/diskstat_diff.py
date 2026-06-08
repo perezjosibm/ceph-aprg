@@ -107,14 +107,18 @@ class DiskStatEntry(object):
         Assigns the result to self._diff, we use that to make a dataframe and
         produce heatmaps
         """
-        for dev in b_data:
-            for m in b_data[dev]:
-                b_data[dev][m] -= a_data[dev][m]
-                # if self.time_re.search(m):
-                #     _max = max([b_data[dev][m], a_data[dev][m]])
-                #     b_data[dev][m] = _max
-                # else:
-                #     b_data[dev][m] -= a_data[dev][m]
+        # Test a_data is not empty
+        if not a_data:
+            logger.error(f"Input .json file {self.aname} is empty or does not contain any matching devices")
+        else:
+            for dev in b_data:
+                for m in b_data[dev]:
+                    b_data[dev][m] -= a_data[dev][m]
+                    # if self.time_re.search(m):
+                    #     _max = max([b_data[dev][m], a_data[dev][m]])
+                    #     b_data[dev][m] = _max
+                    # else:
+                    #     b_data[dev][m] -= a_data[dev][m]
         self._diff = b_data
         self.df = pd.DataFrame(self._diff)  # .T # Transpose
 
@@ -123,6 +127,10 @@ class DiskStatEntry(object):
         Load a .json file containing diskstat metrics
         Returns a dict with keys only those interested device names
         """
+        # Test whether the file exists and is readable, and whether it is empty
+        if not os.path.isfile(json_fname):
+            logger.error(f"JSON input file {json_fname} does not exist")
+            return {}
         try:
             with open(json_fname, "r") as json_data:
                 ds_list = []

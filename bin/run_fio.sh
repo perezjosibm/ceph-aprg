@@ -87,6 +87,7 @@ trap 'echo "$(date):run_fio == Got signal from parent, quiting =="; kill -9 ${fi
 # main:
 
 [[ ! -d $RUN_DIR ]] && mkdir $RUN_DIR
+[ ! -d "${RUN_DIR}/FIO/" ] && mkdir -p ${RUN_DIR}/FIO/
 pushd $RUN_DIR
 
 # Standalone option to post-process a set of results previously collected
