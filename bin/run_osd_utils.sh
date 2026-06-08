@@ -469,13 +469,15 @@ fun_run_fixed_bal_tests() {
                 fi
 
                 if [ "$OSD_TYPE" == "classic" ]; then
-                    # Manually set the OSD process affinity: do we still need this?
-                    cmd="taskset -a -c -p '${test_row[classic_cpu_set]}'  $(pgrep osd)"
-                    if [ "${SKIP_EXEC}" = true ]; then
-                        echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_test_run.log
-                    else 
-                        eval "$cmd" >> ${RUN_DIR}/${test_name}_test_run.log
-                    fi
+                    # Manually set the OSD process affinity: 
+                    for x in $(pgrep osd); do 
+                        cmd="taskset -a -c -p ${test_row[vstart_cpu_set]} $x";
+                        if [ "${SKIP_EXEC}" = true ]; then
+                            echo "${cmd}"  | tee >> ${RUN_DIR}/${test_name}_test_run.log
+                        else 
+                            eval "$cmd" >> ${RUN_DIR}/${test_name}_test_run.log
+                        fi 
+                    done
                 fi
 
                 if [ "${SKIP_EXEC}" = true ]; then
