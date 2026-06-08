@@ -50,8 +50,8 @@ test_row['fio_type']="catalog"
 #test_row['fio_workload']="rbd -p ${rbd_POOL_NAME} -t 16 -d 1 -w randrw -r 70% -a -m"
 #test_row['classic_cpu']="0-19"
 ## Multi-job, single instance, randomwrite workload, response curves:
-#test_row['fio_workload']="-j -s -w rw -r" 
-test_row['fio_workload']="-j -w hockey -r -a" 
+#test_row['fio_workload']="-j -s -w rw -r -w hockey" 
+test_row['fio_workload']="-j -s -r -a"
 #70% -a -m" # --size=${rbd_size} --numjobs=${fio_numjobs} --blocksize=${fio_blocksize} --iodepth=${fio_iodepth} -t ${fio_type}"
 string=$(declare -p test_row)
 test_table["1"]=${string}
