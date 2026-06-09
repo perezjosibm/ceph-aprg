@@ -180,28 +180,83 @@ EOF
     echo "$json" | jq . >> ${TEST_PREFIX}_keymap.json
 }
 #############################################################################################
+fun_get_running_procs() {
+    local PROC_NAME=$1
+    local PROC_PIDS=()
+
+    # Get the list of PIDs for the given process name
+    while IFS= read -r pid; do
+        if kill -0 "$pid" 2> /dev/null; then
+            PROC_PIDS+=("$pid")
+        fi
+    done < <(pgrep -f "$PROC_NAME")
+
+    echo "${PROC_PIDS[@]}"
+}
+
+# Return true whenever at least one pid from the given list is running, false otherwise
+function get_running_pids() {
+    local pname=${1-} pids=${2-}
+    if shift 2; then
+        pids=($@)
+    else
+        pids=($(pgrep -f "$pname"))
+    fi
+
+    local alive=0
+    for pid in "${pids[@]}"; do
+        if kill -0 ${pid} 2> /dev/null; then
+            alive=$((alive+1))
+        fi
+    done
+    #[ "$alive" == "${#pids[@]}" ]; echo $?
+    [ $alive -gt 0 ]; echo $?
+}
+
 # Monitor the FIO proccesses whether they complete successfully
 # TBC. extend to a list of processes, when one of they dies, kill all FIO and notify the parent
 fun_watchdog_proc() {
-    local PROC_NAME=$1
-    local PROC_PID=$2
-    #local PROC_PIDS=$@
+    local pname=${1-} pids=${2-}
+    if shift 2; then
+        pids=($@)
+    else
+        pids=($(pgrep -f "$pname"))
+    fi
+    # local PROC_NAME=$1
+    # #local PROC_PID=$2
+    # shift
+    # local PROC_PIDS=("$@")
 
-    while kill -0 ${PROC_PID} 2> /dev/null && [[ "$WATCHDOG" == "true" ]]; do
+    # Check whether the list of PIDs is not empty
+    if [ ${#pids[@]} -eq 0 ]; then
+        echo "== $(date) == Watchdog: No PIDs provided to monitor for process ${pname}, exiting watchdog... =="
+        return 1 
+    fi
+    # Do we need a max time out? What if the process takes longer than expected, do we want to kill it and fail the test?
+    while get_running_pids $pname ${pids[@]} && [[ "$WATCHDOG" == "true" ]]; do
         sleep 5
     done
     if [[ "$WATCHDOG" == "true" ]]; then
         WATCHDOG=false
 
-        echo "== $(date) == Watchdog: Process ${PROC_NAME} (pid: ${PROC_PID}) has exited! =="
-        wait ${PROC_PID}
-        rc=$?
-        if [[ $rc -eq  0 ]] || [[ $fio_rc -eq 0 ]]; then
-            echo "== $(date) == Watchdog: Process ${PROC_NAME} (pid: ${PROC_PID}) completed successfully! =="
-            return 0
+        local rc=0 successful=0
+        for pid in "${pids[@]}"; do
+            echo "== $(date) == Watchdog: Process ${pname} (pid: ${pid}) exited! =="
+            wait $pid #< <(jobs -p) #${PROC_PID}
+            rc=$?
+            if [[ $rc -eq  0 ]] || [[ $fio_rc -eq 0 ]]; then
+                echo "== $(date) == Watchdog: Process ${pname} (pid: ${pid}) completed successfully! =="
+                successful=$((successful+1))
+            else
+                echo "== $(date) == Watchdog: Process ${pname} (pid: ${pid}) FAILED! =="
+            fi
+        done
+        if [[ $successful -eq ${#pids[@]} ]]; then
+            echo "== $(date) == Watchdog: All processes ${pname} completed successfully! =="
+            exit 0
         else
-            echo "== $(date) == Watchdog: Process ${PROC_NAME} (pid: ${PROC_PID}) FAILED! =="
-            echo "== $(date) == Watchdog: Killing all FIO processes! =="
+            echo "== $(date) == Watchdog: Killing all (global) FIO processes! =="
+            # This is a side-effect: we must provide the gloabal list instead of it being global...
             for pid in "${global_fio_id[@]}"; do
                 if kill -0 ${pid} 2> /dev/null; then
                     echo "== $(date) == Watchdog: Killing FIO process (pid: ${pid}) =="
@@ -277,9 +332,11 @@ fun_run_workload() {
     done # loop NUM_PROCS
 
     # Launch watchdog to monitor the first FIO process only
-    echo "$(date) Starting watchdog over proc ${fio_id["fio_0"]} ..."
+    #echo "$(date) Starting watchdog over proc ${fio_id["fio_0"]} ..."
+    echo "$(date) Starting watchdog over proc ${fio_pids[@]} ..."
     WATCHDOG=true
-    ( fun_watchdog_proc "FIO" ${fio_id["fio_0"]} ) &
+    ( fun_watchdog_proc "fio" ${fio_pids[@]} ) &
+    #( fun_watchdog_proc "FIO" ${fio_id["fio_0"]} ) &
     #( fun_watchdog_proc "FIO" ${fio_pids[@]} ) &
     WATCHDOG_PID=$!
     sleep 30; # ramp up time TBC. should be selectable from test_plan
@@ -323,14 +380,14 @@ fun_run_workload() {
     # # wait < <(jobs -p)
     wait ${lastfio_pid};
     fio_rc=$?
-    echo "$(date) == FIO completed with rc: ${fio_rc} =="
+    echo "$(date) == FIO (pid: ${lastfio_pid}) completed with rc: ${fio_rc} =="
     # Disable the watchdog after FIO completion
     WATCHDOG=false 
     
     # Measure the diskstats after the completion of FIO instances
     jc --pretty /proc/diskstats | python3 ${SCRIPT_DIR}/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
     # Filter FIO .json: remove any error line not in .json format
-    sed -i '/^fio: .*/d' FIO/fio_${TEST_NAME}.json
+    [ -f FIO/fio_${TEST_NAME}.json ] && sed -i '/^fio: .*/d' FIO/fio_${TEST_NAME}.json
     # eg if the latency_target was not met or any other error
     # for x in $(cat fio_${TEST_NAME}.err | grep 'error=' | awk -F= '{print $2}' | sort -u); do
     #     if [ "$x" != "0" ]; then
@@ -341,6 +398,7 @@ fun_run_workload() {
     
     # Exit the loops if the latency disperses too much from the median
     if [ "$RESPONSE_CURVE" = true ] && [ "$RC_SKIP_HEURISTIC" = false ]; then
+        [ ! -f FIO/fio_${TEST_NAME}.json ] && echo "== FIO output file FIO/fio_${TEST_NAME}.json not found, skipping latency check ==" && return $FAILURE
         mop=${mode[${WORKLOAD}]}
         # Original condition:
         #covar=$(jq ".jobs | .[] | .${mop}.clat_ns.stddev/.${mop}.clat_ns.mean < 0.5 and \
@@ -366,6 +424,8 @@ fun_run_workload_loop() {
     local WORKLOAD_NAME=$5 # used for respose curves
 
     fun_set_globals $WORKLOAD $SINGLE $WITH_FLAMEGRAPHS $TEST_PREFIX $WORKLOAD_NAME
+
+    [ ! -d FIO/ ] && mkdir FIO/
 
     if [ "$SKIP_OSD_MON" = false ]; then
         fun_osd_dump_start ${TEST_RESULT}_dump.json
@@ -528,7 +588,7 @@ fun_tidyup() {
 
     # Archiving:
     zip -9mrq ${TEST_RESULT}${stat}.zip ${_TEST_LIST} ${TEST_RESULT}_json.out \
-        FIO/* \
+        FIO/ \
         *_top.out *.json *.plot *.dat *.png *.gif  *.svg *.tex *.md ${TOP_OUT_LIST} \
         osd*_threads.out *_list ${TOP_PID_LIST} numa_args*.out *_diskstat.out
     # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target

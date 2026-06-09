@@ -598,7 +598,8 @@ fun_run_precond(){
     #nvme format /dev/nvme0n1 -s 1
     for dev in $(IFS=','; echo ${STORE_DEVS}); do 
         echo -e "${GREEN}== Secure Erase $dev ==${NC}"
-        nvme format $dev -s 1 --force --lbaf=1
+        nvme format $dev -s 1 --force
+        #nvme format $dev -s 1 --force --lbaf=1 # not supported by NVME drives in o05
     done
 
     # 2. Sequential Precondition (2 passes): 

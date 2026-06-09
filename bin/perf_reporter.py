@@ -1399,26 +1399,26 @@ class PerfReporter(object):
                 # group_df = group_df.sort_values("iodepth")
 
                 # Plot with run_name as hue and metric as style
-                if num_metrics > 1:
+                # if num_metrics > 1:
                     # Multiple metrics: use both hue and style
-                    sns.barplot(
-                        data=group_df,
-                        x="value",
-                        y="metric",
-                        hue="run_name",
-                        palette="viridis",
-                        ax=ax,
-                    )
-                else:
-                    # Single metric: only use hue for run_name
-                    sns.barplot(
-                        data=group_df,
-                        x="metric",
-                        y="value",
-                        hue="run_name",
-                        palette="viridis",
-                        ax=ax,
-                    )
+                sns.barplot(
+                    data=group_df,
+                    x="value",
+                    y="metric",
+                    hue="run_name",
+                    palette="viridis",
+                    ax=ax,
+                )
+                # else:
+                #     # Single metric: only use hue for run_name
+                #     sns.barplot(
+                #         data=group_df,
+                #         x="metric",
+                #         y="value",
+                #         hue="run_name",
+                #         palette="viridis",
+                #         ax=ax,
+                #     )
 
                 # Customize plot
                 ax.set_title(
@@ -1432,7 +1432,7 @@ class PerfReporter(object):
                 ax.bar_label(ax.containers[0], padding=3)
 
                 # Optional: Add a limit to the x-axis so labels don't get cut off
-                ax.set_xlim(0, max(df["Values"]) + 10)
+                ax.set_xlim(0, max(df["value"]) + 10)
                 # Set x-axis to show all iodepth values
                 # iodepth_values = sorted(group_df["iodepth"].unique())
                 # ax.set_xticks(iodepth_values)
