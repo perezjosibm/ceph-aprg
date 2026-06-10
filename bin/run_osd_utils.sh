@@ -547,7 +547,7 @@ fun_run_fixed_bal_tests() {
                     # and we want to avoid the watchdog to kill the script before we
                     # can collect the results
                     fun_zip_results_custom "$test_name"
-                else
+                else # catalog predefined .fio files
                     fun_run_fio "$test_name" "${test_row[fio_workload]}"
                     echo "$(date) FIO ${fio_pid} completed: $test_name ${test_row[fio_workload]}"
                     # Enable when FIO be invoked via fio_utils.sh instead of via run_fio.sh

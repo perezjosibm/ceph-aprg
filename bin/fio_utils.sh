@@ -142,7 +142,7 @@ fun_set_globals() {
 
     # TEST_RESULT is the name for the whole dataset (normally 10 points according to iodepth x numjobs)
     TEST_RESULT=${TEST_PREFIX}_${NUM_PROCS}procs_${map[${WORKLOAD}]}
-    OSD_TEST_LIST="${TEST_RESULT}_list"
+    FIO_TEST_LIST="${TEST_RESULT}_list"
     TOP_OUT_LIST="${TEST_RESULT}_top_list"
     TOP_PID_LIST="${TEST_RESULT}_pid_list"
     TOP_PID_JSON="${TEST_RESULT}_pid.json"
@@ -169,7 +169,7 @@ fun_set_globals() {
         "response_curve": "${RESPONSE_CURVE}",
         "test_result": "${TEST_RESULT}",
         "osd_cpu_avg": "${OSD_CPU_AVG}",
-        "osd_test_list": "${OSD_TEST_LIST}",
+        "fio_test_list": "${FIO_TEST_LIST}",
         "top_out_list": "${TOP_OUT_LIST}",
         "top_pid_list": "${TOP_PID_LIST}",
         "top_pid_json": "${TOP_PID_JSON}",
@@ -304,8 +304,9 @@ fun_run_workload() {
     for (( i=0; i<${NUM_PROCS}; i++ )); do
         export TEST_NAME=${TEST_PREFIX}_${job}job_${io}io_${BLOCK_SIZE_KB}_${map[${WORKLOAD}]}_p${i};
         echo "== $(date) == ($io,$job): ${TEST_NAME} ==";
-        echo fio_${TEST_NAME}.json >> ${OSD_TEST_LIST}
-        fio_name=${FIO_JOBS}${FIO_JOB_SPEC}${map[${WORKLOAD}]}.fio
+        local run_name="FIO/fio_${TEST_NAME}.json"
+        echo "${run_name}" >> ${FIO_TEST_LIST}
+        fio_job_name=${FIO_JOBS}${FIO_JOB_SPEC}${map[${WORKLOAD}]}.fio
 
         if [ "$RESPONSE_CURVE" = true ]; then
             log_name=${TEST_RESULT}
@@ -315,7 +316,7 @@ fun_run_workload() {
         # Execute FIO: for multijob/vols, we do not need to indicate the RBD_NAME
         # Note the test duration is specified in the .fio file!
         ( LOG_NAME=${log_name} RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} \
-            taskset -ac ${FIO_CPU_CORES} fio ${fio_name} --output=FIO/fio_${TEST_NAME}.json \
+            taskset -ac ${FIO_CPU_CORES} fio ${fio_job_name} --output=${run_name} \
             --output-format=json 2> fio_${TEST_NAME}.err ) &
         # Capture the pid of the FIO instance
         lastfio_pid=$!
@@ -326,7 +327,7 @@ fun_run_workload() {
         fio_id["fio_${i}"]=$lastfio_pid
         global_fio_id+=( $lastfio_pid  )
         fio_pids+=( $lastfio_pid  )
-        echo "== $(date) == Launched FIO (pid: $lastfio_pid) ${fio_name}, num_threads: ${num_threads} \
+        echo "== $(date) == Launched FIO (pid: $lastfio_pid) ${fio_job_name}, num_threads: ${num_threads} \
             with RBD_NAME=fio_test_${i} IO_DEPTH=${io} NUM_JOBS=${job} RUNTIME=${RUNTIME} on cores ${FIO_CPU_CORES} ==";
         # Check return code from FIO
     done # loop NUM_PROCS
@@ -387,7 +388,15 @@ fun_run_workload() {
     # Measure the diskstats after the completion of FIO instances
     jc --pretty /proc/diskstats | python3 ${SCRIPT_DIR}/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
     # Filter FIO .json: remove any error line not in .json format
-    [ -f FIO/fio_${TEST_NAME}.json ] && sed -i '/^fio: .*/d' FIO/fio_${TEST_NAME}.json
+
+    if [ -f ${FIO_TEST_LIST} ]; then
+        echo "== Removing any non-json line from the FIO output files listed in ${FIO_TEST_LIST} =="
+        while read -r line; do
+            if [ -f "$line" ]; then
+                sed -i '/^fio: .*/d' "$line"
+            fi
+        done < "${FIO_TEST_LIST}"
+    fi
     # eg if the latency_target was not met or any other error
     # for x in $(cat fio_${TEST_NAME}.err | grep 'error=' | awk -F= '{print $2}' | sort -u); do
     #     if [ "$x" != "0" ]; then
@@ -398,7 +407,11 @@ fun_run_workload() {
     
     # Exit the loops if the latency disperses too much from the median
     if [ "$RESPONSE_CURVE" = true ] && [ "$RC_SKIP_HEURISTIC" = false ]; then
-        [ ! -f FIO/fio_${TEST_NAME}.json ] && echo "== FIO output file FIO/fio_${TEST_NAME}.json not found, skipping latency check ==" && return $FAILURE
+        # This would only check the latest run, but in theory if multiple
+        # instances have been executed, it should coalesce the results in a
+        # single .json, so we can check the latency across all runs, and decide
+        # whether to exit or not before executing the next run 
+        [ ! -f ${run_name} ] && echo "== FIO output file ${run_name} not found, skipping latency check ==" && return $FAILURE
         mop=${mode[${WORKLOAD}]}
         # Original condition:
         #covar=$(jq ".jobs | .[] | .${mop}.clat_ns.stddev/.${mop}.clat_ns.mean < 0.5 and \
@@ -438,6 +451,7 @@ fun_run_workload_loop() {
     # for io in "${array[@]}"; do
     #     list_io_depth+=( $io )
     # done
+    echo -e "${GREEN}== $(date) Start fun_run_workload_loop ==${NC}"
 
     for job in $RANGE_NUMJOBS; do
         for io in $RANGE_IODEPTH; do
@@ -487,6 +501,7 @@ fun_post_process() {
     #
     # Refactor into two subroutines
     # Post processing:
+    echo "== $(date) == Postprocessing =="
     if [ "$RESPONSE_CURVE" = true ]; then
         echo "OSD: $osd_pids" > ${TOP_PID_LIST}
         fio_pids=$( fun_join_by ',' ${global_fio_id[@]} )
@@ -506,12 +521,13 @@ fun_post_process() {
     fi
 
     # Post processing: FIO .json
-    if [ -f  ${OSD_TEST_LIST} ] && [ -f  ${OSD_CPU_AVG} ]; then
+    if [ -f  ${FIO_TEST_LIST} ] && [ -f  ${OSD_CPU_AVG} ]; then
         # Filter out any FIO high latency error from the .json, otherwise the Python script bails out
-        for x in $(cat ${OSD_TEST_LIST}); do
-            sed -i '/^fio:/d' $x
+        # This might be now redundant, but the script can be called to post-processing only mode, so we need to be sure
+        for x in $(cat ${FIO_TEST_LIST}); do
+            [ -f "$x" ] && sed -i '/^fio:/d' $x
         done
-        python3 ${SCRIPT_DIR}/fio_parse_jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
+        python3 ${SCRIPT_DIR}/fio_parse_jsons.py -c ${FIO_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
     fi
 
     # Post processing: OSD dump_metrics .json -- disabling this since we are no longer using it
@@ -521,9 +537,12 @@ fun_post_process() {
     # done
 
     # Produce charts from the scripts .plot and .dat files generated
-    for x in $(ls *.plot); do
-        gnuplot $x 2>&1 > /dev/null
-    done
+    if which gnuplot 2>&1 > /dev/null; then
+        echo "== $(date) == Generating charts from .plot files =="
+        for x in $(ls *.plot); do
+            gnuplot $x 2>&1 > /dev/null
+        done
+    fi
 
     # Generate single animated file from a timespan of FIO charts
     # Need to traverse the suffix of the charts produced to know which ones we want to coalesce
@@ -562,17 +581,19 @@ fun_post_process() {
 
     fun_tidyup ${TEST_RESULT}
 }
+
 #############################################################################################
 fun_tidyup() {
     local TEST_RESULT=$1
     local stat=$2
 
+    echo "== $(date) == Tidying up =="
     # Remove empty .err files
     find . -type f -name "fio*.err" -size 0c -exec rm {} \;
     # Remove empty tmp  files
     find . -type f -name "/tmp/tmp*" -size 0c -exec rm {} \;
     #Archive FIO err files:
-    zip -9mqj fio_${TEST_RESULT}_err.zip *.err *_threads.out
+    zip -9mqj fio_${TEST_RESULT}_err.zip *.err
     # Generate report: use the template, integrate the tables/charts -- per workload
     # /root/tinytex/tools/texlive/bin/x86_64-linux/pdflatex -interaction=nonstopmode ${TEST_RESULT}.tex
     # Run it again to get the references, TOC, etc
@@ -589,11 +610,13 @@ fun_tidyup() {
     # Archiving:
     zip -9mrq ${TEST_RESULT}${stat}.zip ${_TEST_LIST} ${TEST_RESULT}_json.out \
         FIO/ \
-        *_top.out *.json *.plot *.dat *.png *.gif  *.svg *.tex *.md ${TOP_OUT_LIST} \
-        osd*_threads.out *_list ${TOP_PID_LIST} numa_args*.out *_diskstat.out
+        *_top.out *.json *.plot *.dat *.png *.gif *.svg *.tex *.md ${TOP_OUT_LIST} \
+         *_threads.out *_list ${TOP_PID_LIST} numa_args*.out *_diskstat.out
     # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
     # rm -f *.log *_cpu_distro.log
+    echo "== $(date) == Tidying up complete =="
 }
+
 #############################################################################################
 # Priming
 fun_prime() {
@@ -688,22 +711,27 @@ fun_post_process_cold() {
         --avg=${OSD_CPU_AVG} --pids=${TOP_PID_JSON} 2>&1 > /dev/null
     fi
     # Post processing: FIO .json
-    if [ -f  ${OSD_TEST_LIST} ] && [ -f  ${OSD_CPU_AVG} ]; then
+    if [ -f  ${FIO_TEST_LIST} ] && [ -f  ${OSD_CPU_AVG} ]; then
       # Filter out any FIO high latency error from the .json, otherwise the Python script bails out
-      for x in $(cat ${OSD_TEST_LIST}); do
-        sed -i '/^fio:/d' $x
+      for x in $(cat ${FIO_TEST_LIST}); do
+          if [ -f "$x" ]; then
+              echo "== Removing any non-json line from the FIO output file $x =="
+              sed -i '/^fio: .*/d' "$x"
+          fi
       done
-      python3 ${SCRIPT_DIR}/fio_parse_jsons.py -c ${OSD_TEST_LIST} -t ${TEST_RESULT} \
+      python3 ${SCRIPT_DIR}/fio_parse_jsons.py -c ${FIO_TEST_LIST} -t ${TEST_RESULT} \
           -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
     fi
 
     # Produce charts from the scripts .plot and .dat files generated
-    for x in $(ls *.plot); do
-      gnuplot $x 2>&1 > /dev/null
-    done
+    if which gnuplot 2>&1 > /dev/null; then
+        echo "== Generating charts from .plot files =="
+        for x in $(ls *.plot); do
+            gnuplot $x 2>&1 > /dev/null
+        done
+    fi
     zip -9muqj ../${TEST_RESULT}.zip *
     cd ..
     rm -rf $yn
   done
 }
-
