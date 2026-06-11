@@ -82,10 +82,11 @@ def load_scrapper(scrapper_file):
     job_ids = []
     # Regular expression to match lines like: 123 jobs: ['job1','job2']
     # regex = re.compile(r"^\d+\s+jobs:\s+\[('\d.+',?)+\]$")
+    # We might need to use the lists of jobs in the scrapper file to filter the logs to scan, because we need those same groups
     pattern = re.compile(r"\d+ jobs: \[(.*?)\]")
     # Unit test using a sample scrapper lines
-    # 1 jobs: ['8595670']
-    # 2 jobs: ['8595671', '8595672']
+    # 1 jobs: ['8595670'] #group 1
+    # 2 jobs: ['8595671', '8595672'] #group 2
     with open(scrapper_file, "r") as f:
         for line in f:
             # if line.startswith('#'):
@@ -401,6 +402,7 @@ class Scrappy:
         self.exclude_issues = args.exclude
         self.failures = args.failures.split(",") if args.failures else self.failures
         logger.debug(f"Failures: {self.failures}")
+        self.missed = [] # jobs that did not match any issue, not even the generic one
 
     def prepare_egrep_files(self):
         """
@@ -441,6 +443,7 @@ class Scrappy:
                 if os.path.isfile(report_tmp) and os.path.getsize(report_tmp) == 0:
                     logger.debug(f"Removing empty report file: {report_tmp}")
                     os.remove(report_tmp)
+                    self.missed.append(job)
 
     def scan_logs(self, job: str, log_type: str, log_info: dict):
         """
@@ -565,6 +568,7 @@ class Scrappy:
         """
         From the produced report, scan for the specific issues found and
         attribute them to the log file being scanned.
+        TODO: how to indicate whether a job did not match any issue, nor even GENERIC?
         """
         for log_type, log_info in self.LOG_TYPES.items():
             # Construct an special issue representing the 'generic' pattern
@@ -707,6 +711,15 @@ class Scrappy:
 
         print("\nSummary of issues found:")
         summary = {}
+        # Substract the list of jobns found from the self.failures list to get the list of jobs that did not match any issue, not even the generic one
+        unmatched_jobs = set(self.failures) - set(
+            job for tracker in tracker_count.values() for job in tracker.keys()
+        )
+        if unmatched_jobs:
+            print(
+                f"\nJobs that did not match any issue, not even the generic one: {', '.join(unmatched_jobs)}"
+            )
+
         for tracker, info in tracker_count.items():
             # Sort info.keys()) by number of occurrences descending
             _sorted = sorted(info, key=info.get, reverse=True)
@@ -729,6 +742,8 @@ class Scrappy:
             print(
                 f"\nPotentially new issues found matching generic patterns *only*: found in {len(generic_info.keys())} jobs: {', '.join(generic_info.keys())}"
             )
+        # Need also to indicate whether there are jobs that did not match any issue, not even the generic one, as they might be interesting to investigate as well
+
 
     def run(self):
         """

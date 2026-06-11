@@ -2,6 +2,30 @@
   "osd":
   [
     {
+      "tracker": "77022",
+      "pattern": [ "crimson::os::seastore::FixedKVBtree.*abort(abort() called"],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "71382",
+      "pattern": [ "ERROR:LeakSanitizer: detected memory leaks"],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "76797",
+      "pattern": [ "Assertion `shard_store.get_status() true' failed."],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "75957",
+      "pattern": [ "BlueStore::_txc_add_transaction.*abort(unexpected error)"],
+        "description": "",
+        "status": "open"
+    },
+    {
       "tracker": "76524",
       "pattern": [ "AddressSanitizer: heap-buffer-overflow .* in write.part.0"],
         "description": "",
