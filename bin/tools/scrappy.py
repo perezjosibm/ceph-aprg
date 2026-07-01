@@ -363,6 +363,8 @@ class Scrappy:
             "patterns": [
                 r"INFO:tasks.thrashosds.thrasher:in_osds:",
                 r"is failed",
+                r"Still waiting for all pgs to be scrubbed",
+                r"wait_for_recovery",
                 r"tasks.daemonwatchdog.daemon_watchdog:BARK!",
                 r"Error ENXIO",
             ],

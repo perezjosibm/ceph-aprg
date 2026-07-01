@@ -3,7 +3,7 @@
   [
     {
       "tracker": "77022",
-      "pattern": [ "crimson::os::seastore::FixedKVBtree.*abort(abort() called"],
+      "pattern": [ "crimson::os::seastore::FixedKVBtree.*abort.*called"],
         "description": "",
         "status": "open"
     },
@@ -15,13 +15,13 @@
     },
     {
       "tracker": "76797",
-      "pattern": [ "Assertion `shard_store.get_status() true' failed."],
+      "pattern": [ "shard_store.get_status.*failed."],
         "description": "",
         "status": "open"
     },
     {
       "tracker": "75957",
-      "pattern": [ "BlueStore::_txc_add_transaction.*abort(unexpected error)"],
+      "pattern": [ "BlueStore::_txc_add_transaction.*abort.*unexpected error"],
         "description": "",
         "status": "open"
     },
@@ -39,20 +39,20 @@
     },
     {
       "tracker": "71786",
-      "pattern": [ "Assertion `interrupt_cond.get() ic.get()' failed"],
+      "pattern": [ "Assertion.*interrupt_cond.* failed"],
         "description": "",
         "status": "open"
     },
 
     {
       "tracker": "75521",
-      "pattern": [ "LogManager::omap_set_keys(.*Assertion `ret Transaction::get_extent_ret::PRESENT' failed.*"],
+      "pattern": [ "LogManager::omap_set_keys.*Assertion `ret Transaction::get_extent_ret::PRESENT' failed.*"],
         "description": "",
         "status": "open"
     },
     {
       "tracker": "75522",
-      "pattern": [ "PGMeta::load(.*: Assertion `big_info' failed.*"],
+      "pattern": [ "PGMeta::load.*: Assertion `big_info' failed.*"],
         "description": "",
         "status": "open"
     },
@@ -64,7 +64,7 @@
     },
     {
       "tracker": "75526",
-      "pattern": [ "void pg_log_t::copy_after(.*)', ceph_assert(i->version > other.tail)"],
+      "pattern": [ "void pg_log_t::copy_after.*, ceph_assert(i->version > other.tail)"],
         "description": "",
         "status": "open"
     },
@@ -162,8 +162,8 @@
       "status": "open"
     },
     {
-      "tracker": "71478",
-      "pattern": [ "Assertion 'get() != pointer()' failed" ],
+      "tracker": "76469",
+      "pattern": [ "INFO:tasks.ceph:Still waiting for all pgs to be scrubbed" ],
       "description": "",
       "status": "open"
     },
