@@ -29,6 +29,9 @@ pp = pprint.PrettyPrinter(width=61, compact=True)
 
 # This script path:
 SCRIPT_PATH = os.path.dirname(os.path.realpath(__file__))
+UNKNOWN_REASON = "Unknown reason"
+SCRAPE_TRACKER = "scrape:Failure"
+MAX_REASON_LENGTH = 100
 
 
 def extract_job_ids(log_file):
@@ -77,27 +80,78 @@ def load_scrapper(scrapper_file):
     Load the file scrapper produced by teuthology
     From this, we get the list of job failures to scan for
     """
-    # List of all the failures from the scrapper_file:
-    # failures = []
+    grouped_failures, job_ids = parse_scrapper_groups(scrapper_file)
+    return job_ids, grouped_failures
+
+
+def _extract_job_ids_from_line(line):
+    match = re.search(r"(?:\+|\d+)\s+jobs:\s+\[(.*?)\]", line)
+    if not match:
+        return []
+    ids = []
+    for item in match.group(1).split(","):
+        job_id = item.strip().strip("'\"")
+        if job_id:
+            ids.append(job_id)
+    return ids
+
+
+def parse_scrapper_groups(scrapper_file):
+    grouped_failures = {}
     job_ids = []
-    # Regular expression to match lines like: 123 jobs: ['job1','job2']
-    # regex = re.compile(r"^\d+\s+jobs:\s+\[('\d.+',?)+\]$")
-    # We might need to use the lists of jobs in the scrapper file to filter the logs to scan, because we need those same groups
-    pattern = re.compile(r"\d+ jobs: \[(.*?)\]")
-    # Unit test using a sample scrapper lines
-    # 1 jobs: ['8595670'] #group 1
-    # 2 jobs: ['8595671', '8595672'] #group 2
+    if not os.path.isfile(scrapper_file):
+        logger.warning(f"Scrapper file not found: {scrapper_file}")
+        return grouped_failures, job_ids
+
+    current_reason = None
     with open(scrapper_file, "r") as f:
-        for line in f:
-            # if line.startswith('#'):
-            #     continue
-            # match = regex.match(line)
-            match = pattern.search(line)
-            if match:
-                ids = match.group(1).replace("'", "").split(", ")
-                job_ids.extend(ids)
-                # failures.append(match.group(1).split(","))
-    return job_ids
+        for raw_line in f:
+            line = raw_line.strip()
+            if "scrape:Failure:" in line:
+                _parts = line.split("scrape:Failure:", 1)
+                reason = _parts[1].strip() if len(_parts) > 1 else ""
+                current_reason = reason if reason else UNKNOWN_REASON
+                grouped_failures.setdefault(current_reason, [])
+                continue
+            if line.startswith("scrape:Failure"):
+                current_reason = UNKNOWN_REASON
+                grouped_failures.setdefault(current_reason, [])
+                continue
+            if line.startswith("scrape:"):
+                if not current_reason:
+                    current_reason = UNKNOWN_REASON
+                    grouped_failures.setdefault(current_reason, [])
+                continue
+
+            ids = _extract_job_ids_from_line(line)
+            if not ids:
+                continue
+
+            reason = current_reason if current_reason else UNKNOWN_REASON
+            grouped_failures.setdefault(reason, [])
+            grouped_failures[reason].extend(ids)
+            job_ids.extend(ids)
+
+    for reason, ids in grouped_failures.items():
+        grouped_failures[reason] = list(dict.fromkeys(ids))
+    return grouped_failures, job_ids
+
+
+def _truncate_reason(reason, max_length=MAX_REASON_LENGTH):
+    return reason if len(reason) <= max_length else reason[:max_length]
+
+
+def format_scrapper_groups_markdown(grouped_failures):
+    lines = ["| Jobs | Tracker | Details |", "| --- | --- | --- |"]
+    sorted_groups = sorted(
+        grouped_failures.items(), key=lambda item: len(item[1]), reverse=True
+    )
+    for reason, jobs in sorted_groups:
+        details = _truncate_reason(reason)
+        details = details.replace("|", r"\|")
+        jobs_field = ", ".join(jobs)
+        lines.append(f"| {jobs_field} | {SCRAPE_TRACKER} | {details} |")
+    return "\n".join(lines)
 
 
 def prepare_egrep_file(patterns):
@@ -400,10 +454,15 @@ class Scrappy:
         self.issues = load_issues(self.issues_file)
         logger.debug(f"Issues: {pp.pformat(self.issues)}")
         self.previous_report = args.previous_report
-        self.failures = load_scrapper(os.path.join(self.logdir, "results.log")) # scrape
+        self.failures, self.failure_groups = load_scrapper(
+            os.path.join(self.logdir, "results.log")
+        )  # scrape
         self.exclude_issues = args.exclude
         self.failures = args.failures.split(",") if args.failures else self.failures
+        if args.failures:
+            self.failure_groups = {UNKNOWN_REASON: self.failures}
         logger.debug(f"Failures: {self.failures}")
+        logger.debug(f"Failure groups: {pp.pformat(self.failure_groups)}")
         self.missed = [] # jobs that did not match any issue, not even the generic one
 
     def prepare_egrep_files(self):
@@ -744,6 +803,9 @@ class Scrappy:
             print(
                 f"\nPotentially new issues found matching generic patterns *only*: found in {len(generic_info.keys())} jobs: {', '.join(generic_info.keys())}"
             )
+        if self.failure_groups:
+            print("\nScrapper failure groups:")
+            print(format_scrapper_groups_markdown(self.failure_groups))
         # Need also to indicate whether there are jobs that did not match any issue, not even the generic one, as they might be interesting to investigate as well
 
 
