@@ -1,0 +1,17 @@
+
+Summary of issues found:
+Issue 73169: found in 5 jobs: 328049, 328080, 328026, 327939, 327993
+Issue 76469: found in 3 jobs: 327943, 328004, 327946
+Issue GENERIC: found in 1 jobs: 328062
+Issue 75957: found in 1 jobs: 327962
+
+Saving tracker_summary.json.
+
+Potentially new issues found matching generic patterns *only*: found in 1 jobs: 328062
+
+Scrapper failure groups:
+| Jobs | Tracker | Details |
+| --- | --- | --- |
+| 328049, 328080, 328026, 327939, 327993 | scrape:Failure | The WatchDog barked due to Thrasher OSDThrasher threw exception wait_for_recovery: failed before tim |
+| 327946, 328004, 328062, 327962 | scrape:Failure | Command failed (workunit test rados/test_pg_merging.sh) on trial091 with status 1: 'mkdir -p -- /hom |
+| 327943 | scrape:Failure | failed to complete snap trimming before timeout |
