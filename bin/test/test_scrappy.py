@@ -5,6 +5,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 
 from scrappy import (
+    format_issue_summary_markdown,
     UNKNOWN_REASON,
     format_scrapper_groups_markdown,
     load_scrapper,
@@ -66,3 +67,32 @@ def test_format_scrapper_groups_markdown_sorts_and_truncates_reason():
     assert lines[1] == "| --- | --- | --- |"
     assert lines[2] == f"| j1, j2 | scrape:Failure | {'x' * MAX_REASON_LENGTH} |"
     assert lines[3] == "| j3 | scrape:Failure | short |"
+
+
+def test_format_issue_summary_markdown_uses_details_and_fallback():
+    summary = {
+        "GENERIC": {"total_jobs": 1, "jobs": ["3001"]},
+        "73169": {"total_jobs": 2, "jobs": ["1001", "1002"]},
+    }
+    tracker_details = {
+        "73169": "Known issue details",
+        "GENERIC": "generic | pattern",
+    }
+
+    markdown = format_issue_summary_markdown(summary, tracker_details)
+    lines = markdown.splitlines()
+
+    assert lines[0] == "| Jobs | Tracker | Details |"
+    assert lines[1] == "| --- | --- | --- |"
+    assert lines[2] == "| 1001, 1002 | 73169 | Known issue details |"
+    assert lines[3] == r"| 3001 | GENERIC | generic \| pattern |"
+
+
+def test_format_issue_summary_markdown_truncates_long_details():
+    summary = {"T1": {"total_jobs": 1, "jobs": ["1"]}}
+    tracker_details = {"T1": "x" * (MAX_REASON_LENGTH + 5)}
+
+    markdown = format_issue_summary_markdown(summary, tracker_details)
+    lines = markdown.splitlines()
+
+    assert lines[2] == f"| 1 | T1 | {'x' * MAX_REASON_LENGTH} |"
