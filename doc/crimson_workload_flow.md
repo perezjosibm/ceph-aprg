@@ -1,6 +1,6 @@
 # Crimson Workload Flow
 
-This document describes a Crimson workload flow spanning three related artifact tracks:
+This document describes a simplified view of the Crimson workload flow spanning three related artifact tracks:
 
 - Redmine tracker
 - GitHub pull requests
@@ -14,14 +14,14 @@ The diagram below is written in Mermaid so it can be rendered by platforms that 
 flowchart LR
   %% Row 1: Redmine tracker
   subgraph REDMINE["Redmine tracker"]
-    direction LR
+    direction LR 
     tracker_new["New issue / enhancement tracker ticket"]
     tracker_done["Tracker completed / closed"]
   end
 
   %% Row 2: GitHub PRs
   subgraph GITHUB["GitHub PRs"]
-    direction LR
+    direction TB
     pr_new(("New / Draft PR"))
     pr_ready(("Ready"))
     pr_qa(("QA in Progress"))
@@ -65,7 +65,7 @@ and ends with:
 
 - **Tracker completed / closed**
 
-This represents the lifecycle of the top-level tracker item.
+This represents the lifecycle of the top-level tracker item. Normally a tracker ticket is created first, and it may spawn one or more GitHub PRs. Once the PRs are merged and the work is complete, the tracker ticket is closed automatically.
 
 ### 2. GitHub PR lifecycle
 The GitHub PR row models the main engineering workflow:
@@ -74,7 +74,7 @@ The GitHub PR row models the main engineering workflow:
 - It can be created as a result of a tracker ticket, but it may also be created independently
 - From **New / Draft PR**, a transition labelled **review** moves it to **Ready**
 - From **Ready**, a transition labelled **needs QA** moves it to **QA in Progress**
-- From **QA in Progress**:
+- From **QA in Progress**: this is a subworkflow that results in a decision point with two possible outcomes:
   - **fail** leads to **Gated**
   - **pass** leads to **Tested**
 - A successful QA pass also produces a separate event artifact:
@@ -83,8 +83,17 @@ The GitHub PR row models the main engineering workflow:
 - From **Tested**, a transition labelled **merge** moves it to **Done (upstream)**
 - Once the PR is **Done (upstream)**, it connects back to the Redmine tracker completion state
 
-### 3. Jira artifacts
-The Jira row is a simple left-to-right progression:
+### 3. Positive Jira artifacts (non-technical debt)
+The Jira artifacts for non-technical debt considered are: Epics, User stories, and Tasks. 
+
+- An Epic is a set of user stories, organised to produce a major piece of work.
+- A User story is a child of an Epic, and may have one or more Tasks
+associated with it. A User story captures the tuple: Who (User, developer, etc), What the user needs, and the Value
+produced by this piece of work. It requires an Acceptance criteria to validate when the story has
+been completed, normally when all its associated tasks have been completed.
+- A Task is a unit of work that is typically assigned to a single engineer. It is the smallest unit of work in the Jira artifact hierarchy. Normally involve coding task, testing task, or documentation.
+
+In the diagram above the Jira row is a simple left-to-right progression:
 
 - **New**
 - **In progress**
@@ -92,8 +101,11 @@ The Jira row is a simple left-to-right progression:
 
 This row is intentionally lightweight and shown as a simple artifact progression.
 
+Note that for technical debt artifacts, under this simplified view, they require a tracker ticket to be created first, and then a PR is created to address the technical debt. Once the PR is merged, the tracker ticket is closed.
+
 ## Notes
 
+- The simplest approach is that the workflow is guided by the Redmine tracker, which is the top-level artifact (and both positive and technical debt items). The PRs and Jira artifacts are created as needed to support the work.
 - Circular nodes are used for GitHub PR states.
-- The **GA report** is shown as a rectangular node to distinguish it from state nodes.
+- The **QA report** is shown as a rectangular node to distinguish it from state nodes.
 - The diagram is kept in standard Mermaid `flowchart` syntax for broad Markdown renderer compatibility.
