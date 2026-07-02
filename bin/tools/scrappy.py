@@ -154,6 +154,23 @@ def format_scrapper_groups_markdown(grouped_failures):
     return "\n".join(lines)
 
 
+def format_issue_summary_markdown(summary, tracker_details=None):
+    tracker_details = tracker_details or {}
+    lines = ["| Jobs | Tracker | Details |", "| --- | --- | --- |"]
+    sorted_summary = sorted(
+        summary.items(), key=lambda item: item[1].get("total_jobs", 0), reverse=True
+    )
+    for tracker, info in sorted_summary:
+        jobs = info.get("jobs", [])
+        details = tracker_details.get(
+            tracker, f"Found in {info.get('total_jobs', len(jobs))} jobs"
+        )
+        details = _truncate_reason(details).replace("|", r"\|")
+        jobs_field = ", ".join(jobs)
+        lines.append(f"| {jobs_field} | {tracker} | {details} |")
+    return "\n".join(lines)
+
+
 def prepare_egrep_file(patterns):
     """
     Prepare a temporary _egrep file with the given patterns.
@@ -699,6 +716,7 @@ class Scrappy:
         tracker_count.get(issue["tracker"], 0) + 1
         """
         tracker_count = {}
+        tracker_details = {}
         for log_type, log_info in self.LOG_TYPES.items():
             logger.debug(
                 f"Report for log type: {log_type}\n{pp.pformat(log_info['report'])}"
@@ -710,6 +728,7 @@ class Scrappy:
 
             for issue in self.issues[log_type]:
                 tracker = issue["tracker"]
+                tracker_details.setdefault(tracker, issue.get("description", ""))
                 # logger.debug(f"Issue {tracker}: {issue['description']}")
                 for job, job_info in log_info["report"].items():
                     if tracker in job_info["trackers"]:
@@ -806,6 +825,9 @@ class Scrappy:
         if self.failure_groups:
             print("\nScrapper failure groups:")
             print(format_scrapper_groups_markdown(self.failure_groups))
+        if summary:
+            print("\nFinal QA summary table:")
+            print(format_issue_summary_markdown(summary, tracker_details))
         # Need also to indicate whether there are jobs that did not match any issue, not even the generic one, as they might be interesting to investigate as well
 
 
