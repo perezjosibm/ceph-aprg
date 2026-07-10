@@ -43,13 +43,15 @@ EXPOSE 41000/tcp
 
 # Utilities: on /packages volume
 # Optimized to clone and build in organized layers
+#https://git.kernel.dk/fio.git
 RUN mkdir /packages && cd /packages && \
-    git clone https://git.kernel.dk/fio.git && \
+    git clone https://github.com/axboe/fio.git && \
     git clone https://github.com/ceph/cbt && \
     git clone https://github.com/andikleen/pmu-tools.git && \
     git clone https://github.com/brendangregg/FlameGraph.git && \
     git clone https://github.com/rstudio/tinytex.git && \
     cd tinytex/tools/ && make all || true && \
+    cd /packages && git clone https://github.com/ceph/teuthology && \
     cd /packages && git clone https://github.com/sharkcz/collectl && \
     cd collectl && ./INSTALL && \
     rm -rf /packages/collectl

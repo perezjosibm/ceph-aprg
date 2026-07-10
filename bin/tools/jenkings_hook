@@ -1,0 +1,30 @@
+pipeline {
+    agent any 
+    stages {
+        stage('Build and Test') {
+            steps {
+                echo 'Building Ceph / Running Upstream Tests...'
+            }
+        }
+    }
+    post {
+        // This runs regardless of whether the build succeeded or failed
+        always {
+            script {
+                // env.CHANGE_ID is the standard Jenkins environment variable for the GitHub PR number
+                def prNumber = env.CHANGE_ID
+                def buildStatus = currentBuild.currentResult
+                
+                if (prNumber) {
+                    echo "Notifying local QA machine about PR #${prNumber}..."
+                    sh """
+                        curl -X POST \
+                        -H "Content-Type: application/json" \
+                        -d '{"pr_number": "${prNumber}", "status": "${buildStatus}"}' \
+                        http://<YOUR_LOCAL_MACHINE_IP>:5001/jenkins-build-complete
+                    """
+                }
+            }
+        }
+    }
+}
