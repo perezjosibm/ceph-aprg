@@ -273,6 +273,7 @@ class PerfReporter(object):
             base = os.path.basename(member)
             if not base.endswith(".json"):
                 continue
+            logger.info(f"Run {name}: Loading telemetry JSON member {member}")
             ts = self._extract_timestamp(base)
             try:
                 content = archive.read(member).decode(encoding="utf-8")
@@ -1978,6 +1979,7 @@ class PerfReporter(object):
                         "frame": df,  # FIO results dataframe
                         "telemetry": defaultdict(list),
                     }
+                    logger.info(f"Run {name}: Extracting telemetry data from archive  {test_d['path']}")
                     self._load_telemetry_from_archive(name, archive)
 
                     logger.info(f"Run {name}: Extracting workload intervals")

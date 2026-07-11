@@ -644,7 +644,11 @@ def load_crimson_dump_dataframe_from_content(json_content: str) -> tuple: #pd.Da
     pd.DataFrame
         DataFrame with columns: metric, group, shard, value, and any extra dimensions.
     """
-    data = json.loads(json_content)
+    try:
+        data = json.loads(json_content)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON content: {e}")
+        return "unknown", pd.DataFrame()
     #debug_print = False
     
     # Use new parser hierarchy if available

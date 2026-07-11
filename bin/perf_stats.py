@@ -86,15 +86,16 @@ def load_perf_stat_dataframe_from_content(json_content: str) -> pd.DataFrame:
             continue
         metric_value = entry.get("metric-value")
         counter_value = entry.get("counter-value")
+        # Skip entry if counter_value is "<not counted>"
+        if counter_value == "<not counted>":
+            continue
         rows.append(
             {
                 "interval": float(entry.get("interval", 0.0)),
                 "event": entry.get("event", "unknown_metric"),
                 "metric_value": float(metric_value) if metric_value is not None else None,
                 "metric_unit": entry.get("metric-unit", ""),
-                "counter_value": float(counter_value)
-                if counter_value is not None
-                else None,
+                "counter_value": float(counter_value) if counter_value is not None else None,
                 "counter_unit": entry.get("unit", ""),
                 "event_runtime": entry.get("event-runtime"),
                 "pcnt_running": entry.get("pcnt-running"),
