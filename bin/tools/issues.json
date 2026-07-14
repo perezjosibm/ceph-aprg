@@ -2,6 +2,12 @@
   "osd":
   [
     {
+      "tracker": "77629",
+      "pattern": [ "crimson::osd::ShardServices::register_merge_source"],
+        "description": "",
+        "status": "open"
+    },
+    {
       "tracker": "77022",
       "pattern": [ "crimson::os::seastore::FixedKVBtree.*abort.*called"],
         "description": "",
