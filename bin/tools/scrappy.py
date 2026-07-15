@@ -167,7 +167,7 @@ def format_issue_summary_markdown(summary, tracker_details=None):
         )
         details = _truncate_reason(details).replace("|", r"\|")
         jobs_field = ", ".join(jobs)
-        lines.append(f"| {jobs_field} | {tracker} | {details} |")
+        lines.append(f"| {jobs_field} | https://tracker.ceph.com/issues/{tracker} | {details} |")
     return "\n".join(lines)
 
 

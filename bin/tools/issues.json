@@ -2,6 +2,12 @@
   "osd":
   [
     {
+      "tracker": "78199",
+      "pattern": [ "SIGSEGV", "ErasureCodeIsaDefault"],
+        "description": "",
+        "status": "open"
+    },
+    {
       "tracker": "77629",
       "pattern": [ "crimson::osd::ShardServices::register_merge_source"],
         "description": "",
@@ -161,6 +167,12 @@
   ],
   "teuthology":
   [
+    {
+      "tracker": "N/A",
+      "pattern": [ "No space left on device" ],
+      "description": "",
+      "status": "open"
+    },
     {
       "tracker": "73169",
       "pattern": [ "wait_for_recovery" ],
