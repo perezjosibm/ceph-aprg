@@ -8,6 +8,12 @@
         "status": "open"
     },
     {
+      "tracker": "74700",
+      "pattern": [ "crimson::os::seastore::SegmentCleaner::allocate_segment", "seastore device size setting is too small"],
+        "description": "",
+        "status": "open"
+    },
+    {
       "tracker": "77629",
       "pattern": [ "crimson::osd::ShardServices::register_merge_source"],
         "description": "",
