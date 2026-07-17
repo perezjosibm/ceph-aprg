@@ -38,7 +38,8 @@ import math
 import logging
 import tempfile
 import functools
-#import time 
+
+# import time
 from datetime import datetime
 from operator import add
 from typing import List
@@ -104,8 +105,8 @@ csv_dict = {}
 
 # Use the key in this dict when the value for "rw" matches the regex
 rw_map = {
-    "write":  re.compile(r".*write", re.IGNORECASE),
-    "read":  re.compile(r".*read", re.IGNORECASE),
+    "write": re.compile(r".*write", re.IGNORECASE),
+    "read": re.compile(r".*read", re.IGNORECASE),
 }
 
 generic_metrics = ["bw", "iops", "total_ios"]
@@ -115,7 +116,8 @@ generic_metrics = ["bw", "iops", "total_ios"]
 # are interested in meaasuring the last [-1]
 
 # Global temporary -- could be replaced by a class attribute
-top_filter_type = "cores" # or "threads"
+top_filter_type = "cores"  # or "threads"
+
 
 def filter_json_node(next_branch, jnode_list_in):
     """
@@ -280,9 +282,10 @@ def get_jobs_type(job, jobname: str):
         query_dict = predef_dict[jobname]
     return query_dict
 
-def validate_json_file( jsondata):
+
+def validate_json_file(jsondata):
     valid = False
-    keysfound = 0 
+    keysfound = 0
     minimumkeys = 2
     validkeys = ["fio version", "global options", "client_stats", "jobs"]
     for key in validkeys:
@@ -293,7 +296,7 @@ def validate_json_file( jsondata):
     return valid
 
 
-def process_fio_json_file(json_file:str) -> List[dict]:
+def process_fio_json_file(json_file: str) -> List[dict]:
     """
     Collect metrics from an individual JSON file, which might
     contain several entries, one per job
@@ -312,14 +315,16 @@ def process_fio_json_file(json_file:str) -> List[dict]:
             logger.error(f"JSON input file {json_file} invalid: {e}")
             return data_set
         if not validate_json_file(data):
-            logger.error(f"JSON input file {json_file} does not appear to be a valid fio json output file, skipping")
+            logger.error(
+                f"JSON input file {json_file} does not appear to be a valid fio json output file, skipping"
+            )
             return data_set
         # Extract the json timestamp: useful for matching same workloads from
         # different FIO processes
         global_opts["filename"] = json_file
         global_opts["timestamp"] = datetime.fromtimestamp(data["timestamp"])
-        #data_set["iodepth"] = data["global options"]["iodepth"]
-        #data_set["jobname"] = data["global options"]["rw"]
+        # data_set["iodepth"] = data["global options"]["iodepth"]
+        # data_set["jobname"] = data["global options"]["rw"]
         # Get some global options for the table, which are common to all the jobs in the .json file
         for k in ["bs", "size", "numjobs", "iodepth", "rw"]:
             if k in data["global options"].keys():
@@ -339,13 +344,15 @@ def process_fio_json_file(json_file:str) -> List[dict]:
         for job in jobs_list:
             job_result = global_opts.copy()
             job_result["jobname"] = job["jobname"]
-            job_result.update(job["job options"])
-            # Use "rw"as index for the metrics data
+            job_result["rw"] = job["job options"]["rw"]
+            # What if we decide not to use the job options?
+            # job_result.update(job["job options"])
+            # Use "rw"as index for the metrics data: this is the type of workload
             fio_job_type = job_result["rw"]
             for k in rw_map:
                 if re.search(rw_map[k], fio_job_type):
                     for metric in generic_metrics:
-                            job_result[metric] = job[k][metric]
+                        job_result[metric] = job[k][metric]
                     # For latency, we need to calculate the mean latency in ms from the clat_ns dict
                     job_result["clat_ms"] = job[k]["clat_ns"]["mean"] / 1e6
                     # std dev of latency in ms
@@ -354,7 +361,7 @@ def process_fio_json_file(json_file:str) -> List[dict]:
             logger.info(f"{job_result}")
 
         return data_set
-            
+
 
 def _process_fio_json_file(json_file, json_tree_path):
     """
@@ -382,12 +389,14 @@ def _process_fio_json_file(json_file, json_tree_path):
             logger.error(f"JSON input file {json_file} invalid: {e}")
             return result_dict
         if not validate_json_file(data):
-            logger.error(f"JSON input file {json_file} does not appear to be a valid fio json output file, skipping")
+            logger.error(
+                f"JSON input file {json_file} does not appear to be a valid fio json output file, skipping"
+            )
             return result_dict
         # Extract the json timestamp: useful for matching same workloads from
         # different FIO processes
         result_dict["timestamp"] = datetime.fromtimestamp(data["timestamp"])
-        #result_dict["iodepth"] = data["global options"]["iodepth"]
+        # result_dict["iodepth"] = data["global options"]["iodepth"]
         result_dict["jobname"] = data["global options"]["rw"]
         # Get some global options for the table, which are common to all the jobs in the .json file
         for k in ["bs", "size", "numjobs", "iodepth", "rw"]:
@@ -411,7 +420,9 @@ def _process_fio_json_file(json_file, json_tree_path):
                 # Merging gloabl and job options
                 job["job options"] = {**job["job options"], **data["global options"]}
                 if "job options" not in job.keys():
-                    logger.error(f"Job options not found for job {job['jobname']} in {json_file}")
+                    logger.error(
+                        f"Job options not found for job {job['jobname']} in {json_file}"
+                    )
                     return result_dict
 
         jobname = result_dict["jobname"]
@@ -463,11 +474,11 @@ def traverse_files(dir, config, json_tree_path) -> List[dict]:
         # Avoid duplicates!
         if fname not in dict_new:
             data_set = data_set + process_fio_json_file(fname)
-            #node_list = process_fio_json_file(fname, json_tree_path)
-            dict_new[fname] = 1 # node_list
+            # node_list = process_fio_json_file(fname, json_tree_path)
+            dict_new[fname] = 1  # node_list
             logger.info(f"== {fname} ==")
     logger.info(pp.pformat(data_set))
-    return data_set #dict_new
+    return data_set  # dict_new
 
 
 def gen_plot(config: str, data: str, list_subtables, title: str, header_keys: dict):
@@ -483,20 +494,20 @@ def gen_plot(config: str, data: str, list_subtables, title: str, header_keys: di
             "ylabel": "Latency (ms)",
             "ycolumn": "clat_ms",
             "y2label": "CPU",
-            #"y2column": "OSD_cpu", # for cores based top filter, this should be OSD_usr instead
-            "y2column": "OSD_user", 
+            # "y2column": "OSD_cpu", # for cores based top filter, this should be OSD_usr instead
+            "y2column": "OSD_user",
         }
     }
     # Define a new one for the CPU core utilisation
     pg_y2column = {
-        #"OSD_cpu": 8,
+        # "OSD_cpu": 8,
         "OSD_user": "8",
         #'OSD_mem': 9,
         "OSD_sys": "10",
         "OSD_wait": "11",
         "OSD_idle": "12",
-        #"FIO_user": "10",
-        #"FIO_cpu": 10,
+        # "FIO_user": "10",
+        # "FIO_cpu": 10,
         #'FIO_mem': 11,
     }
     # Use the header_keys to ensure we refer to the correct column number
@@ -629,78 +640,78 @@ def aggregate_cpu_avg(avg, table, avg_cpu):
 
 def aggregate_proc_cpu_avg(avg, table, avg_cpu):
     """
-    This function assumes that the avg .JSON file contains the following fields:
-    avg$VAR1 = {
-          'FIO' => {
-                     'cpu' => {
-                                'index' => 10,
-                                'total' => '296.850333333333',
-                                'data' => [ .. ]
-                                }
-                    'mem' > { similar dict }
-                    }
-        'OSD' => { similar dict }
-        TBC: need to use the timestamp to match the FIO runs
+        This function assumes that the avg .JSON file contains the following fields:
+        avg$VAR1 = {
+              'FIO' => {
+                         'cpu' => {
+                                    'index' => 10,
+                                    'total' => '296.850333333333',
+                                    'data' => [ .. ]
+                                    }
+                        'mem' > { similar dict }
+                        }
+            'OSD' => { similar dict }
+            TBC: need to use the timestamp to match the FIO runs
 
-        The other layout produced by top_parser.py is:
-    
-    {
-    "FIO": {
-        "avg_per_core": {
-            "100": {
-                "idle": [
-                    0.0,
-        :
-        "wait": [
-                0.0,
-                0.0,
-                0.0
-            ]
-        }
-    },
-    "OSD": {
-        "avg_per_core": {
-            "0": {
+            The other layout produced by top_parser.py is:
+
+        {
+        "FIO": {
+            "avg_per_core": {
+                "100": {
+                    "idle": [
+                        0.0,
             :
-            ],
-                "wait": [
+            "wait": [
                     0.0,
                     0.0,
                     0.0
                 ]
             }
         },
-        "avg_per_run": {
-            "idle": [
-                0.0,
-                0.0,
-                0.0
-            ],
-            "sys": [
-                0.0,
-                0.0,
-                0.0
-            ],
-            "user": [
-                1.4326543209876543,
-                1.4901851851851857,
-                1.4958641975308646
-            ],
-            "wait": [
-                0.0,
-                0.0,
-                0.0
-            ]
+        "OSD": {
+            "avg_per_core": {
+                "0": {
+                :
+                ],
+                    "wait": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ]
+                }
+            },
+            "avg_per_run": {
+                "idle": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "sys": [
+                    0.0,
+                    0.0,
+                    0.0
+                ],
+                "user": [
+                    1.4326543209876543,
+                    1.4901851851851857,
+                    1.4958641975308646
+                ],
+                "wait": [
+                    0.0,
+                    0.0,
+                    0.0
+                ]
+            }
         }
     }
-}
-    We only need the 'avg_per_run' section for each process group (eg OSD, FIO)
-    for CPU util, However, we still need the MEM util (RES), which coul dbe a
-    (flat) metric in the avg_per_run section, with the same size as the CPU
-    util lists. We could end with keys like OSD_idle, OSD_sys, OSD_user, and
-    OSD_res, OSD_shr; similar for FIO_ in the main table
+        We only need the 'avg_per_run' section for each process group (eg OSD, FIO)
+        for CPU util, However, we still need the MEM util (RES), which coul dbe a
+        (flat) metric in the avg_per_run section, with the same size as the CPU
+        util lists. We could end with keys like OSD_idle, OSD_sys, OSD_user, and
+        OSD_res, OSD_shr; similar for FIO_ in the main table
     """
-    # Check that the length of avg_cpu is the same as the number of dict_files.keys(), 
+    # Check that the length of avg_cpu is the same as the number of dict_files.keys(),
     # that is, eeach column in table has the same length
     k_lens = [len(table[k]) for k in table.keys()]
     if len(set(k_lens)) != 1:
@@ -712,7 +723,9 @@ def aggregate_proc_cpu_avg(avg, table, avg_cpu):
         # the type being used when we load it
         for cpu_item in avg_cpu:
             for proc in cpu_item:  # 'OSD', 'FIO' from the avg CPU .json
-                for metric in cpu_item[proc]:  # 'cpu', 'mem' for threads based top filter
+                for metric in cpu_item[
+                    proc
+                ]:  # 'cpu', 'mem' for threads based top filter
                     # Aggregate the CPU values in the avg table
                     mt = f"{proc}_{metric}"
                     if top_filter_type == "threads":
@@ -720,7 +733,7 @@ def aggregate_proc_cpu_avg(avg, table, avg_cpu):
                         table[mt] = cpu_item[proc][metric]["data"][: k_lens[0]]
                     else:  # cores based top filter
                         table[mt] = cpu_item[proc][metric]
-                    
+
         logger.info("Table (after aggregating top avg data):")
         logger.info(pp.pprint(table))
 
@@ -808,7 +821,7 @@ def gen_table(dict_files, config: str, title: str, avg_cpu: dict, multi=False):
     # annotate the avg_cpu to be a dict with main key the version, and data
     # layout type. And a separate function to aggregate the data accordingly.
 
-    #for pname in ("OSD", "FIO"):
+    # for pname in ("OSD", "FIO"):
     # Move this loop inside aggregate_proc_cpu_avg() since the keys (proc group names) are in the avg_cpu .json file
     aggregate_proc_cpu_avg(avg, table, avg_cpu)
 
@@ -960,7 +973,7 @@ def load_avg_cpu_json(json_fname):
                 logger.info(
                     f"Loaded CPU avg JSON file: {json_fname}, keys: {cpu_avg_data.keys()}"
                 )
-                #top_filter_type = "cores"
+                # top_filter_type = "cores"
                 # each tiem is a dictionary with main keys:"avg_per_core" and "avg_per_run"
                 # We only need "avg_per_run" indexed by the process group name
                 # Shall we call the function aggregate_proc_cpu_avg() immediately?
@@ -972,13 +985,13 @@ def load_avg_cpu_json(json_fname):
                 logger.info(
                     f"Loaded CPU avg JSON file: {json_fname}, num items: {len(cpu_avg_list)}"
                 )
-                #top_filter_type = "threads"
+                # top_filter_type = "threads"
             return cpu_avg_list
     except IOError as e:
         raise argparse.ArgumentTypeError(str(e))
 
 
-def main(directory:str, config, json_query:str):
+def main(directory: str, config, json_query: str):
     """
     Entry point: an initial query path is an inheritance of the original script from which this tool
     evolved
@@ -1091,7 +1104,8 @@ if __name__ == "__main__":
         # Generate a .csv file with the table data
         out_csv = args.config.replace("_list", ".csv")
         with open(out_csv, "w", encoding="utf-8") as f:
-            # Write the header
+            # Write the header: we need to fiter this to only the keys we want to include in the .csv
+            # probably worth creating a dataframe and using the pandas to_csv() method, but for now we can do it manually
             f.write(",".join(data_set[0].keys()) + "\n")
             # Write the data rows
             for row in data_set:
