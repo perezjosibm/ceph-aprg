@@ -1643,7 +1643,7 @@ class PerfReporter(object):
                 "xcols": ["bw", "iops"],
                 "ycol": "clat_ms",
                 "style": "iodepth",
-                "y2col": "iodepth",
+                #"y2col": "iodepth", # why it fails sometimes?
                 "sort": False,
                 "name": "Response curve",
             },
@@ -1752,20 +1752,21 @@ class PerfReporter(object):
                     # err_kws={"capsize": 5},
                 ).set(title=title)  # f"{workload}_{bs}": {ycol} vs {xcol}
 
-                sns.scatterplot(
-                    data=df,
-                    x=xcol,
-                    y="iodepth",
-                    hue="type",
-                    legend=False,
-                    ax=ax2,
-                )
-                # g.set_axis_labels("IOPS", "Latency (ms)")
-                # g.set(xticks=df[xcol].unique())
-                # # df.dataframe(df.style.format(subset=['Position', 'Marks'], formatter="{:.2f}"))
-                # g.set_xticklabels(rotation=45)
-                ax2.grid(False)
-                ax2.yaxis.tick_right()
+                if styles[style].get("y2col", False):
+                    sns.scatterplot(
+                        data=df,
+                        x=xcol,
+                        y="iodepth",
+                        hue="type",
+                        legend=False,
+                        ax=ax2,
+                    )
+                    # g.set_axis_labels("IOPS", "Latency (ms)")
+                    # g.set(xticks=df[xcol].unique())
+                    # # df.dataframe(df.style.format(subset=['Position', 'Marks'], formatter="{:.2f}"))
+                    # g.set_xticklabels(rotation=45)
+                    ax2.grid(False)
+                    ax2.yaxis.tick_right()
                 # g.legend.remove()
                 # plt.legend(title="Build", loc="center right")
                 if styles[style].get("logy", False):
@@ -1785,6 +1786,10 @@ class PerfReporter(object):
                 # Add entry in the report
                 # Add to the generated list of figures to be included in the .tex report,
                 # with the expected name to be used in the .tex template
+                # Extend first as a dictionary, each main key are the workload
+                # names (which will be sections in the report), and the value
+                # is a list of dictionaries, each with the keys: title,
+                # file_name, dir_path, label 
                 self.add_entry_figure(
                     key="tex",
                     title=title,
@@ -2078,7 +2083,8 @@ class PerfReporter(object):
         if "kind" in self.config:
             # self.makedirs()
             self.plot_csv_files()
-            self._gen_comparison_charts_per_workload()
+            if not self.skip_plotting:
+                self._gen_comparison_charts_per_workload()
             # self.plot_telemetry_per_workload()
             # Disabling temporarly for testing
             # self.export_telemetry_csv_files()

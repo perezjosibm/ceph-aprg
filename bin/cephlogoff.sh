@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # TODO: query to know whether the OSD is ready for tell commands
-TIMESLEEP=30
-echo "== Waiting ${TIMESLEEP} secs for the OSD to be ready to accept commands=="
-sleep ${TIMESLEEP}
+# TIMESLEEP=30
+# echo "== Waiting ${TIMESLEEP} secs for the OSD to be ready to accept commands=="
+# sleep ${TIMESLEEP}
 
 bin/ceph tell osd.0 config set debug_bluestore 1/5
 bin/ceph tell osd.0 config set debug_rocksdb 1/5
@@ -27,5 +27,5 @@ bin/ceph tell mgr.x config set debug_mon 0/0
 #bin/ceph osd set noscrub set noscrub
 #bin/ceph osd set nodeep-scrub set nodeep-scrub
 
-# Set stats frequency to 2 secs
+# Set stats frequency to 5 secs
 bin/ceph tell osd.0 config set crimson_osd_stat_interval 5
