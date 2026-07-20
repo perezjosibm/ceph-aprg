@@ -40,7 +40,7 @@ import tempfile
 import functools
 
 # import time
-from datetime import datetime
+from datetime import datetime, timezone
 from operator import add
 from typing import List
 
@@ -344,7 +344,14 @@ def process_fio_json_file(json_file: str) -> List[dict]:
         for job in jobs_list:
             job_result = global_opts.copy()
             job_result["jobname"] = job["jobname"]
+            job_start_timestamp = job["job_start"]
+            try:
+                job_start_datetime = datetime.fromtimestamp(job_start_timestamp, tz=timezone.utc)
+                logger.info(f"Job {job['jobname']} start time: {job_start_datetime}")
+            except ValueError:
+                logger.warning(f"Job {job['jobname']} 'job_start' timestamp failed to parse.")
             job_result["rw"] = job["job options"]["rw"]
+            job_result["runtime"] = job["job options"]["runtime"]
             # What if we decide not to use the job options?
             # job_result.update(job["job options"])
             # Use "rw"as index for the metrics data: this is the type of workload
@@ -449,6 +456,26 @@ def _process_fio_json_file(json_file, json_tree_path):
         merged = {**result_dict, **reduced}
         return merged
 
+def process_list_fio_json_files(json_files: List[str]) -> List[dict]:
+    """
+    Collect metrics from a list of JSON files, which might
+    contain several entries, one per job
+    data_set = []
+    for fname in json_files:
+        data_set += process_fio_json_file(fname)
+    return data_set
+    """
+    dict_new = {}
+    data_set = []
+    for fname in json_files:
+        # Avoid duplicates!
+        if fname not in dict_new:
+            data_set = data_set + process_fio_json_file(fname)
+            # node_list = process_fio_json_file(fname, json_tree_path)
+            dict_new[fname] = 1  # node_list
+            #logger.info(f"== {fname} ==")
+    return data_set
+
 
 def traverse_files(dir, config, json_tree_path) -> List[dict]:
     """
@@ -467,16 +494,7 @@ def traverse_files(dir, config, json_tree_path) -> List[dict]:
     config_file.close()
     logger.info(f"loading {len(json_files)} .json files ...")
     pp = pprint.PrettyPrinter(width=41, compact=True)
-
-    dict_new = {}
-    data_set = []
-    for fname in json_files:
-        # Avoid duplicates!
-        if fname not in dict_new:
-            data_set = data_set + process_fio_json_file(fname)
-            # node_list = process_fio_json_file(fname, json_tree_path)
-            dict_new[fname] = 1  # node_list
-            logger.info(f"== {fname} ==")
+    data_set = process_list_fio_json_files(json_files)
     logger.info(pp.pformat(data_set))
     return data_set  # dict_new
 

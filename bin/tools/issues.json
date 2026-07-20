@@ -9,7 +9,7 @@
     },
     {
       "tracker": "74700",
-      "pattern": [ "crimson::os::seastore::SegmentCleaner::allocate_segment", "seastore device size setting is too small"],
+      "pattern": [ "seastore device size setting is too small"],
         "description": "",
         "status": "open"
     },
