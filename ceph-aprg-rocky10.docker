@@ -25,7 +25,8 @@ RUN dnf group install -y "Development Tools" && \
 # Ceph: Setup and Dependency Installation
 RUN git clone --depth=1 https://github.com/ceph/ceph.git /ceph && \
     cd /ceph && \
-    WITH_CRIMSON=true ./install-deps.sh && \
+    WITH_CRIMSON=true ./install-deps.sh
+#&& \
     #rm -rf /ceph_source # Clean up source if only deps are needed, or keep if building
 
 VOLUME /ceph
