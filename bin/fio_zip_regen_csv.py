@@ -52,7 +52,7 @@ rw_map = {
 }
 
 CSV_HEADER = [
-    "filename", "timestamp", "bs", "size", "numjobs", "iodepth",
+    "filename", "timestamp", "job_start", "bs", "size", "numjobs", "iodepth",
     "jobname", "rw", "io_size", "nrfiles", "time_based", "runtime",
     "bw", "iops", "total_ios", "clat_ms", "clat_stdev_ms",
 ]
@@ -103,6 +103,7 @@ def _parse_fio_json(json_bytes: bytes, basename: str) -> List[dict]:
         row: Dict[str, object] = {
             "filename":   basename,
             "timestamp":  timestamp_str,
+            "job_start":  job.get("job_start", ""),
             "bs":         global_opts.get("bs", ""),
             "size":       global_opts.get("size", ""),
             "numjobs":    global_opts.get("numjobs", ""),
@@ -114,21 +115,22 @@ def _parse_fio_json(json_bytes: bytes, basename: str) -> List[dict]:
             "time_based": job_opts.get("time_based", ""),
             "runtime":    job_opts.get("runtime", ""),
         }
+        
+        if isinstance(row["job_start"], (int, float)):
+            try:
+                dt = datetime.fromtimestamp(row["job_start"]/1000, tz=timezone.utc)
+                row["job_start"] = dt.strftime("%Y-%m-%d %H:%M:%S")
+            except Exception:
+                logger.warning(f"{basename}: failed to convert job_start to UTC: {row['job_start']}")
+                pass
 
         fio_job_type = row["rw"]
         matched = False
         for io_dir, pattern in rw_map.items():
             if re.search(pattern, fio_job_type):
                 job_io = job.get(io_dir, {})
-                row["job_start"]     = job_io.get("job_start", "")
-                # Try converting job_start to UTC:
-                if isinstance(row["job_start"], (int, float)):
-                    try:
-                        dt = datetime.fromtimestamp(row["job_start"], tz=timezone.utc)
-                        row["job_start"] = dt.strftime("%Y-%m-%d %H:%M:%S")
-                    except Exception:
-                        logger.warning(f"{basename}: failed to convert job_start to UTC: {row['job_start']}")
-                        pass
+                #logger.debug(f"{basename}: matched rw='{fio_job_type}' to '{io_dir}', job_io keys: {list(job_io.keys())}")
+                #logger.debug(f"job_start:  type: {type(job['job_start'])}, value: {job['job_start']}")
                 row["bw"]            = job_io.get("bw", "")
                 row["iops"]          = job_io.get("iops", "")
                 row["total_ios"]     = job_io.get("total_ios", "")
@@ -144,7 +146,7 @@ def _parse_fio_json(json_bytes: bytes, basename: str) -> List[dict]:
                 row.setdefault(col, "")
 
         data_set.append(row)
-        logger.debug(f"{basename}: row jobname={row['jobname']} rw={row['rw']}")
+        #logger.debug(f"{basename}: row jobname={row['jobname']} rw={row['rw']} job_start: {row['job_start']} bw={row['bw']} iops={row['iops']} total_ios={row['total_ios']} clat_ms={row['clat_ms']} clat_stdev_ms={row['clat_stdev_ms']}")
 
     return data_set
 
