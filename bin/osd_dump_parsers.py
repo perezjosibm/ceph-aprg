@@ -124,6 +124,7 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
     { "metrics": [ { "<name>": { "shard": "<N>", "value": <V>, ... } }, ... ] }
     """
     
+    # Step 1: Define the metric groups with regex patterns and units
     METRIC_GROUPS: Dict[str, Dict[str, Any]] = {
         "reactor_aio": {
             "regex": re.compile(r"^reactor_aio_"), #(reads|writes|retries)$

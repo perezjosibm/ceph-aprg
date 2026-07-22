@@ -109,6 +109,9 @@ class CrimsonDumpMetricsParser:
     SPECIAL_GROUPS = ["reactor_cpu", "reactor_utilization", "scheduler_tasks", "seastore_transactions", "io_queue"]
 
     # Legacy METRIC_GROUPS for backward compatibility (Crimson SeaStore)
+    # TODO: need to solve the reduncancy since this is now also defined in the new parser classes osd_dump_parsers.py
+    #CrimsonSeaStoreParser.METRIC_GROUPS
+    # To refactor: remove this and see if it works with the new parser classes, since they have their own METRIC_GROUPS defined.
     METRIC_GROUPS: Dict[str, Dict[str, Any]] = {
         "reactor_aio": {
             "regex": re.compile(r"^reactor_aio_(reads|writes|retries)$"),
@@ -621,6 +624,7 @@ def _get_metric_group(metric_name: str) -> str:
     Return the metric group name for a metric, if any.
     """
     for group, spec in CrimsonDumpMetricsParser.METRIC_GROUPS.items():
+    #for group, spec in CrimsonSeaStoreParser.METRIC_GROUPS.items():
         if spec["regex"].search(metric_name):
             return group
     return "ungrouped"
