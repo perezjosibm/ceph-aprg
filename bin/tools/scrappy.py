@@ -18,6 +18,7 @@ import glob
 import re
 import tempfile
 import pprint
+from concurrent.futures import ThreadPoolExecutor, as_completed
 # import gzip
 
 __author__ = "Jose J Palacios-Perez"
@@ -863,15 +864,31 @@ class Scrappy:
                         f"Report file {report_fname} not found, skipping loading report for {log_type}"
                     )
         else:
+            tasks = []
             for job in self.failures:
-                print(f"Scanning job: {job}")
                 for log_type, log_info in self.LOG_TYPES.items():
-                    print(f"Scanning for {log_type} logs...")
                     corefile_list = glob.glob(
                         self.logdir + job + "remote" + "*" + "coredump"
                     )
                     logger.debug(f"Found {len(corefile_list)} core files for job {job}")
-                    self.scan_logs(job, log_type, log_info)
+                    tasks.append((job, log_type, log_info))
+
+            total = len(tasks)
+            print(f"Scanning {total} log task(s) in parallel...")
+            with ThreadPoolExecutor() as executor:
+                future_to_task = {
+                    executor.submit(self.scan_logs, job, log_type, log_info): (job, log_type)
+                    for job, log_type, log_info in tasks
+                }
+                completed = 0
+                for future in as_completed(future_to_task):
+                    job, log_type = future_to_task[future]
+                    completed += 1
+                    try:
+                        future.result()
+                        print(f"[{completed}/{total}] Done: job={job} log_type={log_type}")
+                    except Exception as exc:
+                        print(f"[{completed}/{total}] Error: job={job} log_type={log_type} — {exc}")
 
         self.remove_empty_logs()
         self.scan_reports()
