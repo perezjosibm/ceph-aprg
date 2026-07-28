@@ -1478,93 +1478,143 @@ class PerfReporter(object):
 
         def _plot_group_heatmap(group_name: str, group_df: pd.DataFrame) -> None:
             """
-            Plot a single metric group for the workload using a heatmap style,
-            with metric on y-axis, value on each cell, iodepth is the y-axis, hue by run_name.
+            Plot a single metric group as side-by-side heatmaps, one per run_name.
+
+            Each subplot is a pivot table with:
+              - y-axis : metric name
+              - x-axis : iodepth (sorted ascending)
+              - cell   : mean value (normalized to [0, 1] across the whole group
+                         so all subplots share the same colour scale)
+
+            Data frame columns expected: metric, run_name, iodepth, value.
+
+        Example input (after shard aggregation):
+         columns: ['metric', 'run_name', 'iodepth', 'value']
+         metric                            run_name       iodepth  value
+         LBA_alloc_extents                 phase_1reactor  1       364429312.0
+         LBA_alloc_extents_iter_nexts      phase_1reactor  1           8563.0
+         ...
             """
-            # Get unit for this group
             unit = METRIC_GROUPS.get(group_name, {}).get("unit", "value")
 
-            # Determine if normalization is needed
-            num_metrics = group_df["metric"].nunique()
-            if num_metrics > 1:
-                # Normalize values for comparison
+            logger.info(
+                f"Plotting heatmap for group '{group_name}' — "
+                f"{group_df['metric'].nunique()} metrics, "
+                f"{group_df['run_name'].nunique()} runs, "
+                f"{group_df['iodepth'].nunique()} iodepth levels"
+            )
+
+            try:
+                # ── Prepare data ──────────────────────────────────────────────
+                group_df = group_df.copy()
+                group_df["iodepth"] = group_df["iodepth"].astype(int)
+
+                # Normalise values globally so all subplots share the same scale
                 min_val = group_df["value"].min()
                 max_val = group_df["value"].max()
                 denom = max_val - min_val
                 if denom > 0:
                     group_df["value"] = (group_df["value"] - min_val) / denom
-                    ylabel = f"{unit} (normalized)"
+                    cbar_label = f"{unit} (normalized)"
                 else:
-                    ylabel = unit
-            else:
-                ylabel = unit
+                    cbar_label = unit
 
-            # logger.info(
-            #     f"Plotting group '{group_name}' with {num_metrics} metrics, "
-            #     f"{group_df['run_name'].nunique()} runs, "
-            #     f"{group_df['iodepth'].nunique()} iodepth levels"
-            # )
+                run_names = sorted(group_df["run_name"].unique())
+                n_runs = len(run_names)
+                iodepth_values = sorted(group_df["iodepth"].unique())
+                metric_names = sorted(group_df["metric"].unique())
 
-            try:
-                # Create figure
-                sns.set_theme(style="darkgrid")
-                fig, ax = plt.subplots(figsize=(12, 6))
-                pivot = group_df.pivot(index="metric", columns="iodepth", values="value")
+                # ── Figure layout: one column per run_name ────────────────────
+                # Share the colour bar through vmin/vmax fixed at [0, 1] after
+                # normalisation (or at the actual range when denom == 0).
+                vmin = group_df["value"].min()
+                vmax = group_df["value"].max()
 
-                # Convert iodepth to int for proper ordering
-                # group_df["iodepth"] = group_df["iodepth"].astype(int)
-                # group_df = group_df.sort_values("iodepth")
+                # Height scales with number of metrics; width with runs × iodepths
+                cell_h = max(0.4, 6.0 / max(len(metric_names), 1))
+                fig_h = max(4, cell_h * len(metric_names) + 1.5)
+                fig_w = max(6, 1.5 * len(iodepth_values)) * n_runs + 1.5  # +1.5 for cbar
 
-                sns.heatmap(
-                    data=pivot,
-                    #palette="viridis",
-                    ax=ax,
-                    annot=True,
-                    fmt=".1f",
-                    cmap="YlOrRd",
-                    linewidths=0.4,
-                    cbar_kws={"label": ylabel },
+                sns.set_theme(style="white")
+                fig, axes = plt.subplots(
+                    1, n_runs,
+                    figsize=(fig_w, fig_h),
+                    sharey=True,
                 )
-                # Customize plot
-                ax.set_title(
-                    f"{workload_name} - {group_name}", fontsize=14, fontweight="bold"
+                # Ensure axes is always iterable
+                if n_runs == 1:
+                    axes = [axes]
+
+                # ── Draw one heatmap per run ──────────────────────────────────
+                for col_idx, (ax, run) in enumerate(zip(axes, run_names)):
+                    run_df = group_df[group_df["run_name"] == run]
+
+                    # Pivot: rows = metrics (y), columns = iodepth (x)
+                    pivot = (
+                        run_df
+                        .groupby(["metric", "iodepth"], observed=True)["value"]
+                        .mean()
+                        .unstack("iodepth")
+                        .reindex(index=metric_names, columns=iodepth_values)
+                    )
+
+                    # Only show the colour-bar on the last subplot
+                    draw_cbar = col_idx == n_runs - 1
+
+                    sns.heatmap(
+                        data=pivot,
+                        ax=ax,
+                        annot=True,
+                        fmt=".2f",
+                        cmap="YlOrRd",
+                        vmin=vmin,
+                        vmax=vmax,
+                        linewidths=0.4,
+                        linecolor="white",
+                        cbar=draw_cbar,
+                        cbar_kws={"label": cbar_label, "shrink": 0.8} if draw_cbar else {},
+                    )
+
+                    ax.set_title(run, fontsize=11, fontweight="bold")
+                    ax.set_xlabel("I/O Queue Depth", fontsize=10)
+                    ax.set_ylabel("Metric" if col_idx == 0 else "", fontsize=10)
+                    ax.tick_params(axis="x", rotation=0)
+                    ax.tick_params(axis="y", rotation=0)
+
+                # ── Overall title and layout ──────────────────────────────────
+                fig.suptitle(
+                    f"{workload_name} — {group_name}",
+                    fontsize=13,
+                    fontweight="bold",
+                    y=1.01,
                 )
-                ax.set_xlabel("I/O Queue Depth", fontsize=12)
-                ax.set_ylabel("Metric", fontsize=12)
-
-                # Optional: Add a limit to the x-axis so labels don't get cut off
-                ax.set_xlim(0, max(df["value"]) + 10)
-
-                # Adjust legend
-                ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=10)
                 plt.tight_layout()
 
-                # Save figure
+                # ── Save ─────────────────────────────────────────────────────
                 safe_group_name = group_name.replace("/", "_").replace(" ", "_")
-                file_name = f"{workload_name}_{safe_group_name}.png"
+                file_name = f"{workload_name}_heatmap_{safe_group_name}.png"
                 t_path = self.get_target_path(file_name, "figures")
                 plt.savefig(t_path, dpi=100, bbox_inches="tight")
 
-                # Add to report
                 self.add_entry_figure(
                     key="tex",
-                    title=f"{workload_name} - Crimson OSD {group_name}",
+                    title=f"{workload_name} - Crimson OSD {group_name} (heatmap)",
                     file_name=file_name,
                     dir_path=os.path.join(
                         "figures/", f"{self.config['output']['name']}/"
                     ),
-                    label=f"fig:{workload_name}-{safe_group_name}",
+                    label=f"fig:{workload_name}-heatmap-{safe_group_name}",
                 )
 
                 if not self.skip_plotting:
                     plt.show()
                 plt.close()
 
-                logger.info(f"Generated chart: {file_name}")
+                logger.info(f"Generated heatmap chart: {file_name}")
 
             except Exception as e:
                 logger.error(
-                    f"Error plotting group '{group_name}' for {workload_name}: {e}"
+                    f"Error plotting heatmap for group '{group_name}' in {workload_name}: {e}"
                 )
                 import traceback
 
