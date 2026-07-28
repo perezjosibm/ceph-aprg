@@ -1226,6 +1226,7 @@ class PerfReporter(object):
                 logger.error(f"Error plotting {metric} for {workload_name}: {e}")
                 plt.close()
 
+
     def _plot_workload_crimson_metrics(
         self, workload_name: str, df: pd.DataFrame
     ) -> None:
@@ -1401,7 +1402,7 @@ class PerfReporter(object):
 
                 # Plot with run_name as hue and metric as style
                 # if num_metrics > 1:
-                    # Multiple metrics: use both hue and style
+                # Multiple metrics: use both hue and style
                 sns.barplot(
                     data=group_df,
                     x="value",
@@ -1475,6 +1476,102 @@ class PerfReporter(object):
                 logger.error(traceback.format_exc())
                 plt.close()
 
+        def _plot_group_heatmap(group_name: str, group_df: pd.DataFrame) -> None:
+            """
+            Plot a single metric group for the workload using a heatmap style,
+            with metric on y-axis, value on each cell, iodepth is the y-axis, hue by run_name.
+            """
+            # Get unit for this group
+            unit = METRIC_GROUPS.get(group_name, {}).get("unit", "value")
+
+            # Determine if normalization is needed
+            num_metrics = group_df["metric"].nunique()
+            if num_metrics > 1:
+                # Normalize values for comparison
+                min_val = group_df["value"].min()
+                max_val = group_df["value"].max()
+                denom = max_val - min_val
+                if denom > 0:
+                    group_df["value"] = (group_df["value"] - min_val) / denom
+                    ylabel = f"{unit} (normalized)"
+                else:
+                    ylabel = unit
+            else:
+                ylabel = unit
+
+            # logger.info(
+            #     f"Plotting group '{group_name}' with {num_metrics} metrics, "
+            #     f"{group_df['run_name'].nunique()} runs, "
+            #     f"{group_df['iodepth'].nunique()} iodepth levels"
+            # )
+
+            try:
+                # Create figure
+                sns.set_theme(style="darkgrid")
+                fig, ax = plt.subplots(figsize=(12, 6))
+                pivot = group_df.pivot(index="metric", columns="iodepth", values="value")
+
+                # Convert iodepth to int for proper ordering
+                # group_df["iodepth"] = group_df["iodepth"].astype(int)
+                # group_df = group_df.sort_values("iodepth")
+
+                sns.heatmap(
+                    data=pivot,
+                    #palette="viridis",
+                    ax=ax,
+                    annot=True,
+                    fmt=".1f",
+                    cmap="YlOrRd",
+                    linewidths=0.4,
+                    cbar_kws={"label": ylabel },
+                )
+                # Customize plot
+                ax.set_title(
+                    f"{workload_name} - {group_name}", fontsize=14, fontweight="bold"
+                )
+                ax.set_xlabel("I/O Queue Depth", fontsize=12)
+                ax.set_ylabel("Metric", fontsize=12)
+
+                # Optional: Add a limit to the x-axis so labels don't get cut off
+                ax.set_xlim(0, max(df["value"]) + 10)
+
+                # Adjust legend
+                ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", fontsize=10)
+                plt.tight_layout()
+
+                # Save figure
+                safe_group_name = group_name.replace("/", "_").replace(" ", "_")
+                file_name = f"{workload_name}_{safe_group_name}.png"
+                t_path = self.get_target_path(file_name, "figures")
+                plt.savefig(t_path, dpi=100, bbox_inches="tight")
+
+                # Add to report
+                self.add_entry_figure(
+                    key="tex",
+                    title=f"{workload_name} - Crimson OSD {group_name}",
+                    file_name=file_name,
+                    dir_path=os.path.join(
+                        "figures/", f"{self.config['output']['name']}/"
+                    ),
+                    label=f"fig:{workload_name}-{safe_group_name}",
+                )
+
+                if not self.skip_plotting:
+                    plt.show()
+                plt.close()
+
+                logger.info(f"Generated chart: {file_name}")
+
+            except Exception as e:
+                logger.error(
+                    f"Error plotting group '{group_name}' for {workload_name}: {e}"
+                )
+                import traceback
+
+                logger.error(traceback.format_exc())
+                plt.close()
+
+
         logger.info(f"Plotting Crimson OSD metrics for workload: {workload_name}")
         # logger.debug(f"Input DataFrame shape: {df.shape},\n"
         #     f"columns: {df.columns.tolist()}\n"
@@ -1525,7 +1622,8 @@ class PerfReporter(object):
             # else:
             #     _plot_single_group(group_name, group_df)
             _plot_single_group(group_name, group_df)
-            _plot_group(group_name, group_df)
+            #_plot_group(group_name, group_df)
+            _plot_group_heatmap(group_name, group_df)
 
         logger.info(f"Completed plotting Crimson OSD metrics for {workload_name}")
 
@@ -1752,6 +1850,7 @@ class PerfReporter(object):
                     # err_kws={"capsize": 5},
                 ).set(title=title)  # f"{workload}_{bs}": {ycol} vs {xcol}
 
+                # Second y-axis for iodepth, if specified in the style
                 if styles[style].get("y2col", False):
                     sns.scatterplot(
                         data=df,
@@ -2083,8 +2182,8 @@ class PerfReporter(object):
         if "kind" in self.config:
             # self.makedirs()
             self.plot_csv_files()
-            if not self.skip_plotting:
-                self._gen_comparison_charts_per_workload()
+            #if not self.skip_plotting:
+            self._gen_comparison_charts_per_workload()
             # self.plot_telemetry_per_workload()
             # Disabling temporarly for testing
             # self.export_telemetry_csv_files()

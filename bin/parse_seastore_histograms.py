@@ -31,6 +31,8 @@ where N is the I/O queue depth at the time of sampling.
 Files may optionally start with a zip-extraction preamble (plain-text
 lines before the opening ``{``); the parser skips those automatically.
 
+We will ignore the Inf bucket when plotting histograms, but it is included in the CSV export.
+
 Usage
 -----
     python3 parse_seastore_histograms.py [options] <file1.json> [file2.json ...]
