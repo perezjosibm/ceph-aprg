@@ -57,6 +57,7 @@ import logging
 import os
 import re
 import sys
+import zipfile
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -91,13 +92,30 @@ DEFAULT_PLOT_EXT = "png"
 # ---------------------------------------------------------------------------
 
 
-def _load_json_tolerant(path: str) -> Optional[Dict[str, Any]]:
+def _parse_json_bytes(raw: bytes, name: str) -> Optional[Dict[str, Any]]:
     """
-    Load a JSON file that may have a plain-text preamble before the ``{``.
+    Parse a JSON object from *raw* bytes, tolerating a plain-text preamble.
 
     Some dump files are produced by piping ``unzip -p`` output directly to a
     file, which leaves an ``Archive: …  inflating: …`` header before the JSON
     object.  We skip everything up to (and including) the first ``{``.
+    """
+    start = raw.find(b"{")
+    if start < 0:
+        logger.error("No JSON object found in %s", name)
+        return None
+    try:
+        return json.loads(raw[start:])
+    except json.JSONDecodeError as exc:
+        logger.error("JSON decode error in %s: %s", name, exc)
+        return None
+
+
+def _load_json_tolerant(path: str) -> Optional[Dict[str, Any]]:
+    """
+    Load a JSON file that may have a plain-text preamble before the ``{``.
+
+    Delegates the actual parsing to :func:`_parse_json_bytes`.
     """
     try:
         with open(path, "rb") as fh:
@@ -105,17 +123,20 @@ def _load_json_tolerant(path: str) -> Optional[Dict[str, Any]]:
     except OSError as exc:
         logger.error("Cannot open %s: %s", path, exc)
         return None
+    return _parse_json_bytes(raw, path)
 
-    start = raw.find(b"{")
-    if start < 0:
-        logger.error("No JSON object found in %s", path)
-        return None
 
-    try:
-        return json.loads(raw[start:])
-    except json.JSONDecodeError as exc:
-        logger.error("JSON decode error in %s: %s", path, exc)
-        return None
+def _collect_dump_entries(zf: zipfile.ZipFile) -> List[str]:
+    """
+    Return all zip entry names that look like seastore dump files.
+
+    Matches the naming convention ``<YYYYMMDD>_<HHMMSS>_<N>qd_dump.json``
+    regardless of whether they live in a subdirectory inside the archive.
+    """
+    return sorted(
+        name for name in zf.namelist()
+        if re.search(r"\d{8}_\d{6}_\d+qd_dump\.json$", name)
+    )
 
 
 def _parse_filename(path: str) -> Tuple[Optional[datetime], Optional[int]]:
@@ -747,7 +768,7 @@ class SeastoreHistogramAnalyzer:
     # -- loading ------------------------------------------------------------
 
     def load(self) -> None:
-        """Load and parse all input files."""
+        """Load and parse all input files from the filesystem."""
         for path in self.file_paths:
             data = _load_json_tolerant(path)
             if data is None:
@@ -760,6 +781,44 @@ class SeastoreHistogramAnalyzer:
                 rec.basename, rec.timestamp, rec.qd,
             )
         # Sort by QD then timestamp
+        self.samples.sort(key=lambda r: (r.qd or 0, r.timestamp or datetime.min))
+
+    def load_from_zip(self, zip_path: str) -> None:
+        """
+        Load and parse all seastore dump JSON files from *zip_path*.
+
+        Entries are selected by :func:`_collect_dump_entries` (files whose
+        name matches ``YYYYMMDD_HHMMSS_<N>qd_dump.json``).  The parsed
+        records are appended to :attr:`samples` and sorted afterwards, so
+        this method can be called alongside (or instead of) :meth:`load`.
+        """
+        zip_path = os.path.expanduser(zip_path)
+        if not os.path.isfile(zip_path):
+            logger.error("Archive not found: %s", zip_path)
+            return
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            entries = _collect_dump_entries(zf)
+            if not entries:
+                logger.warning("No seastore dump JSON files found in %s", zip_path)
+                return
+            logger.info("Found %d dump entries in %s", len(entries), zip_path)
+            for entry in entries:
+                raw = zf.read(entry)
+                # Use only the basename as the logical path so that
+                # _parse_filename() can extract timestamp and QD from it.
+                basename = os.path.basename(entry)
+                data = _parse_json_bytes(raw, basename)
+                if data is None:
+                    continue
+                rec = SampleRecord(basename)
+                rec.parse(data)
+                self.samples.append(rec)
+                logger.info(
+                    "Loaded %s  (timestamp=%s  qd=%s)",
+                    rec.basename, rec.timestamp, rec.qd,
+                )
+
         self.samples.sort(key=lambda r: (r.qd or 0, r.timestamp or datetime.min))
 
     # -- DataFrames ---------------------------------------------------------
@@ -784,9 +843,19 @@ class SeastoreHistogramAnalyzer:
 
     # -- main entry point ---------------------------------------------------
 
-    def run(self) -> None:
-        """Load files and produce all plots."""
-        self.load()
+    def run(self, zip_path: Optional[str] = None) -> None:
+        """Load files and produce all plots.
+
+        Parameters
+        ----------
+        zip_path:
+            When provided, dump files are read from this archive instead of
+            (or in addition to) the paths in :attr:`file_paths`.
+        """
+        if zip_path:
+            self.load_from_zip(zip_path)
+        if self.file_paths:
+            self.load()
         if not self.samples:
             logger.error("No valid input files found")
             return
@@ -889,6 +958,13 @@ Examples
       /tmp/20260716_220103_4qd_dump.json \\
       /tmp/20260716_220231_16qd_dump.json
 
+  # Read all dump files directly from a benchmark archive zip:
+  python3 parse_seastore_histograms.py -g -z sea_1osd_1reactor_custom_default_rc.zip
+
+  # Archive + extra loose files, export CSV, save to /tmp/charts:
+  python3 parse_seastore_histograms.py -g -z archive.zip -d /tmp/charts --csv \\
+      /tmp/20260716_220231_16qd_dump.json
+
   # Only stages collock_hold and submit_journal, tail=all, export CSV:
   python3 parse_seastore_histograms.py \\
       --stages collock_hold,submit_journal --tails all \\
@@ -913,9 +989,21 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "files",
-        nargs="+",
+        nargs="*",
         metavar="FILE",
-        help="One or more dump JSON files (YYYYMMDD_HHMMSS_<N>qd_dump.json)",
+        help=(
+            "One or more dump JSON files (YYYYMMDD_HHMMSS_<N>qd_dump.json). "
+            "May be omitted when --archive is supplied."
+        ),
+    )
+    p.add_argument(
+        "-z", "--archive",
+        default=None,
+        metavar="ARCHIVE.zip",
+        help=(
+            "Benchmark archive zip from which seastore dump JSON files are "
+            "read automatically (files matching YYYYMMDD_HHMMSS_<N>qd_dump.json)."
+        ),
     )
     p.add_argument(
         "-d", "--directory",
@@ -975,6 +1063,9 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser = _build_parser()
     opts = parser.parse_args(argv)
 
+    if not opts.files and not opts.archive:
+        parser.error("Provide at least one FILE argument or --archive / -z ARCHIVE.zip")
+
     logging.basicConfig(
         level=logging.DEBUG if opts.verbose else logging.INFO,
         format="[%(filename)s:%(lineno)d %(funcName)s] %(levelname)s %(message)s",
@@ -993,7 +1084,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         stages=stages,
         tails=tails,
     )
-    analyser.run()
+    analyser.run(zip_path=opts.archive)
 
     if opts.csv:
         analyser.export_csv()

@@ -105,8 +105,14 @@ class CrimsonDumpMetricsParser:
         belonging to that group, together with display units.
         Now delegated to the type-specific parser.
     """
-    # Special groups: can be plotted against io_queue depth since they contain a single value per shard, so we can compare them on the same scale without normalisation.
+    # Special groups: can be plotted against io_queue depth since they contain
+    # a single value per shard, so we can compare them on the same scale
+    # without normalisation.
     SPECIAL_GROUPS = ["reactor_cpu", "reactor_utilization", "scheduler_tasks", "seastore_transactions", "io_queue"]
+    # Groups whose values are histogram-like (sum/count) and should be plotted
+    # as histograms (see module parse_seastore_histograms.py), they normally have the
+    # special keys "sum", "count", "mean_*", "buckets buckets" in their value dict.
+    HISTOGRAM_GROUPS = ["seastore_do_transaction_stage_lat", "seastore_conflict_replay_distribution" ]
 
     # Legacy METRIC_GROUPS for backward compatibility (Crimson SeaStore)
     # TODO: need to solve the reduncancy since this is now also defined in the new parser classes osd_dump_parsers.py
@@ -670,7 +676,9 @@ def load_crimson_dump_dataframe_from_content(json_content: str) -> tuple: #pd.Da
             metric_groups = parser.get_metric_groups()
             
             # if not debug_print:
-            #     logger.info(f"Detected OSD type: {osd_type}, {metric_groups.keys()} groups, {len(metrics)} unique metrics, {len(shards)} shards")
+            #     logger.info(f"Detected OSD type: {osd_type},
+            #     {metric_groups.keys()} groups, {len(metrics)} unique metrics,
+            #     {len(shards)} shards")
             #     debug_print = True
             
             # Convert to DataFrame format expected by perf_reporter

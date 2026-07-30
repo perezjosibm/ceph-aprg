@@ -15,9 +15,10 @@ for its OSD type.
 import re
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional, Set, Tuple
 from collections import defaultdict
 from enum import Enum
+import numpy as np
 
 __author__ = "Bob (AI Assistant)"
 
@@ -234,6 +235,11 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
             "regex": re.compile(r"^seastore_op_lat$"),
             "unit": "ms",
         },
+        "seastore_op_lat_hist": {
+            "regex": re.compile(r"^seastore_(do_transaction_stage_lat|conflict_replay_distribution)$"),
+            "unit": "ms",
+            "type":"histogram"
+        },
         "seastore_transactions": {
             "regex": re.compile(r"^seastore_(concurrent|pending)_transactions$"),
             "unit": "transactions",
@@ -271,7 +277,69 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
     def get_osd_type(self) -> OSDType:
         """Return OSD type."""
         return OSDType.CRIMSON_SEASTORE
+
+    def is_histogram_metric(self, metric: Dict[str,Any]) -> bool:
+        """
+        Determine if a metric is a histogram metric based on its values: must have "count" "sum"and "buckets".
+        
+        Parameters
+        ----------
+        metric : Dict[str, Any]
+            The dictionary metric.
+            
+        Returns
+        -------
+        bool
+            True if the metric is a histogram, False otherwise.
+        # Example heuristic: metrics ending with "_lat" or "_hist" are histograms
+        return metric_name.endswith("_lat") or metric_name.endswith("_hist")
+        """
+        return (
+            isinstance(metric, dict)
+            and "count" in metric
+            and "sum" in metric
+            and "buckets" in metric
+        )
     
+    @staticmethod
+    def _parse_histogram(value: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert a Ceph histogram value dict to a normalised record.
+
+        The bucket list is cumulative (Prometheus-style): each bucket
+        carries the count of observations with value ≤ ``le``.  We
+        convert to per-bucket (non-cumulative) counts for charting.
+        """
+        count = value.get("count", 0)
+        total_sum = value.get("sum", 0.0)
+        mean = total_sum / count if count > 0 else 0.0
+
+        raw_buckets = value.get("buckets", [])
+        # Build a list of (le_numeric, cumulative_count) pairs.
+        # Replace '+Inf' sentinel with np.inf.
+        # TODO:: we might drop "+Inf" bucket if we don't need it for charting.
+        cum: List[Tuple[float, int]] = []
+        for b in raw_buckets:
+            le = b.get("le", 0)
+            cnt = b.get("count", 0)
+            le_f = np.inf if le == "+Inf" else float(le)
+            cum.append((le_f, int(cnt)))
+
+        # Convert cumulative to per-bucket (differential) counts.
+        per_bucket: List[Tuple[float, int]] = []
+        prev = 0
+        for le_f, c in cum:
+            per_bucket.append((le_f, c - prev))
+            prev = c
+
+        return {
+            "sum": float(total_sum),
+            "count": int(count),
+            "mean": mean,
+            "cum_buckets": cum,        # (le, cumulative_count)
+            "per_buckets": per_bucket, # (le, differential_count)
+        }
+
     def parse(self, data: Dict[str, Any]) -> None:
         """
         Parse Crimson SeaStore metrics.
@@ -294,6 +362,8 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
             
             metric_name, entry = next(iter(item.items()))
             self._metrics_seen.add(metric_name)
+            # We might want to report metrics that are not in our METRIC_GROUPS, but for now we just collect them.
+            # And print a tally at the end summarising the dump, how many metrics are of which type
             
             # Extract shard
             shard = entry.get("shard", "0")
@@ -303,10 +373,14 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
             if value is None:
                 continue
             
-            # Handle histogram values
-            if isinstance(value, dict) and "count" in value:
-                count = value["count"]
-                self._raw[metric_name][shard].append(float(count))
+            # Handle histogram values: 
+            if self.is_histogram_metric(value):
+                rec = self._parse_histogram(value)
+                rec.update({"shard": shard})
+                dims = self._extract_histo_dims(entry)
+                rec.update(dims)
+                #self._raw[metric_name][shard].append(float(count))
+                self._multi[metric_name].append(rec)
             else:
                 # Check for extra dimensions
                 dims = self._extract_extra_dims(entry)
@@ -322,6 +396,15 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
         dims = {}
         for k, v in entry.items():
             if k not in ("shard", "value"):
+                dims[k] = v
+        return dims
+
+    
+    def _extract_histo_dims(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract dimension labels beyond shard and value found in histograms."""
+        dims = {}
+        for k, v in entry.items():
+            if k in ("shard_store_index", "stage", "tail"):
                 dims[k] = v
         return dims
 
