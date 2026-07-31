@@ -24,14 +24,23 @@ import seaborn as sns
 from typing import Dict, Any, List
 from pp_diskstat import load_diskstat_dataframe_from_content
 from parse_crimson_dump_metrics import (
-    load_crimson_dump_dataframe_from_content,  # Now supports all OSD types via auto-detection
+    load_crimson_dump_dataframe_from_content,  # returns (osd_type, df, histo_dict)
     CrimsonMetricsRateAnalyzer,
     CrimsonDumpMetricsParser,
+)
+from crimson_plot_helpers import (
+    plot_concurrent,
+    plot_stage_lat_heatmap,
+    plot_stage_lat_by_qd,
+    plot_conflict_histogram,
+    plot_conflict_mean_vs_qd,
+    _TAIL_ORDER,
 )
 
 # Note: load_crimson_dump_dataframe_from_content() now auto-detects OSD type
 # (Crimson SeaStore, Crimson BlueStore, or Classic OSD) and uses the appropriate
-# parser from osd_dump_parsers.py module
+# parser from osd_dump_parsers.py module.  It returns a 3-tuple:
+# (osd_type_str, flat_df, histogram_dict)
 from perf_stats import load_perf_stat_dataframe_from_content
 from fio_job_parser import FioJobParser, WorkloadInterval
 # import sys
@@ -284,31 +293,32 @@ class PerfReporter(object):
             if re.search(r"_ds\.json$", base):
                 df = load_diskstat_dataframe_from_content(content)
                 kind = "diskstat"
+                osd_type = None
+                histo = {}
             elif re.search(r"_dump\.json$", base):
-                osd_type, df = load_crimson_dump_dataframe_from_content(content)
-                kind = "crimson_dump"  # The OSD type is now detected inside the loader, and returned along with the DataFrame
-                # kind = f"{osd_type}_dump"
-                # if not debug_printed:
-                #     logger.debug(
-                #         f"Example of loaded telemetry entry from {member} (OSD type: {osd_type}):\n{df.head()}"
-                #     )
-                #     debug_printed = True
+                osd_type, df, histo = load_crimson_dump_dataframe_from_content(content)
+                kind = "crimson_dump"
             elif re.search(r"_perf_stat\.json$", base):
                 df = load_perf_stat_dataframe_from_content(content)
                 kind = "perf_stat"
+                osd_type = None
+                histo = {}
             else:
                 continue
 
             if df is None or df.empty:
                 continue
-            telemetry[kind].append(
-                {
-                    "timestamp": ts,
-                    "source": member,
-                    "frame": df,  # should already have a group column
-                    "osd_type": osd_type if kind == "crimson_dump" else None,
-                }
-            )
+            entry_record: Dict[str, Any] = {
+                "timestamp": ts,
+                "source": member,
+                "frame": df,
+                "osd_type": osd_type,
+            }
+            # Attach histogram data for crimson_dump entries so callers can
+            # produce histogram charts (stage-lat, conflict replay, etc.)
+            if histo:
+                entry_record["histogram"] = histo
+            telemetry[kind].append(entry_record)
 
     def _calculate_crimson_rates(self, name: str, archive: zipfile.ZipFile) -> None:
         """
@@ -1244,8 +1254,12 @@ class PerfReporter(object):
             workload_name: Name of workload (e.g., 'seqwrite', 'randread')
             df: DataFrame with columns: run_name, iodepth, metric, group, shard, value
         """
-        # metric groups from CrimsonDumpMetricsParser
-        METRIC_GROUPS = CrimsonDumpMetricsParser.METRIC_GROUPS
+        # metric groups — prefer the canonical definition from the parser hierarchy
+        try:
+            from osd_dump_parsers import CrimsonSeaStoreParser
+            METRIC_GROUPS = CrimsonSeaStoreParser.METRIC_GROUPS
+        except ImportError:
+            METRIC_GROUPS = CrimsonDumpMetricsParser.METRIC_GROUPS
         SPECIAL_GROUPS = CrimsonDumpMetricsParser.SPECIAL_GROUPS
 
         # from parse_crimson_dump_metrics import CrimsonDumpMetricsParser
@@ -1784,7 +1798,7 @@ class PerfReporter(object):
                 "ycol": "iops",
                 "y2col": "iodepth",
                 "logy": True,
-                "style": "type",
+                "style": "run_name",
                 "name": "Throughput",
             },
             "rc": {
@@ -1798,7 +1812,7 @@ class PerfReporter(object):
             "iops": {
                 "xcols": ["iodepth"],
                 "ycol": "iops",
-                "style": "type",
+                "style": "run_name",
                 "name": "Throughput",
             },
             "bw": {"xcols": ["iodepth"], "ycol": "bw", "name": "Bandwidth"},
@@ -1874,9 +1888,9 @@ class PerfReporter(object):
                 #     kind="line",
                 #     x=xcol,
                 #     y=ycol,  # "clat_ms",
-                #     hue="type",
+                #     hue="run_name",
                 #     # size="iodepth",# does not fucking work!
-                #     style="type",
+                #     style="run_name",
                 #     markers=True,
                 #     # estimator=None,
                 #     sort=sort,
@@ -1888,9 +1902,9 @@ class PerfReporter(object):
                     data=df,
                     x=xcol,
                     y=ycol,  # "clat_ms",
-                    hue="type",
+                    hue="run_name",
                     # size="iodepth",# does not fucking work!
-                    # style="type",
+                    # style="run_name",
                     # markers=True,
                     # estimator=None,
                     sort=sort,
@@ -1906,7 +1920,7 @@ class PerfReporter(object):
                         data=df,
                         x=xcol,
                         y="iodepth",
-                        hue="type",
+                        hue="run_name",
                         legend=False,
                         ax=ax2,
                     )
@@ -2010,7 +2024,7 @@ class PerfReporter(object):
             t_name = f"{workload}.tex"
             t_path = self.get_target_path(f"{workload}.tex", "tables")
             selected_columns = [
-                "type",
+                "run_name",
                 "iodepth",
                 "bw",
                 "iops",
@@ -2021,7 +2035,7 @@ class PerfReporter(object):
             df_selected = df[selected_columns]
             df_selected = df_selected.copy()
             # df_selected = df_selected.rename(columns={
-            #     'type': 'type',
+            #     'type': 'run_name',
             #     'iodepth': 'iodepth',
             #     'bw': 'bw',
             #     'iops': 'iops',
@@ -2029,9 +2043,9 @@ class PerfReporter(object):
             #     'clat_ms': 'clat_ms',
             #     'clat_stdev_ms': 'clat_stdev_ms'
             # })
-            df_selected["type"] = df_selected["type"].str.replace("_", ".", regex=False)
+            df_selected["run_name"] = df_selected["run_name"].str.replace("_", ".", regex=False)
             header = [
-                "Type",
+                "Run Name",
                 "IO Depth",
                 "Bandwidth (MB/s)",
                 "IOPS",
@@ -2126,9 +2140,9 @@ class PerfReporter(object):
                             f"Error loading .csv file {test_d['test_run']} into dataframe: {e}"
                         )
                         continue
-                    # Add the new column "name" to the dataframe, with the value of the name key in the input_dirs
+                    # Add the new column "run_name" "name" to the dataframe, with the value of the name key in the input_dirs
                     # dictionary, to be used as hue in the plots
-                    df["type"] = name  # aka "participant"
+                    df["run_name"] = name  # aka "participant"
                     self.ds_list[name] = {
                         "frame": df,  # FIO results dataframe
                         "telemetry": defaultdict(list),
@@ -2145,6 +2159,8 @@ class PerfReporter(object):
                     # Step 2 & 3: Aggregate metrics by workload
                     logger.info(f"Run {name}: Aggregating metrics by workload")
                     self._aggregate_metrics_by_workload(name)
+
+                    # TODO: load the top data from the archive, and store in ds_list[name]['top_data']
 
                     # Calculate Crimson OSD work rates from telemetry data, and store in ds_list[name]['workload_rates']
                     # Disabled temporarily since it we might define a new version that uses the telemetry dataframes

@@ -29,11 +29,12 @@ import tempfile
 import pprint
 from collections import defaultdict
 
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from common import load_json, save_json
 
 __author__ = "Jose J Palacios-Perez"
@@ -49,21 +50,28 @@ pp = pprint.PrettyPrinter(width=61, compact=True)
 DEFAULT_PLOT_EXT = "png"
 
 
-def _minmax_normalisation(df: pd.DataFrame) -> pd.DataFrame:
-    """Apply min-max normalisation to the DataFrame."""
-    df_scaled = df.copy()
-    for column in df_scaled.columns:
-        col_min = df_scaled[column].min()
-        col_max = df_scaled[column].max()
-        denom = col_max - col_min
-        if denom != 0:
-            df_scaled[column] = (df_scaled[column] - col_min) / denom
-        else:
-            df_scaled[column] = 0.0
-    return df_scaled
+# Import shared plotting helpers
+try:
+    from crimson_plot_helpers import (
+        minmax_normalisation as _minmax_normalisation,
+        plot_simple_group as _plot_simple_group_fn,
+        plot_multi_group as _plot_multi_group_fn,
+        plot_seastore_op_lat as _plot_seastore_op_lat_fn,
+        plot_concurrent,
+        plot_stage_lat_heatmap,
+        plot_stage_lat_histogram,
+        plot_stage_lat_by_qd,
+        plot_conflict_histogram,
+        plot_conflict_mean_vs_qd,
+        _TAIL_ORDER,
+    )
+    _HAS_PLOT_HELPERS = True
+except ImportError:
+    _HAS_PLOT_HELPERS = False
+    logger.warning("crimson_plot_helpers not available; histogram plots disabled")
 
 
-# Import the new OSD-type-specific parsers
+# Import the OSD-type-specific parsers
 try:
     from osd_dump_parsers import (
         BaseOSDDumpMetricsParser,
@@ -73,6 +81,7 @@ try:
         OSDType,
         detect_osd_type,
         create_parser,
+        parse_dump_filename,
     )
     _HAS_OSD_DUMP_PARSERS = True
 except ImportError:
@@ -284,6 +293,8 @@ class CrimsonDumpMetricsParser:
         )
         # For multi-dimensional metrics: metric_name -> list of row dicts
         self._multi: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        # For histogram metrics: metric_name -> list of row dicts
+        self._histogram: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 
         self._shards_seen: set = set()
         self._metrics_seen: set = set()
@@ -324,10 +335,11 @@ class CrimsonDumpMetricsParser:
         if self._parser is not None:
             # Use type-specific parser
             self._parser.parse(data)
-            # Copy parsed data to our structures
-            raw, multi, shards, metrics = self._parser.get_parsed_data()
+            # Copy parsed data to our structures (5-tuple including histogram)
+            raw, multi, histogram, shards, metrics = self._parser.get_parsed_data()
             self._raw = raw
             self._multi = multi
+            self._histogram = histogram
             self._shards_seen = shards
             self._metrics_seen = metrics
             # Update METRIC_GROUPS to match parser's groups
@@ -343,6 +355,7 @@ class CrimsonDumpMetricsParser:
     
     def _parse_legacy(self, data: Dict[str, Any]) -> None:
         """Legacy parsing method for Crimson SeaStore format."""
+        logger.info(f"Using legacy parser:")
         metrics_list = data.get("metrics", [])
         if not metrics_list:
             logger.warning("No 'metrics' key found or list is empty")
@@ -427,128 +440,200 @@ class CrimsonDumpMetricsParser:
         ext = self.options.plot_ext
         return f"{base}_{suffix}.{ext}"
 
-    def _save_chart(self, name: str) -> None:
-        plt.savefig(name, bbox_inches="tight")
-        logger.info(f"Saved chart: {name}")
-        self.generated_files.append(name)
-        if self.options.gen_only:
-            plt.clf()
-        else:
-            plt.show()
-        plt.close()
-
     def _plot_simple_group(
         self, group_name: str, df_group: pd.DataFrame, unit: str
     ) -> None:
-        """
-        Plot a line chart for a group of simple (shard-indexed) metrics.
-        """
-        if df_group.empty:
-            return
-
-        # Apply min-max normalisation when the group contains multiple columns
-        # so that metrics with very different scales can be compared visually.
-        if df_group.shape[1] > 1:
-            df_plot = _minmax_normalisation(df_group)
-            ylabel = f"{unit} (normalised)"
-        else:
-            df_plot = df_group
-            ylabel = unit
-
-        try:
-            sns.set_theme()
-            fig, ax = plt.subplots(figsize=(10, 5))
-            df_plot.plot(
-                ax=ax,
-                kind="line",
-                title=f"{group_name} per shard",
-                xlabel="Shard",
-                ylabel=ylabel,
-                fontsize=8,
-                grid=True,
-            )
-            plt.tight_layout()
-        except Exception as exc:
-            logger.error(f"Error plotting group {group_name}: {exc}")
-            plt.close()
-            return
-
-        self._save_chart(self._chart_name(group_name))
+        """Plot a line chart for a group of simple (shard-indexed) metrics."""
+        outpath = self._chart_name(group_name)
+        _plot_simple_group_fn(
+            group_name, df_group, unit, outpath, gen_only=self.options.gen_only
+        )
+        if not df_group.empty:
+            self.generated_files.append(outpath)
 
     def _plot_seastore_op_lat(self, df: pd.DataFrame) -> None:
-        """
-        Special-case scatter plot for seastore_op_lat (hue = latency type).
-        """
-        if df is None or df.empty:
-            return
-        try:
-            required = {"shard", "latency", "value"}
-            if not required.issubset(df.columns):
-                logger.warning("seastore_op_lat df missing expected columns")
-                return
-
-            num_shards = len(df["shard"].unique())
-            xticks = list(range(0, num_shards + 1, max(1, num_shards // 5)))
-
-            sns.set_theme()
-            fig, ax = plt.subplots(figsize=(10, 5))
-            sns.scatterplot(data=df, x="shard", y="value", hue="latency", ax=ax)
-            ax.set_title("Seastore op latency per shard")
-            ax.set_xlabel("Shard")
-            ax.set_ylabel("Latency (ms)")
-            ax.set_yscale("log")
-            ax.set_xticks(xticks)
-            plt.tight_layout()
-        except Exception as exc:
-            logger.error(f"Error plotting seastore_op_lat: {exc}")
-            plt.close()
-            return
-
-        self._save_chart(self._chart_name("seastore_op_lat"))
+        """Special-case scatter plot for seastore_op_lat (hue = latency type)."""
+        outpath = self._chart_name("seastore_op_lat")
+        _plot_seastore_op_lat_fn(df, outpath, gen_only=self.options.gen_only)
+        if df is not None and not df.empty:
+            self.generated_files.append(outpath)
 
     def _plot_multi_group(
         self, group_name: str, metric_name: str, df: pd.DataFrame, unit: str
     ) -> None:
+        """Plot a multi-dimensional metric grouped by shard."""
+        outpath = self._chart_name(f"{group_name}_{metric_name}")
+        _plot_multi_group_fn(
+            group_name, metric_name, df, unit, outpath, gen_only=self.options.gen_only
+        )
+        if df is not None and not df.empty:
+            self.generated_files.append(outpath)
+
+    # ------------------------------------------------------------------
+    # Histogram DataFrame builders
+    # ------------------------------------------------------------------
+
+    def _build_concurrent_df(self) -> pd.DataFrame:
         """
-        Plot a multi-dimensional metric grouped by shard.
-        The extra dimension columns are used to form the y-value label.
+        Build a flat DataFrame for ``seastore_concurrent_transactions``.
+
+        Columns: qd, timestamp, shard, shard_store_index, value.
+        The qd and timestamp are extracted from the input filename.
         """
-        if df is None or df.empty:
+        rows = self._histogram.get("seastore_concurrent_transactions") or \
+               self._raw.get("seastore_concurrent_transactions")
+        if not rows:
+            return pd.DataFrame()
+        ts, qd = (None, None)
+        if _HAS_OSD_DUMP_PARSERS:
+            ts, qd = parse_dump_filename(self.options.input)
+        out_rows = []
+        if isinstance(rows, dict):
+            # raw dict: shard -> list of values
+            for shard, vals in rows.items():
+                for v in vals:
+                    out_rows.append({"qd": qd, "timestamp": ts, "shard": shard,
+                                     "shard_store_index": "0", "value": v})
+        else:
+            # list of histogram records
+            for rec in rows:
+                out_rows.append({
+                    "qd": qd,
+                    "timestamp": ts,
+                    "shard": rec.get("shard", "0"),
+                    "shard_store_index": rec.get("shard_store_index", "0"),
+                    "value": rec.get("count", 0),
+                })
+        return pd.DataFrame(out_rows)
+
+    def _build_stage_lat_df(self) -> pd.DataFrame:
+        """
+        Build a flat DataFrame for ``seastore_do_transaction_stage_lat``.
+
+        Columns: qd, timestamp, shard, shard_store_index, stage, tail,
+        sum_ms, count, mean_ms, le_<X>... (per-bucket differential counts).
+        """
+        rows = self._histogram.get("seastore_do_transaction_stage_lat", [])
+        if not rows:
+            return pd.DataFrame()
+        ts, qd = (None, None)
+        if _HAS_OSD_DUMP_PARSERS:
+            ts, qd = parse_dump_filename(self.options.input)
+        out_rows = []
+        for rec in rows:
+            row: Dict[str, Any] = {
+                "qd": qd,
+                "timestamp": ts,
+                "shard": rec.get("shard", "0"),
+                "shard_store_index": rec.get("shard_store_index", "0"),
+                "stage": rec.get("stage", "unknown"),
+                "tail": rec.get("tail", "unknown"),
+                "sum_ms": rec.get("sum", 0.0),
+                "count": rec.get("count", 0),
+                "mean_ms": rec.get("mean", 0.0),
+            }
+            for le_f, cnt in rec.get("per_buckets", []):
+                key = "le_+Inf" if np.isinf(le_f) else f"le_{le_f:g}"
+                row[key] = cnt
+            out_rows.append(row)
+        return pd.DataFrame(out_rows)
+
+    def _build_conflict_df(self) -> pd.DataFrame:
+        """
+        Build a flat DataFrame for ``seastore_conflict_replay_distribution``.
+
+        Columns: qd, timestamp, shard, shard_store_index, sum, count,
+        mean_replays, le_<X>... (per-bucket differential counts).
+        """
+        rows = self._histogram.get("seastore_conflict_replay_distribution", [])
+        if not rows:
+            return pd.DataFrame()
+        ts, qd = (None, None)
+        if _HAS_OSD_DUMP_PARSERS:
+            ts, qd = parse_dump_filename(self.options.input)
+        out_rows = []
+        for rec in rows:
+            row: Dict[str, Any] = {
+                "qd": qd,
+                "timestamp": ts,
+                "shard": rec.get("shard", "0"),
+                "shard_store_index": rec.get("shard_store_index", "0"),
+                "sum": rec.get("sum", 0.0),
+                "count": rec.get("count", 0),
+                "mean_replays": rec.get("mean", 0.0),
+            }
+            for le_f, cnt in rec.get("per_buckets", []):
+                key = "le_+Inf" if np.isinf(le_f) else f"le_{le_f:g}"
+                row[key] = cnt
+            out_rows.append(row)
+        return pd.DataFrame(out_rows)
+
+    # ------------------------------------------------------------------
+    # Histogram plotting
+    # ------------------------------------------------------------------
+
+    def _plot_histogram_metrics(self) -> None:
+        """
+        Produce all histogram charts (concurrent, stage-lat, conflict) when
+        ``crimson_plot_helpers`` is available and histogram data was parsed.
+        """
+        if not _HAS_PLOT_HELPERS:
+            logger.warning("crimson_plot_helpers unavailable; skipping histogram plots")
             return
 
-        dim_cols = [c for c in df.columns if c not in {"shard", "value"}]
-        if not dim_cols:
-            return
+        tails = getattr(self.options, "tails", None) or _TAIL_ORDER
+        stages = getattr(self.options, "stages", None)
 
-        try:
-            # Pivot: index=shard, columns=concatenated dim labels
-            df = df.copy()
-            df["_label"] = df[dim_cols].apply(
-                lambda row: "_".join(str(row[c]) for c in dim_cols), axis=1
-            )
-            pivot = df.pivot_table(
-                index="shard", columns="_label", values="value", aggfunc="mean"
-            )
+        # -- seastore_concurrent_transactions --
+        df_conc = self._build_concurrent_df()
+        if not df_conc.empty:
+            outpath = self._chart_name("seastore_concurrent_transactions")
+            plot_concurrent(df_conc, outpath=outpath, gen_only=self.options.gen_only)
+            self.generated_files.append(outpath)
 
-            sns.set_theme()
-            fig, ax = plt.subplots(figsize=(10, 5))
-            pivot.plot(
-                ax=ax,
-                kind="line",
-                title=f"{metric_name} per shard",
-                xlabel="Shard",
-                ylabel=unit,
-                fontsize=7,
-                grid=True,
-            )
-            ax.legend(fontsize=6, loc="upper right")
-            plt.tight_layout()
-        except Exception as exc:
-            logger.error(f"Error plotting multi metric {metric_name}: {exc}")
-            plt.close()
-            return
+        # -- seastore_do_transaction_stage_lat --
+        df_stage = self._build_stage_lat_df()
+        if not df_stage.empty:
+            for tail in tails:
+                outpath = self._chart_name(f"stage_lat_heatmap_{tail}")
+                plot_stage_lat_heatmap(
+                    df_stage, tail_filter=tail,
+                    outpath=outpath, gen_only=self.options.gen_only,
+                )
+                self.generated_files.append(outpath)
 
-        self._save_chart(self._chart_name(f"{group_name}_{metric_name}"))
+            stage_list = stages or sorted(df_stage["stage"].unique())
+            for stage in stage_list:
+                for tail in tails:
+                    stem = f"stage_lat_hist_{stage}_{tail}"
+                    outpath = self._chart_name(stem)
+                    plot_stage_lat_histogram(
+                        df_stage, stage=stage, tail=tail,
+                        outpath=outpath, gen_only=self.options.gen_only,
+                    )
+                    self.generated_files.append(outpath)
+
+            outpath = self._chart_name("stage_lat_mean_vs_qd")
+            plot_stage_lat_by_qd(
+                df_stage, stages=stages, tails=tails,
+                outpath=outpath, gen_only=self.options.gen_only,
+            )
+            self.generated_files.append(outpath)
+
+        # -- seastore_conflict_replay_distribution --
+        df_conf = self._build_conflict_df()
+        if not df_conf.empty:
+            outpath = self._chart_name("conflict_replay_histogram")
+            plot_conflict_histogram(
+                df_conf, outpath=outpath, gen_only=self.options.gen_only
+            )
+            self.generated_files.append(outpath)
+
+            outpath = self._chart_name("conflict_replay_mean_vs_qd")
+            plot_conflict_mean_vs_qd(
+                df_conf, outpath=outpath, gen_only=self.options.gen_only
+            )
+            self.generated_files.append(outpath)
 
     # ------------------------------------------------------------------
     # Top-level run
@@ -569,7 +654,8 @@ class CrimsonDumpMetricsParser:
 
     def plot_all(self) -> None:
         """
-        Build all DataFrames and produce charts for every metric group.
+        Build all DataFrames and produce charts for every metric group,
+        including histogram metrics (stage-lat, conflict replay, concurrent).
         """
         simple_df = self._build_simple_df()
         logger.info(
@@ -593,9 +679,7 @@ class CrimsonDumpMetricsParser:
                     plotted_groups.add(group_name)
 
             # --- multi-dimensional metrics in this group ---
-            multi_names = [
-                m for m in self._multi if regex.search(m)
-            ]
+            multi_names = [m for m in self._multi if regex.search(m)]
             for mname in multi_names:
                 if mname == "seastore_op_lat":
                     df_lat = self._build_multi_df(mname)
@@ -604,6 +688,9 @@ class CrimsonDumpMetricsParser:
                     df_m = self._build_multi_df(mname)
                     if df_m is not None and not df_m.empty:
                         self._plot_multi_group(group_name, mname, df_m, unit)
+
+        # --- histogram metrics ---
+        self._plot_histogram_metrics()
 
         logger.info(f"Plotted groups: {sorted(plotted_groups)}")
 
@@ -636,107 +723,89 @@ def _get_metric_group(metric_name: str) -> str:
     return "ungrouped"
 
 
-def load_crimson_dump_dataframe_from_content(json_content: str) -> tuple: #pd.DataFrame:
+def _group_for_metric(metric_name: str, metric_groups: Dict[str, Dict[str, Any]]) -> str:
+    """Return the group key whose regex matches *metric_name*, or 'ungrouped'."""
+    for group_name, spec in metric_groups.items():
+        if spec["regex"].match(metric_name):
+            return group_name
+    return "ungrouped"
+
+
+def load_crimson_dump_dataframe_from_content(json_content: str) -> tuple:
     """
-    Load OSD dump_metrics JSON content into a flat DataFrame.
-    
-    Auto-detects OSD type and uses appropriate parser to handle different
-    JSON formats (Crimson SeaStore, Crimson BlueStore, Classic OSD).
-    
+    Load OSD dump_metrics JSON content into flat DataFrames.
+
+    Auto-detects OSD type and uses the appropriate parser hierarchy to handle
+    different JSON formats (Crimson SeaStore, Crimson BlueStore, Classic OSD).
+
     Parameters
     ----------
     json_content : str
-        JSON string content from dump file.
-        
+        JSON string content from a dump file.
+
     Returns
     -------
     osd_type : str
-    pd.DataFrame
-        DataFrame with columns: metric, group, shard, value, and any extra dimensions.
+        Detected OSD type string.
+    df : pd.DataFrame
+        Flat DataFrame for simple / multi-dim metrics.
+        Columns: metric, group, shard, value, and any extra dimensions.
+    histo : dict
+        Raw histogram data keyed by metric name (list of parsed histogram
+        records as returned by ``CrimsonSeaStoreParser._parse_histogram``).
+        Empty dict when no histogram metrics are present.
     """
     try:
         data = json.loads(json_content)
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse JSON content: {e}")
-        return "unknown", pd.DataFrame()
-    #debug_print = False
-    
-    # Use new parser hierarchy if available
+        return "unknown", pd.DataFrame(), {}
+
     if _HAS_OSD_DUMP_PARSERS:
         try:
-            # Auto-detect OSD type and create appropriate parser
             osd_type = detect_osd_type(data)
             parser = create_parser(osd_type)
             parser.parse(data)
-            if not parser.get_parsed_data()[0]:  # Check if any metrics were parsed
+            raw, multi, histo, shards, metrics = parser.get_parsed_data()
+            if not raw and not multi and not histo:
                 raise ValueError("No metrics parsed with new parser")
-            
-            # Get parsed data
-            raw, multi, shards, metrics = parser.get_parsed_data()
+
             metric_groups = parser.get_metric_groups()
-            
-            # if not debug_print:
-            #     logger.info(f"Detected OSD type: {osd_type},
-            #     {metric_groups.keys()} groups, {len(metrics)} unique metrics,
-            #     {len(shards)} shards")
-            #     debug_print = True
-            
-            # Convert to DataFrame format expected by perf_reporter
+
             rows: List[Dict[str, Any]] = []
-            
-            # Process simple metrics (raw)
+
+            # Simple (shard → scalar) metrics
             for metric_name, shard_data in raw.items():
-                # Determine group
-                group = None
-                for group_name, spec in metric_groups.items():
-                    if spec["regex"].match(metric_name):
-                        group = group_name
-                        break
-                if group is None:
-                    group = "ungrouped"
-                
+                group = _group_for_metric(metric_name, metric_groups)
                 for shard, values in shard_data.items():
                     for value in values:
-                        row = {
+                        rows.append({
                             "metric": metric_name,
                             "group": group,
                             "shard": int(shard) if isinstance(shard, str) and shard.isdigit() else shard,
                             "value": float(value),
-                        }
-                        rows.append(row)
-            
-            # Process multi-dimensional metrics
+                        })
+
+            # Multi-dimensional metrics
             for metric_name, entries in multi.items():
-                # Determine group
-                group = None
-                for group_name, spec in metric_groups.items():
-                    if spec["regex"].match(metric_name):
-                        group = group_name
-                        break
-                if group is None:
-                    group = "ungrouped"
-                
+                group = _group_for_metric(metric_name, metric_groups)
                 for entry in entries:
-                    row = {
-                        "metric": metric_name,
-                        "group": group,
-                    }
+                    row: Dict[str, Any] = {"metric": metric_name, "group": group}
                     row.update(entry)
-                    # Ensure shard is int if possible
                     if "shard" in row and isinstance(row["shard"], str) and row["shard"].isdigit():
                         row["shard"] = int(row["shard"])
                     rows.append(row)
-            
-            return osd_type, pd.DataFrame(rows)
-            
+
+            return str(osd_type), pd.DataFrame(rows), histo
+
         except Exception as e:
             logger.warning(f"Failed to use new parser hierarchy: {e}, falling back to legacy")
-    
+
+    # Legacy fallback (Crimson SeaStore format only)
     osd_type = "Crimson-SeaStore (legacy)"
-    # Fallback to legacy parsing (Crimson format only)
-    metrics = data.get("metrics", [])
-    rows: List[Dict[str, Any]] = []
-    for item in metrics:
+    metrics_list = data.get("metrics", [])
+    rows = []
+    for item in metrics_list:
         if not isinstance(item, dict):
             continue
         for metric_name, entry in item.items():
@@ -749,7 +818,7 @@ def load_crimson_dump_dataframe_from_content(json_content: str) -> tuple: #pd.Da
             if isinstance(value, dict):
                 count = value.get("count", 0)
                 value = value.get("sum", 0) / count if count else 0.0
-            row: Dict[str, Any] = {
+            row = {
                 "metric": metric_name,
                 "group": _get_metric_group(metric_name),
                 "shard": int(shard),
@@ -757,7 +826,7 @@ def load_crimson_dump_dataframe_from_content(json_content: str) -> tuple: #pd.Da
             }
             row.update({k: v for k, v in entry.items() if k not in {"shard", "value"}})
             rows.append(row)
-    return osd_type, pd.DataFrame(rows)
+    return osd_type, pd.DataFrame(rows), {}
 
 
 def load_crimson_dump_dataframe(json_fname: str) -> pd.DataFrame:
@@ -1314,8 +1383,33 @@ Examples:
         type=str,
         help="Output file for rate analysis report",
     )
+    parser.add_argument(
+        "--stages",
+        default=None,
+        help=(
+            "Comma-separated list of transaction stages to include in "
+            "stage-lat histogram plots (default: all stages found in the data)"
+        ),
+    )
+    parser.add_argument(
+        "--tails",
+        default=None,
+        help=(
+            "Comma-separated tail categories for stage-lat plots "
+            "(default: all, slow, very_slow)"
+        ),
+    )
 
     options = parser.parse_args(argv)
+    # Convert comma-separated strings to lists (or None)
+    options.stages = (
+        [s.strip() for s in options.stages.split(",")]
+        if options.stages else None
+    )
+    options.tails = (
+        [t.strip() for t in options.tails.split(",")]
+        if options.tails else None
+    )
     log_level = logging.DEBUG if options.verbose else logging.INFO
 
     with tempfile.NamedTemporaryFile(dir="/tmp", delete=False) as tmpfile:

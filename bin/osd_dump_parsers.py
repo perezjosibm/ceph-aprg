@@ -14,15 +14,53 @@ for its OSD type.
 
 import re
 import logging
+import os
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional, Set, Tuple
 from collections import defaultdict
+from datetime import datetime
 from enum import Enum
 import numpy as np
 
-__author__ = "Bob (AI Assistant)"
+__author__ = "Jose J Palacios-Perez"
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Filename convention helpers (shared with parse_seastore_histograms)
+# ---------------------------------------------------------------------------
+
+# Regex to extract timestamp and queue-depth from the naming convention:
+#   <YYYYMMDD>_<HHMMSS>_<N>qd_dump.json
+_FNAME_RE = re.compile(r"(\d{8}_\d{6})_(\d+)qd", re.IGNORECASE)
+
+
+def parse_dump_filename(path: str) -> Tuple[Optional[datetime], Optional[int]]:
+    """
+    Extract (timestamp, queue_depth) from a dump filename.
+
+    The expected naming convention is::
+
+        <YYYYMMDD>_<HHMMSS>_<N>qd_dump.json
+
+    Returns ``(None, None)`` when the pattern is not found; the file is still
+    usable – it just will not be annotated with a queue depth.
+    """
+    basename = os.path.basename(path)
+    match = _FNAME_RE.search(basename)
+    if not match:
+        logger.warning(
+            "Filename %s does not match expected pattern; QD unknown", basename
+        )
+        return None, None
+    ts_str = match.group(1)
+    qd = int(match.group(2))
+    try:
+        ts = datetime.strptime(ts_str, "%Y%m%d_%H%M%S")
+    except ValueError:
+        ts = None
+    return ts, qd
+
 
 
 class OSDType(Enum):
@@ -55,6 +93,7 @@ class BaseOSDDumpMetricsParser(ABC):
             lambda: defaultdict(list)
         )
         self._multi: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        self._histogram: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         self._shards_seen: Set[str] = set()
         self._metrics_seen: Set[str] = set()
     
@@ -101,17 +140,24 @@ class BaseOSDDumpMetricsParser(ABC):
     def get_parsed_data(self) -> tuple:
         """
         Get the parsed data structures.
-        
+
         Returns
         -------
         tuple
-            (_raw, _multi, _shards_seen, _metrics_seen)
+            (_raw, _multi, _histogram, _shards_seen, _metrics_seen)
         """
-        return self._raw, self._multi, self._shards_seen, self._metrics_seen
+        return (
+            self._raw,
+            self._multi,
+            self._histogram,
+            self._shards_seen,
+            self._metrics_seen,
+        )
     
     def reset(self) -> None:
         """Reset the parser state."""
         self._raw.clear()
+        self._histogram.clear()
         self._multi.clear()
         self._shards_seen.clear()
         self._metrics_seen.clear()
@@ -380,7 +426,7 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
                 dims = self._extract_histo_dims(entry)
                 rec.update(dims)
                 #self._raw[metric_name][shard].append(float(count))
-                self._multi[metric_name].append(rec)
+                self._histogram[metric_name].append(rec)
             else:
                 # Check for extra dimensions
                 dims = self._extract_extra_dims(entry)
