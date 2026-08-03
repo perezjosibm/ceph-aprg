@@ -32,9 +32,17 @@ from crimson_plot_helpers import (
     plot_concurrent,
     plot_stage_lat_heatmap,
     plot_stage_lat_by_qd,
+    plot_stage_lat_histogram,
     plot_conflict_histogram,
     plot_conflict_mean_vs_qd,
     _TAIL_ORDER,
+)
+from parse_seastore_histograms import (
+    SampleRecord,
+    build_concurrent_df,
+    build_stage_lat_df,
+    build_conflict_df,
+    SeastoreHistogramAnalyzer,
 )
 
 # Note: load_crimson_dump_dataframe_from_content() now auto-detects OSD type
@@ -53,6 +61,7 @@ from fio_job_parser import FioJobParser, WorkloadInterval
 # from gnuplot_plate import FioPlot
 # from fio_plot import FioPlot FIXME
 # from perf_report import PerfReporterLegacy
+import parse_seastore_histograms
 
 __author__ = "Jose J Palacios-Perez"
 
@@ -922,6 +931,323 @@ class PerfReporter(object):
 
         return filtered
 
+    # ------------------------------------------------------------------
+    # OSD metrics summary / debug helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _log_osd_metrics_summary(entries: list, label: str = "") -> None:
+        """
+        Log a structured summary of OSD metric kinds found in *entries*.
+
+        For each ``crimson_dump`` telemetry entry the ``frame`` DataFrame
+        carries simple scalar metrics, while the ``histogram`` key (when
+        present) carries parsed histogram records from
+        :func:`load_crimson_dump_dataframe_from_content`.
+
+        The summary is emitted at **INFO** level and groups metrics by kind:
+
+        * **simple** – one scalar value per (shard) row in the flat DataFrame
+          (no extra dimension columns beyond ``metric``, ``group``, ``shard``,
+          ``value``).
+        * **multi-dim** – rows that have additional label columns beyond the
+          four standard ones (e.g. ``latency``, ``src``, ``stage``).
+        * **histogram** – metrics stored in the ``histogram`` dict of the
+          entry, with sub-keys ``count``, ``sum``, ``mean``, ``per_buckets``.
+
+        Parameters
+        ----------
+        entries:
+            List of telemetry entry dicts (as stored under
+            ``ds_list[name]["telemetry"]["crimson_dump"]``).
+        label:
+            Optional prefix shown in log lines (e.g. run name + workload).
+        """
+        if not entries:
+            logger.debug("%s _log_osd_metrics_summary: no entries", label)
+            return
+
+        # ── Aggregate counts across all entries ──────────────────────────────
+        simple_metrics: set = set()
+        multi_metrics: set = set()
+        histo_metrics: set = set()
+
+        _STANDARD_COLS = {"metric", "group", "shard", "value"}
+
+        for entry in entries:
+            df: pd.DataFrame = entry.get("frame")
+            if df is not None and not df.empty and "metric" in df.columns:
+                for metric, sub in df.groupby("metric", observed=True):
+                    extra_cols = set(sub.columns) - _STANDARD_COLS
+                    if extra_cols:
+                        multi_metrics.add(metric)
+                    else:
+                        simple_metrics.add(metric)
+
+            histo: dict = entry.get("histogram", {})
+            for metric_name in histo:
+                histo_metrics.add(metric_name)
+
+        # Metrics that appear in multi AND simple (e.g. because different
+        # shards have different extra-col profiles) stay in multi.
+        simple_metrics -= multi_metrics
+
+        prefix = f"[{label}] " if label else ""
+        logger.info(
+            "%sOSD metrics summary  "
+            "simple=%d  multi-dim=%d  histogram=%d  (total unique=%d)",
+            prefix,
+            len(simple_metrics),
+            len(multi_metrics),
+            len(histo_metrics),
+            len(simple_metrics | multi_metrics | histo_metrics),
+        )
+        logger.debug("%s  simple   : %s", prefix, sorted(simple_metrics))
+        logger.debug("%s  multi-dim: %s", prefix, sorted(multi_metrics))
+        logger.debug("%s  histogram: %s", prefix, sorted(histo_metrics))
+
+    # ------------------------------------------------------------------
+    # Histogram DataFrame builder (for a filtered set of telemetry entries)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_histogram_dfs(
+        filtered_entries: list,
+        source_name: str,
+    ) -> dict:
+        """
+        Build histogram DataFrames from a filtered list of ``crimson_dump``
+        telemetry entries using :class:`~parse_seastore_histograms.SampleRecord`.
+
+        Each entry's ``histogram`` dict (populated by
+        :func:`~parse_crimson_dump_metrics.load_crimson_dump_dataframe_from_content`)
+        is re-parsed into a :class:`~parse_seastore_histograms.SampleRecord`
+        so we can reuse the existing :func:`build_stage_lat_df`,
+        :func:`build_concurrent_df`, and :func:`build_conflict_df` builders.
+
+        Parameters
+        ----------
+        filtered_entries:
+            Entries from ``ds_list[run_name]["telemetry"]["crimson_dump"]``
+            already filtered to a workload interval.
+        source_name:
+            Human-readable label used in log messages.
+
+        Returns
+        -------
+        dict with keys ``"stage_lat"``, ``"conflict"``, ``"concurrent"``
+        mapping to the corresponding :class:`~pandas.DataFrame` (empty if no
+        data was found).
+        """
+        samples: list = []
+        for entry in filtered_entries:
+            histo = entry.get("histogram")
+            if not histo:
+                continue
+            ts_str = entry.get("timestamp", "")
+            # Build a synthetic basename that parse_seastore_histograms can
+            # use to extract timestamp and QD from the filename convention.
+            basename = os.path.basename(entry.get("source", ts_str or "unknown"))
+            rec = SampleRecord(basename)
+            # Manually set timestamp / qd when the basename carries them.
+            try:
+                from osd_dump_parsers import parse_dump_filename
+                rec.timestamp, rec.qd = parse_dump_filename(basename)
+            except Exception:
+                pass
+            if rec.timestamp is None and ts_str:
+                try:
+                    from datetime import datetime as _dt
+                    rec.timestamp = _dt.strptime(ts_str, "%Y%m%d_%H%M%S")
+                except ValueError:
+                    pass
+            rec.label = (
+                f"{rec.timestamp.strftime('%H:%M:%S') if rec.timestamp else basename}"
+                f" QD={rec.qd or '?'}"
+            )
+
+            # Populate SampleRecord fields from the histogram dict that was
+            # stored by load_crimson_dump_dataframe_from_content().
+            stage_lat_recs = histo.get("seastore_do_transaction_stage_lat", [])
+            for h_rec in stage_lat_recs:
+                rec.stage_lat.append({
+                    "shard": h_rec.get("shard", "0"),
+                    "shard_store_index": h_rec.get("shard_store_index", "0"),
+                    "stage": h_rec.get("stage", "unknown"),
+                    "tail": h_rec.get("tail", "unknown"),
+                    "sum": h_rec.get("sum", 0.0),
+                    "count": h_rec.get("count", 0),
+                    "mean": h_rec.get("mean", 0.0),
+                    "per_buckets": h_rec.get("per_buckets", []),
+                })
+
+            conflict_recs = histo.get("seastore_conflict_replay_distribution", [])
+            for h_rec in conflict_recs:
+                rec.conflict.append({
+                    "shard": h_rec.get("shard", "0"),
+                    "shard_store_index": h_rec.get("shard_store_index", "0"),
+                    "sum": h_rec.get("sum", 0.0),
+                    "count": h_rec.get("count", 0),
+                    "mean": h_rec.get("mean", 0.0),
+                    "per_buckets": h_rec.get("per_buckets", []),
+                })
+
+            # concurrent_transactions is a scalar gauge stored under _raw in
+            # the parser, but may also appear in the histogram dict.
+            for h_rec in histo.get("seastore_concurrent_transactions", []):
+                shard = h_rec.get("shard", "0")
+                ssi = h_rec.get("shard_store_index", "0")
+                rec.concurrent[shard][ssi] = float(h_rec.get("count", 0))
+
+            samples.append(rec)
+
+        if not samples:
+            logger.debug("%s: no histogram data found in filtered entries", source_name)
+            return {
+                "stage_lat": pd.DataFrame(),
+                "conflict": pd.DataFrame(),
+                "concurrent": pd.DataFrame(),
+            }
+
+        df_stage = build_stage_lat_df(samples)
+        df_conflict = build_conflict_df(samples)
+        df_concurrent = build_concurrent_df(samples)
+        logger.info(
+            "%s histogram DFs — stage_lat=%s  conflict=%s  concurrent=%s",
+            source_name,
+            df_stage.shape,
+            df_conflict.shape,
+            df_concurrent.shape,
+        )
+        return {
+            "stage_lat": df_stage,
+            "conflict": df_conflict,
+            "concurrent": df_concurrent,
+        }
+
+    # ------------------------------------------------------------------
+    # Per-workload histogram chart generation
+    # ------------------------------------------------------------------
+
+    def _plot_workload_histogram_metrics(
+        self,
+        workload_name: str,
+        run_name: str,
+        histo_dfs: dict,
+    ) -> None:
+        """
+        Produce histogram charts for a single workload/run from pre-built
+        histogram DataFrames.
+
+        Charts generated (when data is available):
+
+        * ``stage_lat_heatmap_<tail>`` – mean latency heatmap per stage × QD
+        * ``stage_lat_hist_<stage>_<tail>`` – per-bucket bar chart
+        * ``stage_lat_mean_vs_qd`` – line chart of mean latency vs QD
+        * ``conflict_replay_histogram`` – conflict-round distribution bars
+        * ``conflict_replay_mean_vs_qd`` – mean replays line chart
+        * ``concurrent_transactions`` – bar chart of concurrent transaction gauge
+
+        Parameters
+        ----------
+        workload_name:
+            Workload name used to build output filenames.
+        run_name:
+            Test-run name used to build output filenames.
+        histo_dfs:
+            Dict with keys ``"stage_lat"``, ``"conflict"``, ``"concurrent"``
+            as returned by :meth:`_build_histogram_dfs`.
+        """
+        stem = f"{run_name}_{workload_name}"
+
+        def _path(suffix: str) -> str:
+            return self.get_target_path(f"{stem}_{suffix}.png", "figures")
+
+        def _add_figure(fname: str, title: str, label_suffix: str) -> None:
+            self.add_entry_figure(
+                key="tex",
+                title=title,
+                file_name=fname,
+                dir_path=os.path.join("figures/", f"{self.config['output']['name']}/"),
+                label=f"fig:{run_name}-{workload_name}-{label_suffix}",
+            )
+
+        tails = _TAIL_ORDER
+
+        # ── stage latency ──────────────────────────────────────────────────
+        df_stage = histo_dfs.get("stage_lat", pd.DataFrame())
+        if not df_stage.empty:
+            for tail in tails:
+                fname = f"{stem}_stage_lat_heatmap_{tail}.png"
+                outpath = self.get_target_path(fname, "figures")
+                plot_stage_lat_heatmap(
+                    df_stage, tail_filter=tail,
+                    outpath=outpath, gen_only=True,
+                )
+                _add_figure(fname,
+                             f"{run_name} {workload_name} stage latency heatmap ({tail})",
+                             f"stage-lat-heatmap-{tail}")
+
+            stages = sorted(df_stage["stage"].unique())
+            for stage in stages:
+                for tail in tails:
+                    fname = f"{stem}_stage_lat_hist_{stage}_{tail}.png"
+                    outpath = self.get_target_path(fname, "figures")
+                    plot_stage_lat_histogram(
+                        df_stage, stage=stage, tail=tail,
+                        outpath=outpath, gen_only=True,
+                    )
+                    _add_figure(fname,
+                                 f"{run_name} {workload_name} stage={stage} tail={tail}",
+                                 f"stage-lat-hist-{stage}-{tail}")
+
+            fname = f"{stem}_stage_lat_mean_vs_qd.png"
+            outpath = self.get_target_path(fname, "figures")
+            plot_stage_lat_by_qd(
+                df_stage, tails=tails,
+                outpath=outpath, gen_only=True,
+            )
+            _add_figure(fname,
+                         f"{run_name} {workload_name} stage latency mean vs QD",
+                         "stage-lat-mean-vs-qd")
+            logger.info("Generated stage-lat histogram charts for %s/%s",
+                        run_name, workload_name)
+
+        # ── conflict replay ────────────────────────────────────────────────
+        df_conf = histo_dfs.get("conflict", pd.DataFrame())
+        if not df_conf.empty:
+            fname = f"{stem}_conflict_replay_histogram.png"
+            outpath = self.get_target_path(fname, "figures")
+            plot_conflict_histogram(df_conf, outpath=outpath, gen_only=True)
+            _add_figure(fname,
+                         f"{run_name} {workload_name} conflict replay distribution",
+                         "conflict-replay-hist")
+
+            fname = f"{stem}_conflict_replay_mean_vs_qd.png"
+            outpath = self.get_target_path(fname, "figures")
+            plot_conflict_mean_vs_qd(df_conf, outpath=outpath, gen_only=True)
+            _add_figure(fname,
+                         f"{run_name} {workload_name} conflict replay mean vs QD",
+                         "conflict-replay-mean-vs-qd")
+            logger.info("Generated conflict-replay histogram charts for %s/%s",
+                        run_name, workload_name)
+
+        # ── concurrent transactions ────────────────────────────────────────
+        df_conc = histo_dfs.get("concurrent", pd.DataFrame())
+        if not df_conc.empty:
+            fname = f"{stem}_concurrent_transactions.png"
+            outpath = self.get_target_path(fname, "figures")
+            plot_concurrent(df_conc, outpath=outpath, gen_only=True)
+            _add_figure(fname,
+                         f"{run_name} {workload_name} concurrent transactions",
+                         "concurrent-transactions")
+            logger.info("Generated concurrent-transactions chart for %s/%s",
+                        run_name, workload_name)
+
+    # ------------------------------------------------------------------
+    # Aggregation
+    # ------------------------------------------------------------------
+
     def _aggregate_metrics_by_workload(self, name: str) -> None:
         """
         Aggregate telemetry metrics by workload and iodepth.
@@ -931,7 +1257,20 @@ class PerfReporter(object):
         it filters the telemetry to the relevant time interval and computes
         aggregate statistics.
 
-        Results are stored in self.ds_list[name]['workload_metrics'].
+        For ``crimson_dump`` entries the method additionally:
+
+        * calls :meth:`_log_osd_metrics_summary` to emit a debug summary of
+          metric kinds (simple, multi-dim, histogram) at INFO level.
+        * calls :meth:`_build_histogram_dfs` to build
+          ``seastore_do_transaction_stage_lat``,
+          ``seastore_conflict_replay_distribution``, and
+          ``seastore_concurrent_transactions`` DataFrames using
+          :class:`~parse_seastore_histograms.SampleRecord`.  These are stored
+          alongside the flat aggregated DataFrame under the key
+          ``"histogram_dfs"`` so that downstream plotting methods can use them
+          directly.
+
+        Results are stored in ``self.ds_list[name]['workload_metrics']``.
 
         Args:
             name: Test run name
@@ -952,6 +1291,11 @@ class PerfReporter(object):
         if not telemetry:
             logger.warning(f"Run {name}: No telemetry data found")
             return
+
+        # Emit a one-time summary of OSD metric kinds for this run
+        crimson_entries_all = telemetry.get("crimson_dump", [])
+        if crimson_entries_all:
+            self._log_osd_metrics_summary(crimson_entries_all, label=name)
 
         # Initialize workload metrics storage
         workload_metrics = defaultdict(lambda: defaultdict(dict))
@@ -1003,14 +1347,9 @@ class PerfReporter(object):
                             "metric" in combined_df.columns
                             and "shard" in combined_df.columns
                         ):
-                            # here is probably when the resulting dataframe gets MultiIndex
-                            # We need to preserve the'group' column:
                             agg_df = combined_df.groupby(["metric", "shard"]).agg(
                                 {"value": "mean", "group": "first"}
                             )
-                            # .mean(
-                            #     numeric_only=True
-                            # )
                             logger.debug(
                                 "  Aggregated crimson_dump by metric and shard"
                             )
@@ -1020,21 +1359,30 @@ class PerfReporter(object):
                         # Generic aggregation
                         agg_df = combined_df.mean(numeric_only=True).to_frame().T
 
-                    # Store aggregated data: index is MultiIndex (metric,shard),
-                    # columns are the aggregated values, shoudl have group column if crimson_dump
-                    workload_metrics[workload_name][iodepth][telem_kind] = {
+                    entry_data: dict = {
                         "aggregated": agg_df,
                         "sample_count": len(filtered_entries),
                         "interval": interval,
                     }
 
+                    # For crimson_dump: also build histogram DataFrames from
+                    # SampleRecords so that _plot_workload_histogram_metrics
+                    # can produce stage-lat / conflict-replay charts.
+                    if telem_kind == "crimson_dump":
+                        source_label = f"{name}/{workload_name}/iodepth={iodepth}"
+                        entry_data["histogram_dfs"] = self._build_histogram_dfs(
+                            filtered_entries, source_label
+                        )
+
+                    workload_metrics[workload_name][iodepth][telem_kind] = entry_data
+
                     logger.debug(
-                        f"  {telem_kind}: {len(filtered_entries)} samples aggregated"  # {pp.pformat(agg_df.to_dict())}
+                        f"  {telem_kind}: {len(filtered_entries)} samples aggregated"
                     )
-                    # Debug print the resulting dataframe for the first workload/iodepth
                     if not debug_printed and telem_kind == "crimson_dump":
                         logger.debug(
-                            f"  Aggregated dataframe for {workload_name} iodepth={iodepth} telem_kind={telem_kind}:\n{pp.pformat(agg_df)}"
+                            f"  Aggregated dataframe for {workload_name} iodepth={iodepth} "
+                            f"telem_kind={telem_kind}:\n{pp.pformat(agg_df)}"
                         )
                         debug_printed = True
 
@@ -1042,7 +1390,7 @@ class PerfReporter(object):
         run_data["workload_metrics"] = dict(workload_metrics)
         logger.info(
             f"Run {name}: Workload metrics aggregation completed "
-        )  # {pp.pformat(run_data['workload_metrics'])}
+        )
 
     def _calculate_workload_rates(self, name: str) -> None:
         """
@@ -1692,16 +2040,64 @@ class PerfReporter(object):
         logger.info(f"Completed plotting Crimson OSD metrics for {workload_name}")
 
     def _gen_comparison_charts_per_workload(self):
-        # Step 5: Generate comparison charts for each workload
+        """Generate per-workload comparison charts (flat metrics + histograms)."""
         logger.info("Generating per-workload comparison charts")
         workload_list = ["seqwrite", "randwrite", "randread", "seqread"]
 
         for workload in workload_list:
+            # Flat metric group charts (line plots, heatmaps per group)
             for metric_type in ["crimson_dump"]:  # "diskstat",
                 try:
                     self._plot_workload_metrics(workload, metric_type)
                 except Exception as e:
                     logger.error(f"Error plotting {workload}/{metric_type}: {e}")
+
+            # Histogram charts (stage-lat, conflict-replay, concurrent) per run
+            for run_name, run_data in self.ds_list.items():
+                workload_metrics = run_data.get("workload_metrics", {})
+                if workload not in workload_metrics:
+                    continue
+                # Collect histogram DFs across all iodepths for this workload/run
+                # by merging per-iodepth SampleRecord DataFrames so that the
+                # QD dimension is preserved in the plots.
+                all_stage_lat, all_conflict, all_concurrent = [], [], []
+                for iodepth, metrics in workload_metrics[workload].items():
+                    cd = metrics.get("crimson_dump", {})
+                    histo_dfs = cd.get("histogram_dfs", {})
+                    df_s = histo_dfs.get("stage_lat", pd.DataFrame())
+                    df_c = histo_dfs.get("conflict", pd.DataFrame())
+                    df_n = histo_dfs.get("concurrent", pd.DataFrame())
+                    if not df_s.empty:
+                        # Ensure the iodepth column is set for cross-QD charts
+                        if "qd" not in df_s.columns or df_s["qd"].isna().all():
+                            df_s = df_s.copy()
+                            df_s["qd"] = iodepth
+                        all_stage_lat.append(df_s)
+                    if not df_c.empty:
+                        if "qd" not in df_c.columns or df_c["qd"].isna().all():
+                            df_c = df_c.copy()
+                            df_c["qd"] = iodepth
+                        all_conflict.append(df_c)
+                    if not df_n.empty:
+                        if "qd" not in df_n.columns or df_n["qd"].isna().all():
+                            df_n = df_n.copy()
+                            df_n["qd"] = iodepth
+                        all_concurrent.append(df_n)
+
+                merged = {
+                    "stage_lat": pd.concat(all_stage_lat, ignore_index=True)
+                                  if all_stage_lat else pd.DataFrame(),
+                    "conflict":  pd.concat(all_conflict, ignore_index=True)
+                                  if all_conflict else pd.DataFrame(),
+                    "concurrent": pd.concat(all_concurrent, ignore_index=True)
+                                  if all_concurrent else pd.DataFrame(),
+                }
+                try:
+                    self._plot_workload_histogram_metrics(workload, run_name, merged)
+                except Exception as e:
+                    logger.error(
+                        f"Error plotting histogram metrics for {run_name}/{workload}: {e}"
+                    )
 
     def analyze_workload_metrics(self) -> None:
         """

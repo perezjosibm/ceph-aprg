@@ -17,7 +17,7 @@ Histogram plots (seastore histogram metrics)
   plot_stage_lat_histogram, plot_stage_lat_by_qd,
   plot_conflict_histogram, plot_conflict_mean_vs_qd
 
-Simple/multi-dim metric plots (per-shard dump metrics)
+Simple/multi-dimensional metric plots (per-shard dump metrics)
   plot_simple_group, plot_multi_group, plot_seastore_op_lat,
   minmax_normalisation
 """
@@ -64,7 +64,10 @@ _TAIL_LINESTYLE = {"all": "-", "slow": "--", "very_slow": ":"}
 
 
 def _bucket_columns(df: pd.DataFrame) -> List[str]:
-    """Return bucket columns in ascending order, with ``le_+Inf`` last."""
+    """
+    Return bucket columns in ascending order, with ``le_+Inf`` last.
+    TODO: we might decide to use a global option to drop "+Inf" buckets from plots, but for now we keep it.
+    """
     cols = [c for c in df.columns if c.startswith("le_")]
     finite = sorted(
         [c for c in cols if c != "le_+Inf"],
@@ -226,7 +229,7 @@ def plot_stage_lat_histogram(
             continue
         counts = [row[c].values[0] for c in bucket_cols]
         offset = (i - len(qd_vals) / 2 + 0.5) * width
-        ax.bar(x + offset, counts, width=width, label=f"QD={qd}")
+        ax.bar(x + offset, counts, width=width, label=f"QD={qd}", log=True)
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
@@ -344,7 +347,7 @@ def plot_conflict_histogram(
             continue
         counts = [row[c].values[0] for c in bucket_cols]
         offset = (i - len(qd_vals) / 2 + 0.5) * width
-        ax.bar(x + offset, counts, width=width, label=f"QD={qd}")
+        ax.bar(x + offset, counts, width=width, label=f"QD={qd}", log=True)
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=9)

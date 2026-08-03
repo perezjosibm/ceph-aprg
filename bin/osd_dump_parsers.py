@@ -352,37 +352,28 @@ class CrimsonSeaStoreParser(BaseOSDDumpMetricsParser):
         """
         Convert a Ceph histogram value dict to a normalised record.
 
-        The bucket list is cumulative (Prometheus-style): each bucket
-        carries the count of observations with value ≤ ``le``.  We
-        convert to per-bucket (non-cumulative) counts for charting.
+        We should re-use the method in parse_seastore_histograms.py, but for now we just implement it here.
         """
         count = value.get("count", 0)
         total_sum = value.get("sum", 0.0)
         mean = total_sum / count if count > 0 else 0.0
 
         raw_buckets = value.get("buckets", [])
-        # Build a list of (le_numeric, cumulative_count) pairs.
-        # Replace '+Inf' sentinel with np.inf.
-        # TODO:: we might drop "+Inf" bucket if we don't need it for charting.
-        cum: List[Tuple[float, int]] = []
+        per_bucket: List[Tuple[float, int]] = []
         for b in raw_buckets:
             le = b.get("le", 0)
             cnt = b.get("count", 0)
-            le_f = np.inf if le == "+Inf" else float(le)
-            cum.append((le_f, int(cnt)))
-
-        # Convert cumulative to per-bucket (differential) counts.
-        per_bucket: List[Tuple[float, int]] = []
-        prev = 0
-        for le_f, c in cum:
-            per_bucket.append((le_f, c - prev))
-            prev = c
+            #le_f = np.inf if le == "+Inf" else float(le)
+            if le == "+Inf":
+                continue
+            le_f = float(le)
+            per_bucket.append((le_f, int(cnt)))
 
         return {
             "sum": float(total_sum),
             "count": int(count),
             "mean": mean,
-            "cum_buckets": cum,        # (le, cumulative_count)
+            #"cum_buckets": cum,        # (le, cumulative_count)
             "per_buckets": per_bucket, # (le, differential_count)
         }
 

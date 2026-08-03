@@ -786,6 +786,7 @@ def load_crimson_dump_dataframe_from_content(json_content: str) -> tuple:
                             "value": float(value),
                         })
 
+            # Histogram-metrics is missing!
             # Multi-dimensional metrics
             for metric_name, entries in multi.items():
                 group = _group_for_metric(metric_name, metric_groups)

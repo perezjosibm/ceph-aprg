@@ -72,6 +72,8 @@ __author__ = "Jose J Palacios-Perez"
 
 logger = logging.getLogger(__name__)
 
+logging.getLogger("seaborn").setLevel(logging.WARNING)
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
 # ---------------------------------------------------------------------------
 # Shared plotting helpers (centralised in crimson_plot_helpers)
 # ---------------------------------------------------------------------------
@@ -271,7 +273,7 @@ class SampleRecord:
         """
         Convert a Ceph histogram value dict to a normalised record.
 
-        The bucket list is cumulative (Prometheus-style): each bucket
+        The bucket list is *not* cumulative (Prometheus-style): each bucket
         carries the count of observations with value ≤ ``le``.  We
         convert to per-bucket (non-cumulative) counts for charting.
         """
@@ -282,25 +284,29 @@ class SampleRecord:
         raw_buckets = value.get("buckets", [])
         # Build a list of (le_numeric, cumulative_count) pairs.
         # Replace '+Inf' sentinel with np.inf.
-        cum: List[Tuple[float, int]] = []
+        per_bucket : List[Tuple[float, int]] = []
         for b in raw_buckets:
             le = b.get("le", 0)
             cnt = b.get("count", 0)
-            le_f = np.inf if le == "+Inf" else float(le)
-            cum.append((le_f, int(cnt)))
+            # Drop/ignore the '+Inf' bucket for plotting, but keep it in the CSV export.
+            #le_f = np.inf if le == "+Inf" else float(le)
+            if le == "+Inf":
+                continue
+            le_f = float(le)
+            per_bucket.append((le_f, int(cnt)))
 
-        # Convert cumulative to per-bucket (differential) counts.
-        per_bucket: List[Tuple[float, int]] = []
-        prev = 0
-        for le_f, c in cum:
-            per_bucket.append((le_f, c - prev))
-            prev = c
+        # Convert cumulative to per-bucket (differential) counts
+        # cum : List[Tuple[float, int]] = []
+        # prev = 0
+        # for le_f, c in cum:
+        #     cum.append((le_f, c - prev))
+        #     prev = c
 
         return {
             "sum": float(total_sum),
             "count": int(count),
             "mean": mean,
-            "cum_buckets": cum,        # (le, cumulative_count)
+            #"cum_buckets": cum,        # (le, cumulative_count)
             "per_buckets": per_bucket, # (le, differential_count)
         }
 
@@ -772,6 +778,9 @@ class SeastoreHistogramAnalyzer:
         if not self.samples:
             logger.error("No valid input files found")
             return
+        # Debug save the DataFrames as csv for inspection
+        if self.gen_only:
+            self.export_csv()
         self._plot_concurrent()
         self._plot_stage_lat()
         self._plot_conflict()
@@ -782,6 +791,7 @@ class SeastoreHistogramAnalyzer:
         df = self.df_concurrent
         if df.empty:
             return
+        #logger.info("DF concurrent:", df.to_csv(index=False, float_format="%.4f"))
         path = self._outpath("seastore_concurrent_transactions")
         plot_concurrent(df, outpath=path, gen_only=self.gen_only)
         self.generated.append(path)
@@ -793,6 +803,7 @@ class SeastoreHistogramAnalyzer:
         if df.empty:
             return
 
+        #logger.info("DF stage lat", df.head(10))
         # 1. Heatmap (one per tail category)
         for tail in self.tails:
             path = self._outpath(f"stage_lat_heatmap_{tail}")
@@ -829,6 +840,9 @@ class SeastoreHistogramAnalyzer:
         df = self.df_conflict
         if df.empty:
             return
+
+        # Debug print the dataframes, why the histograms end with negative values?
+        #logger.info("DF conflict", df.head(10))
 
         path = self._outpath("conflict_replay_histogram")
         plot_conflict_histogram(df, outpath=path, gen_only=self.gen_only)
