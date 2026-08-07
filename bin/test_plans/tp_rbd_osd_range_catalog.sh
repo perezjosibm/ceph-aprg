@@ -18,7 +18,7 @@ export ALL_CPU_CORES="0-111" # to monitor by the run_fio.sh script
 #export ALL_CPU_CORES="0-191" # to monitor by the run_fio.sh script
 #############################################################################################
 # Global options
-export RBD_POOL_SIZE=1024
+export RBD_POOL_SIZE=512 # 1024
 export RBD_POOL_NAME="rbd"
 
 # These timings are in seconds
@@ -31,12 +31,12 @@ export NUM_SAMPLES=$(( RUNTIME / DELAY_SAMPLES ))
 # The index of the table indicates the number of drives/OSDs
 
 test_row['osd']="1"
-test_row['reactor_range']="6" #14 28 56 # Number of reactors, can be a range   
+test_row['reactor_range']="1,4,8" #14 28 56 # Number of reactors, can be a range   
 #test_row['nat']="$NUM_ALIEN_THREADS" ## do not apply for Seastore
 test_row['store_devs']="/dev/nvme1n1p2"
 test_row['vstart_cpu_set']="${VSTART_CPU_CORES}"
 test_row['pool_type']="rbd"
-test_row['pool_size']="1024"
+test_row['pool_size']="512"
 #test_row['fio_type']="custom" # didin't work
 #test_row['fio_workload']="rbd_rae-yip.fio" # didin't work
 test_row['fio_cpu_set']="${FIO_CPU_CORES}"
@@ -56,14 +56,13 @@ test_row['fio_workload']="-j -s -r -a"
 string=$(declare -p test_row)
 test_table["1"]=${string}
 
-
 test_row['osd']="2"
-test_row['reactor_range']="6" #14 28 56 # Number of reactors, can be a range   
+test_row['reactor_range']="1,4,8" #14 28 56 # Number of reactors, can be a range   
 #test_row['nat']="$NUM_ALIEN_THREADS" ## do not apply for Seastore
 test_row['store_devs']="/dev/nvme1n1p2,/dev/nvme2n1p2,"
 test_row['vstart_cpu_set']="${VSTART_CPU_CORES}"
 test_row['pool_type']="rbd"
-test_row['pool_size']="1024"
+test_row['pool_size']="512"
 #test_row['fio_type']="custom" # didin't work
 #test_row['fio_workload']="rbd_rae-yip.fio" # didin't work
 test_row['fio_cpu_set']="${FIO_CPU_CORES}"
@@ -84,7 +83,7 @@ string=$(declare -p test_row)
 test_table["2"]=${string}
 
 test_row['osd']="4"
-test_row['reactor_range']="6" #14 28 56 # Number of reactors, can be a range   
+test_row['reactor_range']="1,4,8" #14 28 56 # Number of reactors, can be a range   
 #test_row['nat']="$NUM_ALIEN_THREADS" ## do not apply for Seastore
 test_row['store_devs']="/dev/nvme1n1p2,/dev/nvme2n1p2,/dev/nvme3n1p2,/dev/nvme4n1p2,"
 test_row['vstart_cpu_set']="${VSTART_CPU_CORES}"
@@ -109,7 +108,7 @@ string=$(declare -p test_row)
 test_table["3"]=${string}
 
 test_row['osd']="8"
-test_row['reactor_range']="6" #14 28 56 # Number of reactors, can be a range   
+test_row['reactor_range']="1,4,8" #14 28 56 # Number of reactors, can be a range   
 #test_row['nat']="$NUM_ALIEN_THREADS" ## do not apply for Seastore
 test_row['store_devs']="${STORE_DEVS}"
 test_row['vstart_cpu_set']="${VSTART_CPU_CORES}"

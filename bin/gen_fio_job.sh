@@ -68,14 +68,16 @@ for WORKLOAD in ${workloads_order[@]}; do
 #write_lat_log=\${LOG_NAME}
 ioengine=rbd
 clientname=admin
+conf=/ceph/build/ceph.conf
 pool=rbd
 bs=${BLOCK_SIZE}
 rw=${map[${WORKLOAD}]}
 direct=1
 runtime=\${RUNTIME}
-time_based
-group_reporting
+time_based=1
+group_reporting=1
 ramp_time=30s
+numjobs=1
 
 #Use posix threads instead of fork
 thread=1
@@ -120,10 +122,10 @@ EOF
 [${RBD_NAME}]
 rbdname=${RBD_NAME}
 max_latency=1s
-numjobs=\${NUM_JOBS} 
+numjobs=\${NUM_JOBS}
+
 EOF
-  echo "
-  $body" >> $outfilename
+  echo "$body" >> $outfilename
 	if [ "${WORKLOAD}" == "pre" ]; then
 	  echo "
 size=\${RBD_SIZE}
