@@ -2,21 +2,39 @@
   "osd":
   [
     {
+      "tracker": "66904",
+      "pattern": [ "PeeringState::check_past_interval_bounds", "past_intervals.empty"],
+        "description": "PeeringState::check_past_interval_bounds() !past_intervals.empty()",
+        "status": "open"
+    },
+    {
+      "tracker": "72342",
+      "pattern": [  "crimson::osd::PG::log_operation", "peering_state.get_pg_committed_to" ],
+        "description": "crimson::osd::PG::log_operation ceph_assert(trim_to <= peering_state.get_pg_committed_to())",
+        "status": "open"
+    },
+    {
+      "tracker": "78733",
+      "pattern": [  "crimson::os::seastore::LBAMapping::get_intermediate_offset" ],
+        "description": "SeaStore: crashed due to unexpected indirect_cursor",
+        "status": "open"
+    },
+    {
       "tracker": "78199",
       "pattern": [ "SIGSEGV", "ErasureCodeIsaDefault"],
-        "description": "",
+        "description": "tasks/rados_api_tests: failing due to ErasureCodePluginISA",
         "status": "open"
     },
     {
       "tracker": "74700",
       "pattern": [ "seastore device size setting is too small"],
-        "description": "",
+        "description": "SeaStore SegmentCleaner::allocate_segment: out of space with JOURNAL sseq(38) MD GEN_INL",
         "status": "open"
     },
     {
       "tracker": "77629",
       "pattern": [ "crimson::osd::ShardServices::register_merge_source"],
-        "description": "",
+        "description": "crimson: prime merge participants before map advance",
         "status": "open"
     },
     {
@@ -34,7 +52,7 @@
     {
       "tracker": "76797",
       "pattern": [ "shard_store.get_status.*failed."],
-        "description": "",
+        "description": "[crimson_fio_restart] Assertion shard_store.get_status() == true",
         "status": "open"
     },
     {
@@ -52,7 +70,7 @@
     {
       "tracker": "76287",
       "pattern": [ "void _handle_dups.* ceph_assert(i->version > other.tail)"],
-        "description": "",
+        "description": "SeaStore: keys not removed in omap_rm_keys",
         "status": "open"
     },
     {
@@ -176,19 +194,7 @@
     {
       "tracker": "N/A",
       "pattern": [ "No space left on device" ],
-      "description": "",
-      "status": "open"
-    },
-    {
-      "tracker": "73169",
-      "pattern": [ "wait_for_recovery" ],
-      "description": "",
-      "status": "open"
-    },
-    {
-      "tracker": "76469",
-      "pattern": [ "INFO:tasks.ceph:Still waiting for all pgs to be scrubbed" ],
-      "description": "",
+      "description": "Infrastructure issue: No space left on device",
       "status": "open"
     },
     {
