@@ -66,9 +66,9 @@ for WORKLOAD in ${workloads_order[@]}; do
 #write_iops_log=\${LOG_NAME}
 #write_bw_log=\${LOG_NAME}
 #write_lat_log=\${LOG_NAME}
+#conf=/ceph/build/ceph.conf
 ioengine=rbd
 clientname=admin
-conf=/ceph/build/ceph.conf
 pool=rbd
 bs=${BLOCK_SIZE}
 rw=${map[${WORKLOAD}]}

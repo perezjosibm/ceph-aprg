@@ -364,16 +364,18 @@ fun_run_workload() {
         printf '{"OSD": [%s],"FIO":[%s]}\n' "$osd_pids" "$fio_pids" > ${TOP_PID_JSON}
     fi
     all_pids=$( fun_join_by ',' ${osd_id[@]}  ${fio_id[@]} )
-    ( mon_start_top "${all_pids}" "${top_out_name}_top.out" ${TOP_OUT_LIST} ) &
+    ( mon_start_monitor $(pwd) ${OSD_TYPE} $io ) &
+     mon_pid=$!
+    #( mon_start_top "${all_pids}" "${top_out_name}_top.out" ${TOP_OUT_LIST} ) &
 
-    # Measure OSD dump_metrics and diskstats during the FIO run
-    if [ "$SKIP_OSD_MON" = false ]; then
-        if  [ "${OSD_TYPE}" != "classic" ]; then
-          #timestamp=$(date +%Y%m%d_%H%M%S)
-          ( mon_get_reactor_util ${TEST_NAME} ${TEST_RESULT} ) & # ${OSD_TYPE}
-        fi 
-        fun_get_diskstats ${TEST_NAME} ${TEST_RESULT}_diskstats.json
-    fi
+    # Measure OSD dump_metrics and diskstats during the FIO run -- ddeprecated by above mon_start_monitor()
+    # if [ "$SKIP_OSD_MON" = false ]; then
+    #     if  [ "${OSD_TYPE}" != "classic" ]; then
+    #       #timestamp=$(date +%Y%m%d_%H%M%S)
+    #       ( mon_get_reactor_util ${TEST_NAME} ${TEST_RESULT} ) & # ${OSD_TYPE}
+    #     fi 
+    #     fun_get_diskstats ${TEST_NAME} ${TEST_RESULT}_diskstats.json
+    # fi
 
     # We have a watchdog: if the OSD dies and
     # running with --no-restart, then FIO is killed
@@ -384,6 +386,8 @@ fun_run_workload() {
     echo "$(date) == FIO (pid: ${lastfio_pid}) completed with rc: ${fio_rc} =="
     # Disable the watchdog after FIO completion
     WATCHDOG=false 
+    echo "$(date) Killing monitoring jobs (pid ${mon_pid})..."
+    kill -9 $mon_pid
     
     # Measure the diskstats after the completion of FIO instances
     jc --pretty /proc/diskstats | python3 ${SCRIPT_DIR}/diskstat_diff.py -a ${DISK_STAT} >> ${DISK_OUT}
@@ -527,7 +531,7 @@ fun_post_process() {
         for x in $(cat ${FIO_TEST_LIST}); do
             [ -f "$x" ] && sed -i '/^fio:/d' $x
         done
-        python3 ${SCRIPT_DIR}/fio_parse_jsons.py -c ${FIO_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
+        #python3 ${SCRIPT_DIR}/fio_parse_jsons.py -c ${FIO_TEST_LIST} -t ${TEST_RESULT} -a ${OSD_CPU_AVG} > ${TEST_RESULT}_json.out
     fi
 
     # Post processing: OSD dump_metrics .json -- disabling this since we are no longer using it
@@ -603,7 +607,7 @@ fun_tidyup() {
     find . -type f -size 0c -exec rm {} \;
     # Minor processing: convert into .csv table via fio_parse_jsons.py:
     ls -rt *.json > ${TEST_RESULT}_list && \
-        ${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c ${TEST_RESULT}_list -v --csv -t ${TEST_RESULT} 
+        #${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c ${TEST_RESULT}_list -v --csv -t ${TEST_RESULT} 
     # TODO: generate response curves from the .csv data, using gnuplot or python scripts
     cd ..
 
@@ -614,6 +618,7 @@ fun_tidyup() {
          *_threads.out *_list ${TOP_PID_LIST} numa_args*.out *_diskstat.out
     # FIO logs are quite large, remove them by the time being, we might enabled them later -- esp latency_target
     # rm -f *.log *_cpu_distro.log
+     ${SCRIPT_DIR}/fio_zip_regen_csv.py -v  ${TEST_RESULT}${stat}.zip
     echo "== $(date) == Tidying up complete =="
 }
 

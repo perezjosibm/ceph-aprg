@@ -216,8 +216,9 @@ fun_zip_results_custom(){
     cd FIO/
     # Minor processing: convert into .csv table via fio_parse_jsons.py:
     ls -rt ${test_name}*.json > ${test_name}_list && \
-        ${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c ${test_name}_list -v --csv -t ${test_name}
-    cd .. && zip -9mrq ${test_name}.zip FIO/* *.json *.csv *_top.out *_list && popd
+        #${SCRIPT_DIR}/fio_parse_jsons.py -d $(pwd) -c ${test_name}_list -v --csv -t ${test_name}
+    cd .. && zip -9mrq ${test_name}.zip FIO/* *.json *.csv *_top.out *_list &&
+        ${SCRIPT_DIR}/fio_zip_regen_csv.py -v ${test_name}.zip && popd
 }
 
 #############################################################################################
