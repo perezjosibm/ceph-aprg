@@ -1,0 +1,96 @@
+2026-08-11T13:32:30.864768+0000 mgr.sockeni06.cgzawm (mgr.14118) 886 : cephadm [ERR] Failed to create OSD: cephadm exited with an error code: 1, stderr:Inferring config /var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/mon.sockeni06/config
+Non-zero exit code 1 from /usr/bin/podman run --rm --ipc=host --stop-signal=SIGTERM --net=host --entrypoint /usr/sbin/ceph-volume --privileged --group-add=disk --init -e CONTAINER_IMAGE=quay.ceph.io/ceph-ci/ceph@sha256:0186fc79afb633b9f9945ab990d88743e889f5d07a095415752e6796557e0f4a -e NODE_NAME=sockeni06.front.sepia.ceph.com -e CEPH_VOLUME_OSDSPEC_AFFINITY=default -e CEPH_VOLUME_SKIP_RESTORECON=yes -e CEPH_VOLUME_DEBUG=1 -v /var/run/ceph/3f60bd20-9586-11f1-b827-7cc255beeece:/var/run/ceph:z -v /var/log/ceph/3f60bd20-9586-11f1-b827-7cc255beeece:/var/log/ceph:z -v /var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/crash:/var/lib/ceph/crash:z -v /run/systemd/journal:/run/systemd/journal -v /dev:/dev -v /run/udev:/run/udev -v /sys:/sys -v /run/lvm:/run/lvm -v /run/lock/lvm:/run/lock/lvm -v /var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/selinux:/sys/fs/selinux:ro -v /:/rootfs:rslave -v /etc/hosts:/etc/hosts:ro -v /tmp/ceph-tmpnmgsav0y:/etc/ceph/ceph.conf:z -v /tmp/ceph-tmppixoro7g:/var/lib/ceph/bootstrap-osd/ceph.keyring:z quay.ceph.io/ceph-ci/ceph@sha256:0186fc79afb633b9f9945ab990d88743e889f5d07a095415752e6796557e0f4a lvm batch --no-auto /dev/nvme5n1 --objectstore seastore --osd-type crimson --yes --no-systemd
+/usr/bin/podman: stderr --> passed data devices: 1 physical, 0 LVM
+/usr/bin/podman: stderr Running command: /usr/bin/ceph-authtool --gen-print-key
+/usr/bin/podman: stderr Running command: /usr/bin/ceph-authtool --gen-print-key
+/usr/bin/podman: stderr Running command: /usr/bin/ceph --cluster ceph --name client.bootstrap-osd --keyring /var/lib/ceph/bootstrap-osd/ceph.keyring -i - osd new 82bfa347-c702-4140-a7fa-82653a376997
+/usr/bin/podman: stderr Running command: nsenter --mount=/rootfs/proc/1/ns/mnt --ipc=/rootfs/proc/1/ns/ipc --net=/rootfs/proc/1/ns/net --uts=/rootfs/proc/1/ns/uts /sbin/vgcreate --force --yes ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099 /dev/nvme5n1
+/usr/bin/podman: stderr  stdout: Physical volume "/dev/nvme5n1" successfully created.
+/usr/bin/podman: stderr   Not creating system devices file due to existing VGs.
+/usr/bin/podman: stderr  stdout: Volume group "ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099" successfully created
+/usr/bin/podman: stderr Running command: nsenter --mount=/rootfs/proc/1/ns/mnt --ipc=/rootfs/proc/1/ns/ipc --net=/rootfs/proc/1/ns/net --uts=/rootfs/proc/1/ns/uts /sbin/lvcreate --yes -l 1831412 -n osd-block-82bfa347-c702-4140-a7fa-82653a376997 ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099
+/usr/bin/podman: stderr  stdout: Logical volume "osd-block-82bfa347-c702-4140-a7fa-82653a376997" created.
+/usr/bin/podman: stderr Running command: /usr/bin/mount -t tmpfs tmpfs /var/lib/ceph/osd/ceph-0
+/usr/bin/podman: stderr  stderr: mount: /var/lib/ceph/osd/ceph-0: must be superuser to use mount.
+/usr/bin/podman: stderr        dmesg(1) may have more information after failed mount system call.
+/usr/bin/podman: stderr --> Was unable to complete a new OSD, will rollback changes
+/usr/bin/podman: stderr Running command: /usr/bin/ceph --cluster ceph --name client.bootstrap-osd --keyring /var/lib/ceph/bootstrap-osd/ceph.keyring osd purge-new osd.0 --yes-i-really-mean-it
+/usr/bin/podman: stderr  stderr: 2026-08-11T13:32:29.955+0000 7eff542d06c0 -1 WARNING: the following dangerous and experimental features are enabled: crimson
+/usr/bin/podman: stderr  stderr: 2026-08-11T13:32:29.955+0000 7eff542d06c0 -1 WARNING: the following dangerous and experimental features are enabled: crimson
+/usr/bin/podman: stderr  stderr: purged osd.0
+/usr/bin/podman: stderr --> Zapping: /dev/ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099/osd-block-82bfa347-c702-4140-a7fa-82653a376997
+/usr/bin/podman: stderr Running command: /usr/bin/dd if=/dev/zero of=/dev/ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099/osd-block-82bfa347-c702-4140-a7fa-82653a376997 bs=1M count=10 conv=fsync
+/usr/bin/podman: stderr  stderr: 10+0 records in
+/usr/bin/podman: stderr 10+0 records out
+/usr/bin/podman: stderr  stderr: 10485760 bytes (10 MB, 10 MiB) copied, 0.00906101 s, 1.2 GB/s
+/usr/bin/podman: stderr --> Only 1 LV left in VG, will proceed to destroy volume group ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099
+/usr/bin/podman: stderr Running command: nsenter --mount=/rootfs/proc/1/ns/mnt --ipc=/rootfs/proc/1/ns/ipc --net=/rootfs/proc/1/ns/net --uts=/rootfs/proc/1/ns/uts /sbin/vgremove -v -f ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099
+/usr/bin/podman: stderr  stderr: Removing ceph--0e6ed5d8--d269--4294--9c07--f427ae3cf099-osd--block--82bfa347--c702--4140--a7fa--82653a376997 (253:1)
+/usr/bin/podman: stderr  stderr: Releasing logical volume "osd-block-82bfa347-c702-4140-a7fa-82653a376997"
+/usr/bin/podman: stderr   Archiving volume group "ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099" metadata (seqno 5).
+/usr/bin/podman: stderr  stdout: Logical volume "osd-block-82bfa347-c702-4140-a7fa-82653a376997" successfully removed.
+/usr/bin/podman: stderr  stdout: Volume group "ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099" successfully removed
+/usr/bin/podman: stderr  stderr: Removing physical volume "/dev/nvme5n1" from volume group "ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099"
+/usr/bin/podman: stderr   Creating volume group backup "/etc/lvm/backup/ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099" (seqno 6).
+/usr/bin/podman: stderr Running command: nsenter --mount=/rootfs/proc/1/ns/mnt --ipc=/rootfs/proc/1/ns/ipc --net=/rootfs/proc/1/ns/net --uts=/rootfs/proc/1/ns/uts /sbin/pvremove -v -f -f /dev/nvme5n1
+/usr/bin/podman: stderr  stdout: Labels on physical volume "/dev/nvme5n1" successfully wiped.
+/usr/bin/podman: stderr --> Zapping successful for: <Unknown: /dev/ceph-0e6ed5d8-d269-4294-9c07-f427ae3cf099/osd-block-82bfa347-c702-4140-a7fa-82653a376997>
+/usr/bin/podman: stderr Traceback (most recent call last):
+/usr/bin/podman: stderr   File "/usr/sbin/ceph-volume", line 33, in <module>
+/usr/bin/podman: stderr     sys.exit(load_entry_point('ceph-volume==1.0.0', 'console_scripts', 'ceph-volume')())
+/usr/bin/podman: stderr              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/main.py", line 62, in __init__
+/usr/bin/podman: stderr     self.main(self.argv)
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/decorators.py", line 59, in newfunc
+/usr/bin/podman: stderr     return f(*a, **kw)
+/usr/bin/podman: stderr            ^^^^^^^^^^^
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/main.py", line 174, in main
+/usr/bin/podman: stderr     terminal.dispatch(self.mapper, subcommand_args)
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/terminal.py", line 194, in dispatch
+/usr/bin/podman: stderr     instance.main()
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/devices/lvm/main.py", line 47, in main
+/usr/bin/podman: stderr     terminal.dispatch(self.mapper, self.argv)
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/terminal.py", line 194, in dispatch
+/usr/bin/podman: stderr     instance.main()
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/decorators.py", line 16, in is_root
+/usr/bin/podman: stderr     return func(*a, **kw)
+/usr/bin/podman: stderr            ^^^^^^^^^^^^^^
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/devices/lvm/batch.py", line 426, in main
+/usr/bin/podman: stderr     self._execute(plan)
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/devices/lvm/batch.py", line 450, in _execute
+/usr/bin/podman: stderr     c.create()
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/decorators.py", line 16, in is_root
+/usr/bin/podman: stderr     return func(*a, **kw)
+/usr/bin/podman: stderr            ^^^^^^^^^^^^^^
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/devices/lvm/create.py", line 31, in create
+/usr/bin/podman: stderr     self.objectstore.safe_prepare()
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/objectstore/lvm.py", line 127, in safe_prepare
+/usr/bin/podman: stderr     self.prepare()
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/decorators.py", line 16, in is_root
+/usr/bin/podman: stderr     return func(*a, **kw)
+/usr/bin/podman: stderr            ^^^^^^^^^^^^^^
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/objectstore/lvm.py", line 153, in prepare
+/usr/bin/podman: stderr     self.prepare_osd_req()
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/objectstore/baseobjectstore.py", line 120, in prepare_osd_req
+/usr/bin/podman: stderr     prepare_utils.create_osd_path(self.osd_id, tmpfs=tmpfs)
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/util/prepare.py", line 207, in create_osd_path
+/usr/bin/podman: stderr     mount_tmpfs(path)
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/util/prepare.py", line 192, in mount_tmpfs
+/usr/bin/podman: stderr     process.run([
+/usr/bin/podman: stderr   File "/usr/lib/python3.12/site-packages/ceph_volume/process.py", line 147, in run
+/usr/bin/podman: stderr     raise RuntimeError(msg)
+/usr/bin/podman: stderr RuntimeError: command returned non-zero exit status: 32
+Traceback (most recent call last):
+  File "/usr/lib64/python3.9/runpy.py", line 197, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/usr/lib64/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/cephadm.fdfb9726fc9a62bda991929d35886af1b5d4027fe729cb3419abe9a22ee0c013/__main__.py", line 5777, in <module>
+  File "/var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/cephadm.fdfb9726fc9a62bda991929d35886af1b5d4027fe729cb3419abe9a22ee0c013/__main__.py", line 5765, in main
+  File "/var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/cephadm.fdfb9726fc9a62bda991929d35886af1b5d4027fe729cb3419abe9a22ee0c013/__main__.py", line 424, in _infer_config
+  File "/var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/cephadm.fdfb9726fc9a62bda991929d35886af1b5d4027fe729cb3419abe9a22ee0c013/__main__.py", line 339, in _infer_fsid
+  File "/var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/cephadm.fdfb9726fc9a62bda991929d35886af1b5d4027fe729cb3419abe9a22ee0c013/__main__.py", line 452, in _infer_image
+  File "/var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/cephadm.fdfb9726fc9a62bda991929d35886af1b5d4027fe729cb3419abe9a22ee0c013/__main__.py", line 326, in _validate_fsid
+  File "/var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/cephadm.fdfb9726fc9a62bda991929d35886af1b5d4027fe729cb3419abe9a22ee0c013/__main__.py", line 3506, in command_ceph_volume
+  File "/var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/cephadm.fdfb9726fc9a62bda991929d35886af1b5d4027fe729cb3419abe9a22ee0c013/cephadmlib/call_wrappers.py", line 310, in call_throws
+RuntimeError: Failed command: /usr/bin/podman run --rm --ipc=host --stop-signal=SIGTERM --net=host --entrypoint /usr/sbin/ceph-volume --privileged --group-add=disk --init -e CONTAINER_IMAGE=quay.ceph.io/ceph-ci/ceph@sha256:0186fc79afb633b9f9945ab990d88743e889f5d07a095415752e6796557e0f4a -e NODE_NAME=sockeni06.front.sepia.ceph.com -e CEPH_VOLUME_OSDSPEC_AFFINITY=default -e CEPH_VOLUME_SKIP_RESTORECON=yes -e CEPH_VOLUME_DEBUG=1 -v /var/run/ceph/3f60bd20-9586-11f1-b827-7cc255beeece:/var/run/ceph:z -v /var/log/ceph/3f60bd20-9586-11f1-b827-7cc255beeece:/var/log/ceph:z -v /var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/crash:/var/lib/ceph/crash:z -v /run/systemd/journal:/run/systemd/journal -v /dev:/dev -v /run/udev:/run/udev -v /sys:/sys -v /run/lvm:/run/lvm -v /run/lock/lvm:/run/lock/lvm -v /var/lib/ceph/3f60bd20-9586-11f1-b827-7cc255beeece/selinux:/sys/fs/selinux:ro -v /:/rootfs:rslave -v /etc/hosts:/etc/hosts:ro -v /tmp/ceph-tmpnmgsav0y:/etc/ceph/ceph.conf:z -v /tmp/ceph-tmppixoro7g:/var/lib/ceph/bootstrap-osd/ceph.keyring:z quay.ceph.io/ceph-ci/ceph@sha256:0186fc79afb633b9f9945ab990d88743e889f5d07a095415752e6796557e0f4a lvm batch --no-auto /dev/nvme5n1 --objectstore seastore --osd-type crimson --yes --no-systemd
