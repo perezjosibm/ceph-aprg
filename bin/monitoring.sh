@@ -54,11 +54,6 @@ function mon_start_monitor() {
     mon_get_osd_pids
     local ts=$(date +%Y%m%d_%H%M%S)
     local osd_out="${run_dir}/${ts}_${queued}qd_dump.json"
-    if [ "${OSD_TYPE}" == "classic" ]; then
-        cmd="/ceph/build/bin/ceph tell osd.0 perf dump"
-    else
-        cmd="/ceph/build/bin/ceph tell osd.0 dump_metrics ${METRICS}"
-    fi
     #/ceph/build/bin/ceph tell osd.0 dump_metrics > ${osd_out}
     #( $cmd > ${osd_out} )
     #( mon_perf "$osd_pids" ${TEST_NAME} ) &
@@ -80,9 +75,18 @@ function mon_start_monitor() {
     # Collect OSD performance metrics during the test run
     for (( i=0; i< ${NUM_SAMPLES}; i++ )); do
         ts=$(date +%Y%m%d_%H%M%S)
+        for osd_id in $(ceph osd ls); do
+            echo "=== OSD.$osd_id Metrics ==="
+            osd_out="${run_dir}/${ts}_${queued}qd_${osd_id}_dump.json"
+            if [ "${OSD_TYPE}" == "classic" ]; then
+                cmd="/ceph/build/bin/ceph tell osd.$osd_id perf dump"
+            else
+                cmd="/ceph/build/bin/ceph tell osd.$osd_id dump_metrics ${METRICS}"
+                #cmd="ceph tell osd.$osd_id dump_metrics > /tmp/osd.${osd_id}_metrics.json"
+            fi
+            ( $cmd > ${osd_out} )
+        done
         ds_out="${run_dir}/${ts}_${queued}qd_ds.json"
-        osd_out="${run_dir}/${ts}_${queued}qd_dump.json"
-        ( $cmd > ${osd_out} )
         jc --pretty /proc/diskstats > ${ds_out}
         # Disabling reactor_utilization in favour of full dumps
         # rutil_out="${run_dir}/${ts}_rutil.json"

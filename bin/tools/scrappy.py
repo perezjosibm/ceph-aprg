@@ -157,7 +157,8 @@ def format_scrapper_groups_markdown(grouped_failures):
 
 def format_issue_summary_markdown(summary, tracker_details=None):
     tracker_details = tracker_details or {}
-    lines = ["| Jobs | Tracker | Details |", "| --- | --- | --- |"]
+    #lines = ["| Jobs | Tracker | Details |", "| --- | --- | --- |"]
+    lines = ["|_.Jobs|_.Tracker| " ]
     sorted_summary = sorted(
         summary.items(), key=lambda item: item[1].get("total_jobs", 0), reverse=True
     )
@@ -168,7 +169,12 @@ def format_issue_summary_markdown(summary, tracker_details=None):
         )
         details = _truncate_reason(details).replace("|", r"\|")
         jobs_field = ", ".join(jobs)
-        lines.append(f"| {jobs_field} | https://tracker.ceph.com/issues/{tracker} | {details} |")
+        # Only add details if tracker matches with NA
+        #lines.append(f"| {jobs_field} | {{issue({tracker})}} | {details} |")
+        if tracker == "N/A":
+            lines.append(f'| {jobs_field} | {details} |')
+        else:
+            lines.append(f'| {jobs_field} | {{{{issue({tracker})}}}} |')
     return "\n".join(lines)
 
 
