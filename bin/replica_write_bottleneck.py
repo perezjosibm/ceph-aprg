@@ -5,6 +5,8 @@ replica_write_bottleneck.py
 ===========================
 Extract and visualise the write-path latency stages for a 3-OSD replica
 cluster, comparing Crimson (SeaStore) against Classic (BlueStore).
+Also extracts Crimson reactor health metrics (utilization, network bytes)
+per shard and OSD.
 
 Metric mapping implemented (from the "Full Metric Mapping Cheat-Sheet"):
 
@@ -35,18 +37,20 @@ Output
 ------
 One PNG per plot, written to *--out* (created if absent).  Plots:
 
-1. ``stage_comparison_osd<N>.png``  – per-OSD grouped bar chart of all
+1. ``stage_comparison_osd<N>.png``   – per-OSD grouped bar chart of all
    write-path stages (Crimson vs Classic), one subplot per stage.
-2. ``stage_heatmap_crimson.png``    – heat-map: rows = stages,
+2. ``stage_heatmap_crimson.png``     – heat-map: rows = stages,
    columns = shard×OSD, colour = mean latency (µs).
-3. ``stage_heatmap_classic.png``    – heat-map: rows = stages,
+3. ``stage_heatmap_classic.png``     – heat-map: rows = stages,
    columns = OSD, colour = mean latency (µs × 1000 → ms).
-4. ``shard_breakdown_osd<N>.png``   – per-shard breakdown for each
+4. ``shard_breakdown_osd<N>.png``    – per-shard breakdown for each
    Crimson OSD (stacked bar, stages as colours).
-5. ``tail_latency_osd<N>.png``      – slow/very-slow tail fraction per
+5. ``tail_latency_osd<N>.png``       – slow/very-slow tail fraction per
    stage per Crimson OSD shard.
-6. ``replica_roundtrip.png``        – subop vs op-w latency comparison
+6. ``replica_roundtrip.png``         – subop vs op-w latency comparison
    across OSDs for both engines.
+7. ``reactor_heatmap_crimson.png``   – heat-map: rows = reactor metrics
+   (utilization %, network RX/TX bytes), columns = shard×OSD.
 """
 
 from __future__ import annotations
@@ -430,6 +434,83 @@ def extract_crimson_tail(osd_data: Dict[int, Dict[str, Any]]) -> pd.DataFrame:
                         "ssi": ssi,
                         "stage": stage,
                         **fracs,
+                    }
+                )
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Crimson reactor / network metric extraction
+# ---------------------------------------------------------------------------
+
+#: Scalar metrics extracted per shard for the reactor health heatmap.
+#: Tuple of (metric_name, display_label, unit_label).
+CRIMSON_REACTOR_METRICS: List[Tuple[str, str, str]] = [
+    ("reactor_utilization",   "Reactor utilization",  "%"),
+    ("network_bytes_received", "Network RX",          "bytes"),
+    ("network_bytes_sent",     "Network TX",          "bytes"),
+]
+
+
+def _crimson_scalar_per_shard(
+    metrics_list: List[Dict[str, Any]],
+    metric_name: str,
+    group_filter: Optional[str] = None,
+) -> Dict[str, float]:
+    """
+    Return ``{shard_key: value}`` for a plain scalar Crimson metric.
+
+    Parameters
+    ----------
+    metrics_list:
+        The ``data["metrics"]`` list from one OSD dump.
+    metric_name:
+        Exact Seastar metric name (e.g. ``"reactor_utilization"``).
+    group_filter:
+        When not None, only include entries whose ``"group"`` field equals
+        this value.  Used to pick ``group="main"`` for network counters.
+    """
+    result: Dict[str, float] = {}
+    for item in metrics_list:
+        if metric_name not in item:
+            continue
+        entry = item[metric_name]
+        if not isinstance(entry, dict):
+            continue
+        if group_filter is not None and entry.get("group") != group_filter:
+            continue
+        shard = entry.get("shard", "?")
+        value = entry.get("value", 0)
+        if isinstance(value, (int, float)):
+            # Multiple entries per shard are summed (should not happen for
+            # reactor_utilization, but network bytes may appear once per group)
+            result[shard] = result.get(shard, 0.0) + float(value)
+    return result
+
+
+def extract_crimson_reactor(osd_data: Dict[int, Dict[str, Any]]) -> pd.DataFrame:
+    """
+    Build a tidy DataFrame with per-OSD, per-shard values for reactor
+    utilization and network byte counters.
+
+    Columns: osd, shard, metric, value, unit
+    """
+    rows = []
+    for osd_id, data in sorted(osd_data.items()):
+        ml = data.get("metrics", [])
+        for metric_name, label, unit in CRIMSON_REACTOR_METRICS:
+            # Network counters carry a "group" dimension; pick "main" only.
+            group = "main" if metric_name.startswith("network_bytes") else None
+            per_shard = _crimson_scalar_per_shard(ml, metric_name, group_filter=group)
+            for shard, value in sorted(per_shard.items(), key=lambda kv: int(kv[0])):
+                rows.append(
+                    {
+                        "osd": osd_id,
+                        "shard": shard,
+                        "metric": label,
+                        "metric_key": metric_name,
+                        "value": value,
+                        "unit": unit,
                     }
                 )
     return pd.DataFrame(rows)
@@ -879,6 +960,85 @@ def plot_replica_roundtrip(
 
 
 # ---------------------------------------------------------------------------
+# Plot 7: Crimson reactor / network heat-map
+# ---------------------------------------------------------------------------
+
+def plot_reactor_heatmap(
+    reactor_df: pd.DataFrame,
+    out_dir: str,
+    ext: str = DEFAULT_EXT,
+) -> None:
+    """
+    Heat-map grid: one subplot per reactor metric
+    (reactor_utilization, network_bytes_received, network_bytes_sent).
+
+    Rows = shards, columns = OSDs, colour = metric value.
+    Each subplot uses its own colour scale so differently-scaled metrics
+    (% vs bytes) are readable independently.
+    """
+    if reactor_df.empty:
+        logger.warning("reactor_df is empty – skipping reactor heatmap")
+        return
+
+    metrics_order = [label for _, label, _ in CRIMSON_REACTOR_METRICS]
+    # Keep only metrics that were actually found in the data
+    present = [m for m in metrics_order if m in reactor_df["metric"].values]
+    if not present:
+        logger.warning("No reactor metrics found – skipping reactor heatmap")
+        return
+
+    n = len(present)
+    fig, axes = plt.subplots(1, n, figsize=(6 * n, 5), squeeze=False)
+
+    for ax, label in zip(axes[0], present):
+        sub = reactor_df[reactor_df["metric"] == label].copy()
+        unit = sub["unit"].iloc[0] if not sub.empty else ""
+
+        # Build pivot: rows = shard (numeric sort), columns = OSD
+        sub["col"] = "OSD" + sub["osd"].astype(str)
+        sub["shard_int"] = sub["shard"].astype(int)
+        pivot = sub.pivot_table(
+            index="shard_int", columns="col", values="value", aggfunc="mean"
+        )
+        pivot = pivot.sort_index()  # shards in numeric order
+
+        # Format annotation: use engineering notation for bytes, 1-dp for %
+        if unit == "%":
+            fmt = ".1f"
+            cbar_label = f"{label} (%)"
+            cmap = "RdYlGn_r"   # high utilization → red
+        else:
+            # Bytes: show in MiB for readability; scale pivot for display
+            pivot_display = pivot / (1024 ** 2)
+            fmt = ".0f"
+            cbar_label = f"{label} (MiB)"
+            cmap = "Blues"
+
+        display_data = pivot_display if unit != "%" else pivot
+
+        sns.heatmap(
+            display_data,
+            ax=ax,
+            cmap=cmap,
+            annot=True,
+            fmt=fmt,
+            linewidths=0.5,
+            cbar_kws={"label": cbar_label},
+        )
+        ax.set_title(label)
+        ax.set_xlabel("OSD")
+        ax.set_ylabel("Shard")
+        ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
+
+    fig.suptitle(
+        "Crimson reactor metrics per shard × OSD  (replica-3, 4K random write)",
+        fontsize=12,
+    )
+    fig.tight_layout()
+    _savefig(fig, out_dir, "reactor_heatmap_crimson", ext)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -894,6 +1054,7 @@ def extract_all(
     ``crimson_stages``     : per-OSD stage mean µs
     ``crimson_per_shard``  : per-OSD × shard stage mean µs
     ``crimson_tail``       : per-OSD × shard tail fractions
+    ``crimson_reactor``    : per-OSD × shard reactor/network scalar values
     ``classic_stages``     : per-OSD stage mean ms
     ``comparison``         : merged long-form (engine, osd, stage, mean_ms)
     """
@@ -908,6 +1069,7 @@ def extract_all(
     crimson_stages = extract_crimson_stages(crimson_raw)
     crimson_per_shard = extract_crimson_per_shard(crimson_raw)
     crimson_tail = extract_crimson_tail(crimson_raw)
+    crimson_reactor = extract_crimson_reactor(crimson_raw)
     classic_stages = extract_classic_stages(classic_raw)
     comparison = build_comparison_df(crimson_stages, classic_stages)
 
@@ -915,6 +1077,7 @@ def extract_all(
         "crimson_stages": crimson_stages,
         "crimson_per_shard": crimson_per_shard,
         "crimson_tail": crimson_tail,
+        "crimson_reactor": crimson_reactor,
         "classic_stages": classic_stages,
         "comparison": comparison,
     }
@@ -925,7 +1088,7 @@ def plot_all(
     out_dir: str,
     ext: str = DEFAULT_EXT,
 ) -> None:
-    """Produce all six plot types from the *dfs* dict returned by :func:`extract_all`."""
+    """Produce all seven plot types from the *dfs* dict returned by :func:`extract_all`."""
     _ensure_dir(out_dir)
     plot_stage_comparison(dfs["comparison"], out_dir, ext)
     plot_crimson_heatmap(dfs["crimson_per_shard"], out_dir, ext)
@@ -933,6 +1096,7 @@ def plot_all(
     plot_shard_breakdown(dfs["crimson_per_shard"], out_dir, ext)
     plot_tail_latency(dfs["crimson_tail"], out_dir, ext)
     plot_replica_roundtrip(dfs["crimson_stages"], dfs["classic_stages"], out_dir, ext)
+    plot_reactor_heatmap(dfs["crimson_reactor"], out_dir, ext)
 
 
 # ---------------------------------------------------------------------------
