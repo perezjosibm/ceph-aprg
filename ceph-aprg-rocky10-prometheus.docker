@@ -1,0 +1,149 @@
+# =============================================================================
+# ceph-aprg-rocky10-prometheus.docker
+#
+# Extension of ceph-aprg-rocky10.docker that adds:
+#   - Prometheus node_exporter  (host-level metrics on :9100)
+#   - A ceph-metrics-exporter shim script that wraps
+#     `ceph tell osd.* dump_metrics` and exposes the output on :9500
+#     in OpenMetrics / Prometheus text format for scraping.
+#
+# Port plan (all bound to 127.0.0.1 by host-side docker run / compose):
+#   41000  – Ceph dashboard  (pre-existing)
+#   9100   – node_exporter   (added here)
+#   9500   – ceph OSD metrics exporter (added here)
+#
+# See docker-compose.yml for the recommended way to run this together with
+# the Prometheus and Grafana sidecar containers.
+# =============================================================================
+
+# Rocky Linux 10 as the base  (pre-existing project constraint)
+FROM rockylinux:10
+
+# ---------------------------------------------------------------------------
+# Update and enable CRB / EPEL
+# ---------------------------------------------------------------------------
+RUN dnf update -y && \
+    dnf install -y epel-release && \
+    dnf config-manager --set-enabled crb
+
+# ---------------------------------------------------------------------------
+# Consolidated Basic Toolchain and Utilities
+# ---------------------------------------------------------------------------
+RUN dnf group install -y "Development Tools" && \
+    dnf install -y \
+    jq jc ccache iproute hostname python3-bcrypt lldb \
+    targetcli wget e2fsprogs blktrace lsof sysstat ipmitool dstat iftop \
+    iperf3 chrony irqbalance smartmontools logrotate perf \
+    llvm llvm-devel python3-debug python3-lxml python3-yaml vim nvme-cli
+
+# The following packages are missing atm:
+# pdsh pdsh-rcmd-ssh gnuplot lnav
+
+# ---------------------------------------------------------------------------
+# Prometheus node_exporter
+# Install the latest stable binary from the official release archive.
+# Version pinned here; update NODE_EXPORTER_VERSION as new releases land.
+# ---------------------------------------------------------------------------
+ARG NODE_EXPORTER_VERSION=1.9.1
+ARG NODE_EXPORTER_SHA256=d7af6a4e597f0f1b4f5fcc2ab67e3e4e0d4e74b09a6ab49519adc95e87f5cedd
+
+RUN set -eux; \
+    ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
+    wget -q "https://github.com/prometheus/node_exporter/releases/download/v${NODE_EXPORTER_VERSION}/node_exporter-${NODE_EXPORTER_VERSION}.linux-${ARCH}.tar.gz" \
+         -O /tmp/node_exporter.tar.gz && \
+    echo "${NODE_EXPORTER_SHA256}  /tmp/node_exporter.tar.gz" | sha256sum -c - && \
+    tar -xzf /tmp/node_exporter.tar.gz -C /tmp && \
+    install -m 0755 /tmp/node_exporter-${NODE_EXPORTER_VERSION}.linux-${ARCH}/node_exporter \
+                    /usr/local/bin/node_exporter && \
+    rm -rf /tmp/node_exporter*
+
+# ---------------------------------------------------------------------------
+# Ceph: Setup and Dependency Installation
+# ---------------------------------------------------------------------------
+RUN git clone --depth=1 https://github.com/ceph/ceph.git /ceph && \
+    cd /ceph && \
+    WITH_CRIMSON=true ./install-deps.sh
+
+VOLUME /ceph
+
+# ---------------------------------------------------------------------------
+# Environment profiles
+# ---------------------------------------------------------------------------
+RUN echo "export CMAKE_EXPORT_COMPILE_COMMANDS=ON" > /etc/profile.d/cmake.sh && \
+    echo "export CEPH_PORT=40000" > /etc/profile.d/ceph.sh && \
+    echo '[ -f "/ceph/build/vstart_environment.sh" ] && source /ceph/build/vstart_environment.sh' \
+         >> /etc/profile.d/ceph.sh
+
+RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >> /etc/sudoers
+
+# ---------------------------------------------------------------------------
+# Utilities on /packages volume
+# ---------------------------------------------------------------------------
+RUN mkdir /packages && cd /packages && \
+    git clone https://github.com/axboe/fio.git && \
+    git clone https://github.com/ceph/cbt && \
+    git clone https://github.com/andikleen/pmu-tools.git && \
+    git clone https://github.com/brendangregg/FlameGraph.git && \
+    git clone https://github.com/rstudio/tinytex.git && \
+    cd tinytex/tools/ && make all || true && \
+    cd /packages && git clone https://github.com/ceph/teuthology && \
+    cd /packages && git clone https://github.com/sharkcz/collectl && \
+    cd collectl && ./INSTALL && \
+    rm -rf /packages/collectl
+
+VOLUME /packages
+
+# ---------------------------------------------------------------------------
+# Local config files
+# ---------------------------------------------------------------------------
+ADD toprc    /root/.config/procps/toprc
+ADD cephlog  /etc/logrotate.d/ceph
+ADD bashrc   /root/.bashrc
+
+# ---------------------------------------------------------------------------
+# APRG repo and Python requirements
+# ---------------------------------------------------------------------------
+RUN cd /root && \
+    git clone https://github.com/perezjosibm/ceph-aprg && \
+    pip3 install --no-cache-dir -r /root/ceph-aprg/requirements.txt
+
+# Install the prometheus_client library used by the OSD metrics exporter
+RUN pip3 install --no-cache-dir prometheus_client>=0.21.1
+
+ENV PATH="$PATH:/root/ceph-aprg/bin"
+
+# ---------------------------------------------------------------------------
+# Ceph OSD metrics exporter
+# A lightweight Python HTTP server that calls `ceph tell osd.* dump_metrics`,
+# parses the JSON, and exposes it as Prometheus text-format on :9500.
+# The script is installed to /usr/local/bin/ceph_osd_exporter.py.
+# ---------------------------------------------------------------------------
+COPY prometheus/ceph_osd_exporter.py /usr/local/bin/ceph_osd_exporter.py
+RUN chmod 0755 /usr/local/bin/ceph_osd_exporter.py
+
+# ---------------------------------------------------------------------------
+# Entrypoint / startup script
+# Starts node_exporter and the OSD metrics exporter as background daemons,
+# then drops into an interactive shell.
+# ---------------------------------------------------------------------------
+COPY prometheus/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh
+
+# ---------------------------------------------------------------------------
+# Global git safety configs
+# ---------------------------------------------------------------------------
+RUN git config --global --add safe.directory /packages/fio && \
+    git config --global --add safe.directory /ceph
+
+# ---------------------------------------------------------------------------
+# Exposed ports
+#   41000  Ceph dashboard
+#   9100   Prometheus node_exporter
+#   9500   Ceph OSD metrics exporter
+# ---------------------------------------------------------------------------
+EXPOSE 41000/tcp
+EXPOSE 9100/tcp
+EXPOSE 9500/tcp
+
+WORKDIR /root
+CMD ["/usr/local/bin/entrypoint.sh"]

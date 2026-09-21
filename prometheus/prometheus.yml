@@ -1,0 +1,78 @@
+# =============================================================================
+# prometheus/prometheus.yml
+#
+# Prometheus scrape configuration for the ceph-aprg 3-OSD replica cluster.
+#
+# Targets
+# -------
+#  ceph-node_exporter  :9100  – host-level OS metrics (CPU, mem, disk, net)
+#  ceph-osd-exporter   :9500  – Ceph OSD dump_metrics / perf dump output
+#
+# Inside the Docker network the Ceph container is reachable by the service
+# name "ceph" (see docker-compose.yml).  The ports are the *container*
+# ports, not the host-forwarded ports.
+# =============================================================================
+
+global:
+  scrape_interval:     15s   # How often Prometheus polls each target
+  evaluation_interval: 15s   # How often rules are evaluated
+  scrape_timeout:      10s
+
+# ---------------------------------------------------------------------------
+# Alerting (optional – wire to Alertmanager when ready)
+# ---------------------------------------------------------------------------
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+
+# ---------------------------------------------------------------------------
+# Recording / alerting rules (add files here when needed)
+# ---------------------------------------------------------------------------
+# rule_files:
+#   - "rules/*.yml"
+
+# ---------------------------------------------------------------------------
+# Scrape jobs
+# ---------------------------------------------------------------------------
+scrape_configs:
+
+  # --------------------------------------------------------------------------
+  # Prometheus self-monitoring
+  # --------------------------------------------------------------------------
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # --------------------------------------------------------------------------
+  # Host-level metrics from node_exporter running inside the Ceph container
+  # --------------------------------------------------------------------------
+  - job_name: ceph_node
+    static_configs:
+      - targets: ["ceph:9100"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: "ceph-node"
+
+  # --------------------------------------------------------------------------
+  # Ceph OSD dump_metrics / perf dump exporter
+  # Scrapes all OSD metrics (Crimson SeaStore stage latencies, reactor
+  # utilization, network bytes, Classic BlueStore commit latencies, etc.)
+  # --------------------------------------------------------------------------
+  - job_name: ceph_osd_metrics
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["ceph:9500"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: "ceph-osd-exporter"
+    # Metrics of interest for the 4K random-write replica-3 analysis:
+    #   ceph_osd_seastore_do_transaction_stage_lat_*  (Crimson stage latencies)
+    #   ceph_osd_seastore_op_lat_*                   (Crimson end-to-end op lat)
+    #   ceph_osd_reactor_utilization                  (Seastar reactor CPU %)
+    #   ceph_osd_network_bytes_received / _sent       (per-shard network bytes)
+    #   ceph_osd_bluestore_txc_commit_lat_*          (Classic full commit)
+    #   ceph_osd_osd_op_w_latency_*                  (Classic write op latency)
+    #   ceph_osd_osd_subop_w_latency_*               (Classic replica sub-op)

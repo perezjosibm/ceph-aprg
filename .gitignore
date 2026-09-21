@@ -1,3 +1,6 @@
 __pycache__
 .coverage
 .pytest_cache
+
+# Grafana admin secret — never commit this
+prometheus/grafana_admin_password.txt

@@ -1,0 +1,179 @@
+# =============================================================================
+# docker-compose.yml
+#
+# Three-service stack for ceph-aprg performance analysis:
+#
+#   ceph        – Rocky Linux 10 build + run environment with node_exporter
+#                 and ceph_osd_exporter baked in.
+#   prometheus  – Time-series metrics store (scrapes ceph:9100 and ceph:9500).
+#   grafana     – Dashboard UI for browsing metrics in a local web browser.
+#
+# Port forwarding (all bound to 127.0.0.1 on the host):
+# ┌───────────────────────┬──────────────────┬──────────────────────────────┐
+# │ Service               │ Host URL         │ Purpose                      │
+# ├───────────────────────┼──────────────────┼──────────────────────────────┤
+# │ Grafana               │ http://127.0.0.1:3000  │ Main dashboard UI       │
+# │ Prometheus            │ http://127.0.0.1:9090  │ Raw PromQL query UI     │
+# │ node_exporter         │ http://127.0.0.1:9100  │ Raw host metrics        │
+# │ ceph_osd_exporter     │ http://127.0.0.1:9500  │ Raw OSD metrics         │
+# │ Ceph dashboard        │ http://127.0.0.1:41000 │ Ceph built-in UI        │
+# └───────────────────────┴──────────────────┴──────────────────────────────┘
+#
+# Quick start
+# -----------
+#   docker compose build ceph
+#   docker compose up -d
+#   # then open http://127.0.0.1:3000 in your browser
+#   # default Grafana credentials: admin / admin  (change on first login)
+#
+# Grafana data source setup (one-time)
+# -------------------------------------
+#   Configuration → Data Sources → Add data source → Prometheus
+#     URL: http://prometheus:9090
+#     Access: Server (default)
+#   → Save & Test
+#
+# Environment variables recognised by the ceph container
+# -------------------------------------------------------
+#   OSD_COUNT   number of OSDs (default 0 = auto-detect)
+#   OSD_MODE    auto | crimson | classic  (default auto)
+#   CEPH_BIN    path to the ceph binary  (default /ceph/build/bin/ceph)
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Ceph build/run container
+  # ---------------------------------------------------------------------------
+  ceph:
+    build:
+      context: .
+      dockerfile: ceph-aprg-rocky10-prometheus.docker
+    image: ceph-aprg-rocky10-prometheus:latest
+    container_name: ceph-aprg
+    hostname: ceph-aprg
+    # Run as non-root where possible; vstart requires some privileges.
+    # Drop all capabilities then add back only what is needed.
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_PTRACE      # perf / gdb
+      - NET_ADMIN        # interface stats
+      - SYS_NICE         # taskset / nice
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      OSD_COUNT:  "${OSD_COUNT:-0}"
+      OSD_MODE:   "${OSD_MODE:-auto}"
+      CEPH_BIN:   "${CEPH_BIN:-/ceph/build/bin/ceph}"
+    volumes:
+      # Bind-mount your local ceph tree so you can edit/build without rebuilding
+      # the image. Comment out if you prefer the image-baked clone.
+      - type: bind
+        source: "${CEPH_SRC:-/ceph}"
+        target: /ceph
+        read_only: false
+      - type: bind
+        source: "${PACKAGES_SRC:-/packages}"
+        target: /packages
+        read_only: false
+      # Persist OSD data between restarts
+      - ceph-data:/ceph/build
+    ports:
+      # Bind every port to 127.0.0.1 (loopback only) so they are reachable
+      # from your local browser but not exposed on a public interface.
+      - "127.0.0.1:41000:41000"   # Ceph dashboard
+      - "127.0.0.1:9100:9100"     # node_exporter
+      - "127.0.0.1:9500:9500"     # ceph_osd_exporter
+    networks:
+      - ceph-mon
+    stdin_open: true
+    tty: true
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # Prometheus
+  # Source: registry.redhat.io/openshift4/ose-prometheus
+  # Binds only to localhost — not reachable from outside the host.
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: registry.redhat.io/openshift4/ose-prometheus:latest
+    container_name: prometheus
+    user: "65534"   # nobody — run as non-root
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.listen-address=0.0.0.0:9090"
+      - "--web.enable-lifecycle"
+    volumes:
+      - type: bind
+        source: ./prometheus/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks:
+      - ceph-mon
+    depends_on:
+      - ceph
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Grafana
+  # Source: registry.redhat.io/rhel8/grafana
+  # Opens the browser-facing dashboard on http://127.0.0.1:3000
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: registry.redhat.io/rhel8/grafana:latest
+    container_name: grafana
+    user: "472"   # grafana — non-root
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_HTTP_ADDR: "0.0.0.0"
+      GF_SERVER_HTTP_PORT: "3000"
+      # Pre-provision Prometheus as the default data source
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - type: bind
+        source: ./prometheus/grafana-provisioning
+        target: /etc/grafana/provisioning
+        read_only: true
+      - grafana-data:/var/lib/grafana
+    secrets:
+      - grafana_admin_password
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks:
+      - ceph-mon
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+# =============================================================================
+# Secrets
+# Store the Grafana admin password in a file, never in the compose file.
+# Create it once:  echo "changeme" > prometheus/grafana_admin_password.txt
+# =============================================================================
+secrets:
+  grafana_admin_password:
+    file: ./prometheus/grafana_admin_password.txt
+
+# =============================================================================
+# Persistent volumes
+# =============================================================================
+volumes:
+  ceph-data:
+  prometheus-data:
+  grafana-data:
+
+# =============================================================================
+# Internal network — services talk to each other by service name.
+# Not attached to any host interface.
+# =============================================================================
+networks:
+  ceph-mon:
+    driver: bridge
+    internal: false   # allow outbound (image pulls, git clones)
