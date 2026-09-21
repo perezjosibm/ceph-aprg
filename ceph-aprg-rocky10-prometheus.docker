@@ -44,8 +44,10 @@ RUN dnf group install -y "Development Tools" && \
 # Install the latest stable binary from the official release archive.
 # Version pinned here; update NODE_EXPORTER_VERSION as new releases land.
 # ---------------------------------------------------------------------------
-ARG NODE_EXPORTER_VERSION=1.9.1
-ARG NODE_EXPORTER_SHA256=d7af6a4e597f0f1b4f5fcc2ab67e3e4e0d4e74b09a6ab49519adc95e87f5cedd
+# ARG NODE_EXPORTER_VERSION=1.9.1
+# ARG NODE_EXPORTER_SHA256=d7af6a4e597f0f1b4f5fcc2ab67e3e4e0d4e74b09a6ab49519adc95e87f5cedd
+ARG NODE_EXPORTER_VERSION=1.12.1
+ARG NODE_EXPORTER_SHA256=b51d8a76aa2a9156a55d501aca6276fae09e262259a5e4e831d2c2222f084e63
 
 RUN set -eux; \
     ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/'); \
