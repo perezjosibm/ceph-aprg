@@ -699,7 +699,11 @@ def plot_crimson_heatmap(
     Heat-map: rows = write-path stages, columns = OSD×shard,
     colour = mean latency (µs).
     """
-    df = per_shard_df[per_shard_df["stage"].isin(CRIMSON_STAGES)].copy()
+    try:
+        df = per_shard_df[per_shard_df["stage"].isin(CRIMSON_STAGES)].copy()
+    except KeyError:
+        logger.warning("No Crimson 'stage' per-shard data available for heatmap")
+        return
     df["col"] = "OSD" + df["osd"].astype(str) + " " + df["shard"]
     pivot = df.pivot_table(index="stage", columns="col", values="mean_us", aggfunc="mean")
     # Reorder rows
@@ -775,7 +779,11 @@ def plot_shard_breakdown(
     One figure per Crimson OSD: stacked bar chart where each bar is one
     shard, each colour segment is a write-path stage.
     """
-    stages = [s for s in CRIMSON_STAGES if s in per_shard_df["stage"].values]
+    try:
+        stages = [s for s in CRIMSON_STAGES if s in per_shard_df["stage"].values]
+    except KeyError:
+        logger.warning("No Crimson 'stage' per-shard data available for stacked bar chart")
+        return
     palette = sns.color_palette("tab10", len(stages))
     colour_map = dict(zip(stages, palette))
 
@@ -826,8 +834,11 @@ def plot_tail_latency(
     One figure per Crimson OSD: grouped bar chart showing the fraction of
     ops that hit the "slow" and "very_slow" tails, per stage.
     """
-    stages = [s for s in CRIMSON_STAGES if s in tail_df["stage"].values]
-
+    try:
+      stages = [s for s in CRIMSON_STAGES if s in tail_df["stage"].values]
+    except KeyError:
+        logger.warning("No Crimson tail-latency 'stage' data available for plotting")
+        return
     for osd_id in sorted(tail_df["osd"].unique()):
         sub = tail_df[tail_df["osd"] == osd_id]
         # Aggregate across shards (mean fraction)
