@@ -198,6 +198,24 @@
       "status": "open"
     },
     {
+      "tracker": "80239",
+      "pattern": [ "from 'python3 -m pytest -v" ],
+      "description": "teuthology: pytest failed",
+      "status": "open"
+    },
+    {
+      "tracker": "80698",
+      "pattern": [ "FAILED TESTS",  "TestClsRbd.sparse_copyup/FastEC", "TestClsRbd.sparsify/FastEC"],
+      "description": "",
+      "status": "open"
+    },
+    {
+      "tracker": "77481",
+      "pattern": [ "test_pg_merging failed"],
+      "description": "",
+      "status": "open"
+    },
+    {
       "tracker": "72778",
       "pattern": [ "SLOW_OPS", "osd.*get_health_metrics: slow request" ],
       "description": "",
