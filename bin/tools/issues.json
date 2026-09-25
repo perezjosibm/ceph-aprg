@@ -2,6 +2,30 @@
   "osd":
   [
     {
+      "tracker": "76796",
+      "pattern": [ "crimson::os::seastore::TransactionManager::update_lba_mappings", "Assertion `extent->get_last_committed_crc() == extent->calc_crc32c()' failed."],
+        "description": "update_lba_mappings",
+        "status": "open"
+    },
+    {
+      "tracker": "80846",
+      "pattern": [ "void PGLog::_merge_object_divergent_entries", "ceph_assert"],
+        "description": "ECTransaction::Generate::Generate",
+        "status": "open"
+    },
+    {
+      "tracker": "80208",
+      "pattern": [ "ECTransaction::Generate::Generate", "ceph_assert(osdmap->get_pg_pool(pgid.pool())->supports_omap())"],
+        "description": "ECTransaction::Generate::Generate",
+        "status": "open"
+    },
+    {
+      "tracker": "80205",
+      "pattern": [ "bool PeeringState::append_log_entries_update_missing", "ceph_assert(entries.begin()->version > info.last_update)"],
+        "description": "bool PeeringState::append_log_entries_update_missing(..) ceph_assert(entries.begin()->version > info.last_update)",
+        "status": "open"
+    },
+    {
       "tracker": "66904",
       "pattern": [ "PeeringState::check_past_interval_bounds", "past_intervals.empty"],
         "description": "PeeringState::check_past_interval_bounds() !past_intervals.empty()",
@@ -79,7 +103,6 @@
         "description": "",
         "status": "open"
     },
-
     {
       "tracker": "75521",
       "pattern": [ "LogManager::omap_set_keys.*Assertion `ret Transaction::get_extent_ret::PRESENT' failed.*"],
@@ -199,7 +222,7 @@
     },
     {
       "tracker": "80239",
-      "pattern": [ "from 'python3 -m pytest -v" ],
+      "pattern": [ "python3 -m pytest -v" ],
       "description": "teuthology: pytest failed",
       "status": "open"
     },

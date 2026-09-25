@@ -653,7 +653,6 @@ class Scrappy:
         """
         From the produced report, scan for the specific issues found and
         attribute them to the log file being scanned.
-        TODO: how to indicate whether a job did not match any issue, nor even GENERIC?
         """
         for log_type, log_info in self.LOG_TYPES.items():
             # Construct an special issue representing the 'generic' pattern
