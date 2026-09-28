@@ -33,7 +33,7 @@ RUN dnf group install -y "Development Tools" && \
     dnf install -y \
     jq jc ccache iproute hostname python3-bcrypt lldb \
     targetcli wget e2fsprogs blktrace lsof sysstat ipmitool dstat iftop \
-    iperf3 chrony irqbalance smartmontools logrotate perf \
+    iperf3 chrony irqbalance smartmontools logrotate perf sudo \
     llvm llvm-devel python3-debug python3-lxml python3-yaml vim nvme-cli
 
 # The following packages are missing atm:

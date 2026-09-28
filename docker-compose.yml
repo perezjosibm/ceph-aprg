@@ -62,6 +62,7 @@ services:
       - SYS_NICE         # taskset / nice
     security_opt:
       - no-new-privileges:true
+    privileged: true
     environment:
       OSD_COUNT:  "${OSD_COUNT:-0}"
       OSD_MODE:   "${OSD_MODE:-auto}"
@@ -76,6 +77,10 @@ services:
       - type: bind
         source: "${PACKAGES_SRC:-/packages}"
         target: /packages
+        read_only: false
+      - type: bind
+        source: "${RESULTS_SRC:-/tmp}"
+        target: /tmp
         read_only: false
       # Persist OSD data between restarts
       - ceph-data:/ceph/build

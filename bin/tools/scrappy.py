@@ -582,8 +582,10 @@ class Scrappy:
     def _get_occurences(self, log_file: str, pattern: str) -> int:
         """
         Show the number of occurrences of the given pattern in the log file.
+        We need to ensure that the string is valid regex for grep, so we might need to escape some characters in the pattern.
+
         """
-        cmd = f"grep -c -e '{pattern}' {log_file}"
+        cmd = f"grep -E -c -e '{pattern}' {log_file}"
         logger.debug(f"Executing: {cmd}")
         proc = subprocess.Popen(
             cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -653,6 +655,8 @@ class Scrappy:
         """
         From the produced report, scan for the specific issues found and
         attribute them to the log file being scanned.
+        We might need to tally for each job, which issues were found and how
+        many times, to use that as a severity indicator.
         """
         for log_type, log_info in self.LOG_TYPES.items():
             # Construct an special issue representing the 'generic' pattern
@@ -848,6 +852,12 @@ class Scrappy:
         to produce a final report that attributes the specific issues found to
         the log file being scanned, using the number of occurrences of the
         issue in the log file as a severity indicator.
+        We need to find a better way to handle duplicates or jobs that match
+        more than a single tracker. For these, we might need to list all the
+        trackers found in the job, and then use the number of occurrences of
+        each tracker to determine which one is the most relevant. We can also
+        use the order of the issues in the issues_file to determine which one
+        is more specific and relevant than the others.
         """
         self.prepare_egrep_files()
 
