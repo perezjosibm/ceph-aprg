@@ -8,18 +8,43 @@ This module provides a hierarchy of rate analyzer classes for different OSD type
 - ClassicOSDRateAnalyzer: For Classic (non-Crimson) OSD
 
 Each analyzer knows how to extract and calculate rates for its specific metric format.
+It also provides per-OSD and per-shard rate extraction, CSV export, and heatmap
+visualisations (shards on Y-axis, OSDs on X-axis).
 """
 
+from __future__ import annotations
+
+import argparse
 import json
 import logging
 import os
+import re
+import sys
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any, List, Optional, Tuple
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
 logger = logging.getLogger(__name__)
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
+logging.getLogger("seaborn").setLevel(logging.WARNING)
 
 __author__ = "Jose J Palacios-Perez"
+
+DEFAULT_OUT = "./rate_heatmap_plots"
+DEFAULT_EXT = "png"
+_INVALID_CHARS = re.compile(r"[^A-Za-z0-9_\-]")
+_FNAME_RE = re.compile(
+    r"(?P<ts>\d{8}_\d{6})_(?P<qd>\d+)qd_(?P<osd>\d+)_dump\.json$",
+    re.IGNORECASE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +242,31 @@ class CrimsonSeaStoreRateAnalyzer(BaseOSDRateAnalyzer):
             
         return total
     
+    def calculate_shard_rates(self, snapshot_idx1: int = 0, snapshot_idx2: int = -1) -> pd.DataFrame:
+        """
+        Calculate per-shard rates between two snapshots for Crimson SeaStore.
+        
+        Returns
+        -------
+        pd.DataFrame
+            Columns: shard (int), category (str), metric (str), rate (float), unit (str)
+        """
+        if len(self.snapshots) < 2:
+            logger.error("Need at least 2 snapshots to calculate shard rates")
+            return pd.DataFrame(columns=["shard", "category", "metric", "rate", "unit"])
+            
+        snap1 = self.snapshots[snapshot_idx1]
+        snap2 = self.snapshots[snapshot_idx2]
+        dt = snap2['timestamp'] - snap1['timestamp']
+        if dt <= 0:
+            logger.error("Invalid time delta between snapshots")
+            return pd.DataFrame(columns=["shard", "category", "metric", "rate", "unit"])
+            
+        m1 = snap1['data'].get('metrics', [])
+        m2 = snap2['data'].get('metrics', [])
+        
+        return calculate_crimson_shard_rates_pair(m1, m2, dt)
+
     def _calculate_messenger_rates(self, data1: Dict, data2: Dict, dt: float) -> Dict[str, float]:
         """Calculate messenger rates for Crimson SeaStore."""
         m1 = data1.get('metrics', [])
@@ -292,7 +342,7 @@ class CrimsonSeaStoreRateAnalyzer(BaseOSDRateAnalyzer):
         
         return {
             'write_throughput': {
-                'total_bytes_per_sec': (data_write_bytes_2 - data_write_bytes_1 + 
+                'total_bytes_per_sec': (data_write_bytes_2 - data_write_bytes_1 +
                                        meta_write_bytes_2 - meta_write_bytes_1) / dt,
                 'data_bytes_per_sec': (data_write_bytes_2 - data_write_bytes_1) / dt,
                 'metadata_bytes_per_sec': (meta_write_bytes_2 - meta_write_bytes_1) / dt,
@@ -479,6 +529,479 @@ class ClassicOSDRateAnalyzer(BaseOSDRateAnalyzer):
 
 
 # ---------------------------------------------------------------------------
+# Multi-OSD / Multi-Snapshot extraction & Per-Shard Rate functions
+# ---------------------------------------------------------------------------
+
+def _osd_id_from_filename(path: str) -> Optional[int]:
+    """Return the OSD integer id encoded in the filename, or None."""
+    m = _FNAME_RE.search(os.path.basename(path))
+    if m:
+        return int(m.group("osd"))
+    m2 = re.search(r"_(\d+)_dump", os.path.basename(path))
+    return int(m2.group(1)) if m2 else None
+
+
+def _load_json_file(path: str) -> Optional[Dict[str, Any]]:
+    """Load JSON from path, returning None if empty or invalid."""
+    if os.path.getsize(path) == 0:
+        logger.warning("Skipping empty file: %s", path)
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except json.JSONDecodeError as exc:
+        logger.warning("Skipping malformed JSON %s: %s", path, exc)
+        return None
+
+
+def _extract_timestamp_from_path(path: str) -> float:
+    """Extract Unix timestamp from path filename or file modification time."""
+    match = re.search(r"(\d{8})_(\d{6})", os.path.basename(path))
+    if match:
+        date_str = match.group(1)
+        time_str = match.group(2)
+        try:
+            dt = datetime.strptime(f"{date_str}{time_str}", "%Y%m%d%H%M%S")
+            return dt.timestamp()
+        except ValueError:
+            pass
+    return os.path.getmtime(path)
+
+
+def load_crimson_snapshot_series(directory: str) -> Dict[int, List[Dict[str, Any]]]:
+    """
+    Load all Crimson dump JSON files from *directory*, grouped by OSD id
+    and sorted chronologically.
+
+    Returns
+    -------
+    dict
+        ``{osd_id: [{'timestamp': ts, 'data': json_data, 'path': path}, ...]}``
+    """
+    by_osd: Dict[int, List[Dict[str, Any]]] = {}
+    if not os.path.isdir(directory):
+        logger.error("Directory not found: %s", directory)
+        return by_osd
+
+    for fname in sorted(os.listdir(directory)):
+        if not fname.endswith(".json"):
+            continue
+        fpath = os.path.join(directory, fname)
+        osd_id = _osd_id_from_filename(fpath)
+        if osd_id is None:
+            logger.warning("Cannot parse OSD id from %s – skipping", fname)
+            continue
+        data = _load_json_file(fpath)
+        if data is None:
+            continue
+        if detect_osd_type(data) not in ("seastore", "bluestore"):
+            logger.warning("%s does not look like a Crimson dump – skipping", fname)
+            continue
+
+        ts = _extract_timestamp_from_path(fpath)
+        if osd_id not in by_osd:
+            by_osd[osd_id] = []
+        by_osd[osd_id].append({"timestamp": ts, "data": data, "path": fpath})
+
+    # Sort snapshots per OSD by timestamp
+    for osd_id in by_osd:
+        by_osd[osd_id].sort(key=lambda x: x["timestamp"])
+
+    return by_osd
+
+
+def _extract_metric_per_shard(
+    metrics_list: List[Dict[str, Any]],
+    metric_name: str,
+    filters: Optional[Dict[str, str]] = None,
+) -> Dict[int, float]:
+    """Extract metric value per shard (integer shard id -> summed float value)."""
+    result: Dict[int, float] = {}
+    for item in metrics_list:
+        if metric_name not in item:
+            continue
+        entry = item[metric_name]
+        if not isinstance(entry, dict):
+            continue
+        if filters:
+            if not all(entry.get(k) == v for k, v in filters.items()):
+                continue
+        raw_shard = entry.get("shard", "0")
+        try:
+            shard_id = int(raw_shard)
+        except (ValueError, TypeError):
+            shard_id = 0
+
+        val = entry.get("value", 0)
+        if isinstance(val, dict):
+            # For histograms, sum the 'sum' field or 'count'
+            val = float(val.get("sum", 0.0))
+        elif isinstance(val, (int, float)):
+            val = float(val)
+        else:
+            continue
+        result[shard_id] = result.get(shard_id, 0.0) + val
+    return result
+
+
+def calculate_crimson_shard_rates_pair(
+    m1: List[Dict[str, Any]],
+    m2: List[Dict[str, Any]],
+    dt: float,
+) -> pd.DataFrame:
+    """
+    Calculate per-shard work rates across messenger, TM, and object store
+    between two metric snapshots.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: shard (int), category (str), metric (str), rate (float), unit (str)
+    """
+    rows: List[Dict[str, Any]] = []
+    if dt <= 0:
+        return pd.DataFrame(columns=["shard", "category", "metric", "rate", "unit"])
+
+    # 1. Messenger (Network) metrics
+    net_bytes_rx_1 = _extract_metric_per_shard(m1, "network_bytes_received")
+    net_bytes_rx_2 = _extract_metric_per_shard(m2, "network_bytes_received")
+    net_bytes_tx_1 = _extract_metric_per_shard(m1, "network_bytes_sent")
+    net_bytes_tx_2 = _extract_metric_per_shard(m2, "network_bytes_sent")
+
+    msgs_sent_1 = _extract_metric_per_shard(m1, "alien_total_sent_messages")
+    msgs_sent_2 = _extract_metric_per_shard(m2, "alien_total_sent_messages")
+    msgs_recv_1 = _extract_metric_per_shard(m1, "alien_total_received_messages")
+    msgs_recv_2 = _extract_metric_per_shard(m2, "alien_total_received_messages")
+
+    # 2. Transaction Manager (SeaStore Cache / TM)
+    trans_created_1 = _extract_metric_per_shard(m1, "cache_trans_created")
+    trans_created_2 = _extract_metric_per_shard(m2, "cache_trans_created")
+    trans_committed_1 = _extract_metric_per_shard(m1, "cache_trans_committed")
+    trans_committed_2 = _extract_metric_per_shard(m2, "cache_trans_committed")
+
+    cache_access_1 = _extract_metric_per_shard(m1, "cache_cache_access")
+    cache_access_2 = _extract_metric_per_shard(m2, "cache_cache_access")
+    cache_hit_1 = _extract_metric_per_shard(m1, "cache_cache_hit")
+    cache_hit_2 = _extract_metric_per_shard(m2, "cache_cache_hit")
+
+    sources = ["MUTATE", "READ", "TRIM_DIRTY", "TRIM_ALLOC", "CLEANER_MAIN", "CLEANER_COLD"]
+    src_bytes_1: Dict[str, Dict[int, float]] = {}
+    src_bytes_2: Dict[str, Dict[int, float]] = {}
+    for src in sources:
+        src_bytes_1[src] = _extract_metric_per_shard(m1, "cache_committed_extent_bytes", {"src": src})
+        src_bytes_2[src] = _extract_metric_per_shard(m2, "cache_committed_extent_bytes", {"src": src})
+
+    # 3. Object Store (SeaStore)
+    data_write_1 = _extract_metric_per_shard(m1, "segment_manager_data_write_bytes")
+    data_write_2 = _extract_metric_per_shard(m2, "segment_manager_data_write_bytes")
+    meta_write_1 = _extract_metric_per_shard(m1, "segment_manager_metadata_write_bytes")
+    meta_write_2 = _extract_metric_per_shard(m2, "segment_manager_metadata_write_bytes")
+
+    journal_rec_1 = _extract_metric_per_shard(m1, "journal_record_num")
+    journal_rec_2 = _extract_metric_per_shard(m2, "journal_record_num")
+
+    cleaner_rec_1 = _extract_metric_per_shard(m1, "segment_cleaner_reclaimed_bytes")
+    cleaner_rec_2 = _extract_metric_per_shard(m2, "segment_cleaner_reclaimed_bytes")
+
+    # Collect all shards seen
+    all_shards = set(net_bytes_rx_1.keys()) | set(net_bytes_rx_2.keys()) | \
+                 set(trans_created_1.keys()) | set(trans_created_2.keys()) | \
+                 set(data_write_1.keys()) | set(data_write_2.keys())
+    if not all_shards:
+        all_shards = {0}
+
+    for shard in sorted(all_shards):
+        # Messenger
+        rx_rate = (net_bytes_rx_2.get(shard, 0.0) - net_bytes_rx_1.get(shard, 0.0)) / dt
+        tx_rate = (net_bytes_tx_2.get(shard, 0.0) - net_bytes_tx_1.get(shard, 0.0)) / dt
+        total_net_rate = rx_rate + tx_rate
+        msg_rx_rate = (msgs_recv_2.get(shard, 0.0) - msgs_recv_1.get(shard, 0.0)) / dt
+        msg_tx_rate = (msgs_sent_2.get(shard, 0.0) - msgs_sent_1.get(shard, 0.0)) / dt
+        total_msgs_rate = msg_rx_rate + msg_tx_rate
+
+        rows.append({"shard": shard, "category": "Messenger", "metric": "network_bytes_per_sec", "rate": total_net_rate, "unit": "bytes/sec"})
+        rows.append({"shard": shard, "category": "Messenger", "metric": "network_recv_bytes_per_sec", "rate": rx_rate, "unit": "bytes/sec"})
+        rows.append({"shard": shard, "category": "Messenger", "metric": "network_send_bytes_per_sec", "rate": tx_rate, "unit": "bytes/sec"})
+        rows.append({"shard": shard, "category": "Messenger", "metric": "messages_per_sec", "rate": total_msgs_rate, "unit": "msgs/sec"})
+        rows.append({"shard": shard, "category": "Messenger", "metric": "messages_recv_per_sec", "rate": msg_rx_rate, "unit": "msgs/sec"})
+        rows.append({"shard": shard, "category": "Messenger", "metric": "messages_sent_per_sec", "rate": msg_tx_rate, "unit": "msgs/sec"})
+
+        # TM
+        tc_rate = (trans_created_2.get(shard, 0.0) - trans_created_1.get(shard, 0.0)) / dt
+        tcomm_rate = (trans_committed_2.get(shard, 0.0) - trans_committed_1.get(shard, 0.0)) / dt
+        ca_rate = (cache_access_2.get(shard, 0.0) - cache_access_1.get(shard, 0.0)) / dt
+        ch_rate = (cache_hit_2.get(shard, 0.0) - cache_hit_1.get(shard, 0.0)) / dt
+
+        rows.append({"shard": shard, "category": "Transaction Manager", "metric": "transactions_created_per_sec", "rate": tc_rate, "unit": "trans/sec"})
+        rows.append({"shard": shard, "category": "Transaction Manager", "metric": "transactions_committed_per_sec", "rate": tcomm_rate, "unit": "trans/sec"})
+        rows.append({"shard": shard, "category": "Transaction Manager", "metric": "cache_accesses_per_sec", "rate": ca_rate, "unit": "accesses/sec"})
+        rows.append({"shard": shard, "category": "Transaction Manager", "metric": "cache_hits_per_sec", "rate": ch_rate, "unit": "hits/sec"})
+
+        for src in sources:
+            src_rate = (src_bytes_2[src].get(shard, 0.0) - src_bytes_1[src].get(shard, 0.0)) / dt
+            rows.append({"shard": shard, "category": "Transaction Manager", "metric": f"cache_{src.lower()}_bytes_per_sec", "rate": src_rate, "unit": "bytes/sec"})
+
+        # Object Store
+        dw_rate = (data_write_2.get(shard, 0.0) - data_write_1.get(shard, 0.0)) / dt
+        mw_rate = (meta_write_2.get(shard, 0.0) - meta_write_1.get(shard, 0.0)) / dt
+        tot_w_rate = dw_rate + mw_rate
+        jr_rate = (journal_rec_2.get(shard, 0.0) - journal_rec_1.get(shard, 0.0)) / dt
+        gc_rate = (cleaner_rec_2.get(shard, 0.0) - cleaner_rec_1.get(shard, 0.0)) / dt
+
+        rows.append({"shard": shard, "category": "Object Store", "metric": "write_total_bytes_per_sec", "rate": tot_w_rate, "unit": "bytes/sec"})
+        rows.append({"shard": shard, "category": "Object Store", "metric": "write_data_bytes_per_sec", "rate": dw_rate, "unit": "bytes/sec"})
+        rows.append({"shard": shard, "category": "Object Store", "metric": "write_meta_bytes_per_sec", "rate": mw_rate, "unit": "bytes/sec"})
+        rows.append({"shard": shard, "category": "Object Store", "metric": "journal_records_per_sec", "rate": jr_rate, "unit": "records/sec"})
+        rows.append({"shard": shard, "category": "Object Store", "metric": "gc_reclaimed_bytes_per_sec", "rate": gc_rate, "unit": "bytes/sec"})
+
+    return pd.DataFrame(rows)
+
+
+def extract_crimson_rates_per_shard_and_osd(
+    crimson_dir: str,
+    snapshot_idx1: int = 0,
+    snapshot_idx2: int = -1,
+) -> pd.DataFrame:
+    """
+    Extract work rates per OSD and per shard for all Crimson OSDs in a directory.
+
+    Parameters
+    ----------
+    crimson_dir : str
+        Directory containing Crimson OSD JSON dump files.
+    snapshot_idx1 : int
+        Index of the starting snapshot (default 0, earliest).
+    snapshot_idx2 : int
+        Index of the ending snapshot (default -1, latest).
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: osd (int), shard (int), category (str), metric (str), rate (float), unit (str)
+    """
+    by_osd = load_crimson_snapshot_series(crimson_dir)
+    if not by_osd:
+        logger.warning("No Crimson dumps found in %s", crimson_dir)
+        return pd.DataFrame(columns=["osd", "shard", "category", "metric", "rate", "unit"])
+
+    dfs: List[pd.DataFrame] = []
+    for osd_id, snaps in sorted(by_osd.items()):
+        if len(snaps) < 2:
+            logger.warning("OSD %d has fewer than 2 snapshots (%d); cannot calculate rates", osd_id, len(snaps))
+            continue
+        snap1 = snaps[snapshot_idx1]
+        snap2 = snaps[snapshot_idx2]
+        dt = snap2["timestamp"] - snap1["timestamp"]
+        if dt <= 0:
+            logger.warning("OSD %d has invalid dt=%f between snapshots; skipping", osd_id, dt)
+            continue
+
+        m1 = snap1["data"].get("metrics", [])
+        m2 = snap2["data"].get("metrics", [])
+        shard_df = calculate_crimson_shard_rates_pair(m1, m2, dt)
+        if not shard_df.empty:
+            shard_df.insert(0, "osd", osd_id)
+            dfs.append(shard_df)
+
+    if not dfs:
+        return pd.DataFrame(columns=["osd", "shard", "category", "metric", "rate", "unit"])
+
+    return pd.concat(dfs, ignore_index=True)
+
+
+# ---------------------------------------------------------------------------
+# Heatmap Plotting & Visualization Helpers
+# ---------------------------------------------------------------------------
+
+def _fname_safe(s: str) -> str:
+    """Make s safe for use as part of a filename."""
+    return _INVALID_CHARS.sub("_", s).strip("_")
+
+
+def _si(value: float) -> str:
+    """Return a compact SI-prefixed string for annotation (e.g. 1.2M, 340k, 0.00)."""
+    if abs(value) < 1e-9:
+        return "0"
+    for unit, threshold in [("G", 1e9), ("M", 1e6), ("k", 1e3)]:
+        if abs(value) >= threshold:
+            return f"{value/threshold:.1f}{unit}"
+    if abs(value) < 0.01:
+        return f"{value:.2e}"
+    return f"{value:.2f}"
+
+
+def _ensure_dir(path: str) -> None:
+    """Create directory path if it does not already exist."""
+    os.makedirs(path, exist_ok=True)
+
+
+def _savefig(fig: plt.Figure, out_dir: str, name: str, ext: str = DEFAULT_EXT) -> None:
+    """Save fig to out_dir/name.ext and close it."""
+    _ensure_dir(out_dir)
+    target = os.path.join(out_dir, f"{name}.{ext}")
+    fig.savefig(target, bbox_inches="tight", dpi=150)
+    plt.close(fig)
+    logger.info("Saved plot: %s", target)
+
+
+def _rate_heatmap(
+    pivot: pd.DataFrame,
+    title: str,
+    ylabel: str,
+    cbar_label: str,
+    out_dir: str,
+    filename: str,
+    ext: str = DEFAULT_EXT,
+    cmap: str = "YlOrRd",
+) -> None:
+    """Render a single rate heatmap (shard × OSD) and save it."""
+    if pivot.empty:
+        logger.debug("Skipping empty pivot for %s", title)
+        return
+
+    nrows, ncols = pivot.shape
+    fig_w = max(5, ncols * 1.5 + 2)
+    fig_h = max(3.5, nrows * 0.55 + 1.5)
+
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+
+    _mapfn = getattr(pivot, "map", None) or pivot.applymap  # type: ignore[attr-defined]
+    annot = _mapfn(_si)
+
+    sns.heatmap(
+        pivot,
+        ax=ax,
+        cmap=cmap,
+        annot=annot,
+        fmt="",
+        linewidths=0.4,
+        linecolor="#cccccc",
+        cbar_kws={"label": cbar_label},
+    )
+
+    ax.set_title(title, fontsize=10, pad=8)
+    ax.set_xlabel("OSD", fontsize=9)
+    ax.set_ylabel(ylabel, fontsize=9)
+    ax.tick_params(axis="x", labelsize=8)
+    ax.tick_params(axis="y", labelsize=7, rotation=0)
+    plt.xticks(rotation=0)
+
+    fig.tight_layout()
+    _savefig(fig, out_dir, filename, ext)
+
+
+def plot_crimson_rate_heatmaps(
+    rates_df: pd.DataFrame,
+    out_dir: str,
+    ext: str = DEFAULT_EXT,
+    csv_dir: Optional[str] = None,
+) -> None:
+    """
+    Plot rate heatmaps per category and individual metrics, with shards on Y-axis
+    and OSDs on X-axis. Also exports the full rates DataFrame to CSV if csv_dir
+    is specified.
+
+    Parameters
+    ----------
+    rates_df : pd.DataFrame
+        DataFrame as returned by extract_crimson_rates_per_shard_and_osd.
+    out_dir : str
+        Directory to save plot images.
+    ext : str
+        Image format (png, pdf, svg).
+    csv_dir : Optional[str]
+        Directory to save CSV export.
+    """
+    if rates_df.empty:
+        logger.warning("No rate data to plot")
+        return
+
+    _ensure_dir(out_dir)
+
+    if csv_dir:
+        _ensure_dir(csv_dir)
+        csv_file = os.path.join(csv_dir, "crimson_osd_shard_rates.csv")
+        rates_df.to_csv(csv_file, index=False)
+        logger.info("Saved rates CSV to %s", csv_file)
+
+    sub_out = os.path.join(out_dir, "crimson_rates")
+    _ensure_dir(sub_out)
+
+    # 1. Plot combined heatmap per category
+    for category in sorted(rates_df["category"].unique()):
+        cat_df = rates_df[rates_df["category"] == category]
+        metrics = sorted(cat_df["metric"].unique())
+
+        frames: List[pd.DataFrame] = []
+        for metric in metrics:
+            sub = cat_df[cat_df["metric"] == metric].copy()
+            if sub.empty:
+                continue
+            sub["col"] = "OSD" + sub["osd"].astype(str)
+            sub["shard_int"] = pd.to_numeric(sub["shard"], errors="coerce").fillna(0).astype(int)
+            piv = sub.pivot_table(
+                index="shard_int", columns="col", values="rate", aggfunc="sum"
+            ).sort_index()
+            piv.index.name = "shard"
+            piv.columns.name = None
+            if piv.empty:
+                continue
+            piv.index = [f"{metric} |s{i}" for i in piv.index]
+            frames.append(piv)
+
+        if not frames:
+            continue
+
+        combined = pd.concat(frames)
+        unit = cat_df["unit"].iloc[0] if not cat_df.empty else ""
+        title = f"Crimson Work Rates — {category} [{unit}] (shard × OSD)"
+        logger.info("Plotting category heatmap: %s (rows=%d)", category, len(combined))
+
+        _rate_heatmap(
+            pivot=combined,
+            title=title,
+            ylabel="metric  |  shard",
+            cbar_label=unit if unit else "rate",
+            out_dir=sub_out,
+            filename=f"crimson_rate_{_fname_safe(category)}",
+            ext=ext,
+            cmap="YlOrRd",
+        )
+
+    # 2. Also plot overview grid of key work rates
+    key_metrics = [
+        ("write_total_bytes_per_sec", "Disk Write Rate", "bytes/sec"),
+        ("transactions_committed_per_sec", "Tx Commit Rate", "trans/sec"),
+        ("network_bytes_per_sec", "Network Throughput", "bytes/sec"),
+        ("cache_accesses_per_sec", "Cache Access Rate", "accesses/sec"),
+    ]
+
+    for metric_name, label, unit in key_metrics:
+        sub = rates_df[rates_df["metric"] == metric_name].copy()
+        if sub.empty:
+            continue
+        sub["col"] = "OSD" + sub["osd"].astype(str)
+        sub["shard_int"] = pd.to_numeric(sub["shard"], errors="coerce").fillna(0).astype(int)
+        piv = sub.pivot_table(
+            index="shard_int", columns="col", values="rate", aggfunc="sum"
+        ).sort_index()
+        piv.index.name = "shard"
+        piv.columns.name = None
+
+        title = f"Crimson Work Rate — {label} [{unit}] (shard × OSD)"
+        _rate_heatmap(
+            pivot=piv,
+            title=title,
+            ylabel="shard",
+            cbar_label=unit,
+            out_dir=sub_out,
+            filename=f"crimson_rate_{_fname_safe(metric_name)}",
+            ext=ext,
+            cmap="YlOrRd",
+        )
+
+
+# ---------------------------------------------------------------------------
 # Factory Function
 # ---------------------------------------------------------------------------
 
@@ -508,7 +1031,7 @@ def create_rate_analyzer(osd_type: str) -> BaseOSDRateAnalyzer:
         raise ValueError(f"Unknown OSD type: {osd_type}. Use 'seastore', 'bluestore', or 'classic'")
 
 
-def _detect_osd_type(data: Dict[str, Any]) -> str:
+def detect_osd_type(data: Dict[str, Any]) -> str:
     """
     Detect OSD type from metrics data structure.
     
@@ -527,7 +1050,7 @@ def _detect_osd_type(data: Dict[str, Any]) -> str:
         # Check for SeaStore-specific metrics
         metrics_list = data['metrics']
         # TODO: replace this condition with a regex like we use for the grouping of metrics in the analyzer
-        has_seastore = any('LBA_alloc_extents' in str(item) or 'cache_trans' in str(item) 
+        has_seastore = any('LBA_alloc_extents' in str(item) or 'cache_trans' in str(item)
                           for item in metrics_list[:100])  # Check first 100 items
         
         if has_seastore:
@@ -542,5 +1065,60 @@ def _detect_osd_type(data: Dict[str, Any]) -> str:
     # Default to seastore if uncertain
     logger.warning("Could not definitively detect OSD type, defaulting to seastore")
     return 'seastore'
+
+
+_detect_osd_type = detect_osd_type
+
+
+# ---------------------------------------------------------------------------
+# CLI Execution
+# ---------------------------------------------------------------------------
+
+def _build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        description=(
+            "Calculate per-OSD and per-shard work rates for Crimson OSDs from dump_metrics snapshots. "
+            "Generates CSV reports and heatmap visualisations (shards on Y-axis, OSDs on X-axis)."
+        ),
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument("--crimson", metavar="DIR", required=True,
+                   help="Directory containing Crimson OSD JSON dump snapshots.")
+    p.add_argument("--out", default=DEFAULT_OUT, metavar="DIR",
+                   help="Output directory for heatmap plots.")
+    p.add_argument("--csv", metavar="DIR", default=None,
+                   help="Directory to save the extracted work rates CSV file.")
+    p.add_argument("--ext", default=DEFAULT_EXT, choices=["png", "pdf", "svg"],
+                   help="Image format for heatmap plots.")
+    p.add_argument("--log-level", default="INFO",
+                   choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    return p
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _build_parser().parse_args(argv)
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="[%(levelname)s] %(name)s: %(message)s",
+    )
+
+    rates_df = extract_crimson_rates_per_shard_and_osd(args.crimson)
+    if rates_df.empty:
+        logger.error("No rate data could be calculated from %s", args.crimson)
+        return 1
+
+    csv_dir = args.csv if args.csv else args.out
+    plot_crimson_rate_heatmaps(
+        rates_df=rates_df,
+        out_dir=args.out,
+        ext=args.ext,
+        csv_dir=csv_dir,
+    )
+    logger.info("Done. Rates written to %s and plots in %s", csv_dir, args.out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
 
 # Made with Bob

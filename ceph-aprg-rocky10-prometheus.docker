@@ -78,6 +78,9 @@ RUN echo "export CMAKE_EXPORT_COMPILE_COMMANDS=ON" > /etc/profile.d/cmake.sh && 
 
 RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >> /etc/sudoers
 
+# The following is important, otherwise seastar SIGSEGVs on startup due to insufficient AIO resources.
+RUN echo "1420960" >> /proc/sys/fs/aio-max-nr
+
 # ---------------------------------------------------------------------------
 # Utilities on /packages volume
 # ---------------------------------------------------------------------------
