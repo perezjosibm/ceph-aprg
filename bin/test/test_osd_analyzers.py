@@ -143,6 +143,40 @@ def test_single_file_analysis():
     
     print()
 
+def test_crimson_shard_rate_extraction():
+    """Test extracting per-OSD and per-shard work rates for Crimson."""
+    print("=" * 80)
+    print("Test 5: Crimson Shard Rate Extraction & Heatmap Generation")
+    print("=" * 80)
+    
+    from osd_rate_analyzers import (
+        extract_crimson_rates_per_shard_and_osd,
+        plot_crimson_rate_heatmaps,
+    )
+    import tempfile
+    
+    crimson_dir = "bin/examples/sea_3osd_6reactor_replica_3"
+    if os.path.isdir(crimson_dir):
+        rates_df = extract_crimson_rates_per_shard_and_osd(crimson_dir)
+        print(f"✓ Extracted {len(rates_df)} rate rows from {crimson_dir}")
+        assert not rates_df.empty, "rates_df should not be empty"
+        assert set(["osd", "shard", "category", "metric", "rate", "unit"]).issubset(rates_df.columns)
+        
+        # Test plotting to temporary directory
+        with tempfile.TemporaryDirectory() as tmpdir:
+            plot_crimson_rate_heatmaps(rates_df, out_dir=tmpdir, csv_dir=tmpdir)
+            assert os.path.exists(os.path.join(tmpdir, "crimson_osd_shard_rates.csv"))
+            sub_plots = os.path.join(tmpdir, "crimson_rates")
+            assert os.path.exists(sub_plots)
+            pngs = [f for f in os.listdir(sub_plots) if f.endswith(".png")]
+            assert len(pngs) > 0, "Should have generated PNG plots"
+            print(f"✓ Generated CSV and {len(pngs)} rate heatmap plots in temp directory")
+    else:
+        print(f"⚠ Directory not found: {crimson_dir}")
+        
+    print()
+
+
 def main():
     """Run all tests."""
     print("\n" + "=" * 80)
@@ -154,6 +188,7 @@ def main():
         test_analyzer_creation()
         test_wrapper_integration()
         test_single_file_analysis()
+        test_crimson_shard_rate_extraction()
         
         print("=" * 80)
         print("✓ All tests passed!")
