@@ -52,7 +52,7 @@ test_row['fio_type']="fio_bench" # catalog
 #test_row['classic_cpu']="0-19"
 ## Multi-job, single instance, randomwrite workload, response curves:
 #test_row['fio_workload']="-j -s -w rw -r -w hockey" 
-test_row['fio_workload']="-j -s -r -a"
+test_row['fio_workload']="randwrite,randread"
 #70% -a -m" # --size=${rbd_size} --numjobs=${fio_numjobs} --blocksize=${fio_blocksize} --iodepth=${fio_iodepth} -t ${fio_type}"
 string=$(declare -p test_row)
 test_table["1"]=${string}
@@ -60,7 +60,7 @@ test_table["1"]=${string}
 test_row['osd']="2"
 test_row['reactor_range']="1,4,8" #14 28 56 # Number of reactors, can be a range   
 #test_row['nat']="$NUM_ALIEN_THREADS" ## do not apply for Seastore
-test_row['store_devs']="/dev/nvme1n1p2,/dev/nvme2n1p2,"
+test_row['store_devs']="/dev/nvme1n1p2,/dev/nvme2n1p2"
 test_row['vstart_cpu_set']="${VSTART_CPU_CORES}"
 test_row['pool_type']="other"
 test_row['pool_size']="128"
@@ -78,7 +78,8 @@ test_row['fio_type']="fio_bench"
 #test_row['classic_cpu']="0-19"
 ## Multi-job, single instance, randomwrite workload, response curves:
 #test_row['fio_workload']="-j -s -w rw -r -w hockey" 
-test_row['fio_workload']="-j -s -r -a"
+#test_row['fio_workload']="-j -s -r -a"
+test_row['fio_workload']="randwrite,randread"
 #70% -a -m" # --size=${rbd_size} --numjobs=${fio_numjobs} --blocksize=${fio_blocksize} --iodepth=${fio_iodepth} -t ${fio_type}"
 string=$(declare -p test_row)
 test_table["2"]=${string}
@@ -86,7 +87,7 @@ test_table["2"]=${string}
 test_row['osd']="4"
 test_row['reactor_range']="1,4,8" #14 28 56 # Number of reactors, can be a range   
 #test_row['nat']="$NUM_ALIEN_THREADS" ## do not apply for Seastore
-test_row['store_devs']="/dev/nvme1n1p2,/dev/nvme2n1p2,/dev/nvme3n1p2,/dev/nvme4n1p2,"
+test_row['store_devs']="/dev/nvme1n1p2,/dev/nvme2n1p2,/dev/nvme3n1p2,/dev/nvme4n1p2"
 test_row['vstart_cpu_set']="${VSTART_CPU_CORES}"
 test_row['pool_type']="other"
 test_row['pool_size']="128"
@@ -104,7 +105,8 @@ test_row['fio_type']="fio_bench"
 #test_row['classic_cpu']="0-19"
 ## Multi-job, single instance, randomwrite workload, response curves:
 #test_row['fio_workload']="-j -s -w rw -r -w hockey" 
-test_row['fio_workload']="-j -s -r -a"
+#test_row['fio_workload']="-j -s -r -a"
+test_row['fio_workload']="randwrite,randread"
 string=$(declare -p test_row)
 test_table["3"]=${string}
 

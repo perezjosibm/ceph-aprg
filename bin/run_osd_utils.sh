@@ -373,7 +373,7 @@ function fun_mkrbd_custom() {
     ceph status
     ceph osd pool ls;
     rados df; 
-    ceph osd pool set noautoscale
+    #ceph osd pool set noautoscale
     #show a pool’s utilization statistics:
     rados df
     # Raw utilisation
@@ -488,13 +488,21 @@ fun_run_fixed_bal_tests() {
 
                 echo "$(date) Sleeping for 10 secs..."
                 sleep 10 # wait until all OSD online, pgrep?
+                [ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
+
                 ## Disabling grid temporarly
                 ##fun_show_grid $test_name
-                mon_dump_osd_threads ${test_name}
-
-                [ -f /ceph/build/vstart_environment.sh ] && source /ceph/build/vstart_environment.sh
-                ${SCRIPT_DIR}/cephlogoff.sh 2>&1 > /dev/null && \
-                    # Preliminary: simply collect the threads from OSD to verify its as expected
+                #mon_dump_osd_threads ${test_name}
+                ${SCRIPT_DIR}/cephlogoff.sh 2>&1 > /dev/null 
+                echo "ceph osd pool set noautoscale"
+                ceph osd pool set noautoscale
+                # Turn off balancer to avoid moving PGs
+                ceph balancer off
+                # Turn off deep scrub
+                ceph osd set nodeep-scrub
+                # Turn off scrub
+                ceph osd set noscrub
+                # Preliminary: simply collect the threads from OSD to verify its as expected
                 # TODO: make it agnostic of pool details, so can run for RADOs as well as RBD
                 case "${test_row[pool_type]}" in
                     rados)
@@ -507,14 +515,6 @@ fun_run_fixed_bal_tests() {
                         ceph osd pool set ${test_row['pool_type']} size 1 --yes-i-really-mean-it && ceph status;
                         ceph osd pool ls;
                         rados df; 
-                        echo "ceph osd pool set noautoscale"
-                        ceph osd pool set noautoscale
-                        # Turn off balancer to avoid moving PGs
-                        ceph balancer off
-                        # Turn off deep scrub
-                        ceph osd set nodeep-scrub
-                        # Turn off scrub
-                        ceph osd set noscrub
                         ;;
                     rbd)
                         echo "$(date) RBD..."
@@ -536,24 +536,41 @@ fun_run_fixed_bal_tests() {
                 # Start FIO:
                 #( fun_run_fio $test_name ) & 
                 #fio_pid=$!
-                if [ "${test_row['fio_type']}" == "custom" ]; then
-                    echo "$(date) Starting FIO... ${test_row[fio_type]} "
-                    # Start monitoring OSD performance in the background
-                    # ${SCRIPT_DIR}/monitoring.sh -d ${RUN_DIR} -p $test_name &
-                    fun_run_fio_custom $OSD_TYPE "$test_name" ${RUN_DIR} test_row
-                    # zip all the .json files produced by FIO in the run dir for this test
-                    #find ${RUN_DIR} -name "${test_name}_*.json" -exec gzip -9fq {} \;
-                    #cd ${RUN_DIR} && tar -czf ${test_name}_fio_results.tar.gz ${test_name}_*.json && rm -f ${test_name}_*.json
-                    # Kill all monitoring jobs, since we are going to stop the cluster,
-                    # and we want to avoid the watchdog to kill the script before we
-                    # can collect the results
-                    fun_zip_results_custom "$test_name"
-                else # catalog predefined .fio files
-                    fun_run_fio "$test_name" "${test_row[fio_workload]}"
-                    echo "$(date) FIO ${fio_pid} completed: $test_name ${test_row[fio_workload]}"
-                    # Enable when FIO be invoked via fio_utils.sh instead of via run_fio.sh
-                    #fun_wait_fio $fio_pid
-                fi
+                case "${test_row[fio_type]}" in 
+                    "custom")
+                        echo "$(date) Starting FIO... ${test_row[fio_type]} "
+                        # Start monitoring OSD performance in the background
+                        # ${SCRIPT_DIR}/monitoring.sh -d ${RUN_DIR} -p $test_name &
+                        fun_run_fio_custom $OSD_TYPE "$test_name" ${RUN_DIR} test_row
+                        # zip all the .json files produced by FIO in the run dir for this test
+                        #find ${RUN_DIR} -name "${test_name}_*.json" -exec gzip -9fq {} \;
+                        #cd ${RUN_DIR} && tar -czf ${test_name}_fio_results.tar.gz ${test_name}_*.json && rm -f ${test_name}_*.json
+                        # Kill all monitoring jobs, since we are going to stop the cluster,
+                        # and we want to avoid the watchdog to kill the script before we
+                        # can collect the results
+                        fun_zip_results_custom "$test_name"
+                        ;;
+                    "catalog") #predefined .fio files
+                        fun_run_fio "$test_name" "${test_row[fio_workload]}"
+                        echo "$(date) FIO ${fio_pid} completed: $test_name ${test_row[fio_workload]}"
+                        # Enable when FIO be invoked via fio_utils.sh instead of via run_fio.sh
+                        #fun_wait_fio $fio_pid
+                        ;;
+                    "fio_bench")
+                        for rw in $(IFS=','; echo ${test_row[fio_workload]}); do 
+                            # Invoke the fio_bench.sh over the range of iodepth
+                            for io in $(IFS=','; echo ${test_row[fio_iodepth]}); do 
+                                RW=${rw} IODEPTH=${io} LOGDIR=${RUN_DIR}/${test_name} RUNTIME=300 RAMP_TIME=30 OSD_TYPE=seastore REPLICA_NUM=1 ${SCRIPT_DIR}/fio_bench.sh
+                                # -p ${test_row[pool_type]} -n ${test_row[rbd_num_images]} \
+                                #     -s ${test_row[rbd_size]} -j ${test_row[fio_numjobs]} -b ${test_row[fio_blocksize]} \
+                                #     -c ${test_row[fio_cpu_set]} -d ${RUN_DIR} -t $test_name 2>&1 >> ${RUN_DIR}/${test_name}_test_run.log
+                                echo "$(date) FIO ${io} completed: $test_name ${rw}"
+                            done # iodepth
+                            # archive the results for this rw test 
+                            zip -9mrq ${RUN_DIR}/${test_name}_${rw}.zip ${RUN_DIR}/${test_name}/
+                        done # rw
+                        ;;
+                esac
                 # Should be a neater way to stop the cluster
                 if [ "$OSD_TYPE" == "classic" ]; then
                     /ceph/src/stop.sh
