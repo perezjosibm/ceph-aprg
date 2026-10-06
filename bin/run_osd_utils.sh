@@ -560,7 +560,7 @@ fun_run_fixed_bal_tests() {
                         for rw in $(IFS=','; echo ${test_row[fio_workload]}); do 
                             # Invoke the fio_bench.sh over the range of iodepth
                             for io in $(IFS=','; echo ${test_row[fio_iodepth]}); do 
-                                RW=${rw} IODEPTH=${io} LOGDIR=${RUN_DIR}/${test_name} RUNTIME=300 RAMP_TIME=30 OSD_TYPE=seastore REPLICA_NUM=1 ${SCRIPT_DIR}/fio_bench.sh
+                                RW=${rw} IODEPTH=${io} LOGDIR=${RUN_DIR}/${test_name} JOBDIR=${RUN_DIR}/${test_name} RUNTIME=300 RAMP_TIME=30 OSD_TYPE=seastore REPLICA_NUM=1 ${SCRIPT_DIR}/fio_bench.sh
                                 # -p ${test_row[pool_type]} -n ${test_row[rbd_num_images]} \
                                 #     -s ${test_row[rbd_size]} -j ${test_row[fio_numjobs]} -b ${test_row[fio_blocksize]} \
                                 #     -c ${test_row[fio_cpu_set]} -d ${RUN_DIR} -t $test_name 2>&1 >> ${RUN_DIR}/${test_name}_test_run.log
@@ -572,11 +572,13 @@ fun_run_fixed_bal_tests() {
                         ;;
                 esac
                 # Should be a neater way to stop the cluster
+                pushd /ceph/build #&& ./stop.sh --crimson && popd
                 if [ "$OSD_TYPE" == "classic" ]; then
                     /ceph/src/stop.sh
                 else
                     /ceph/src/stop.sh --crimson
                 fi
+                popd
                 sleep 60
             done # reactors
         done # NUM_OSD

@@ -98,7 +98,7 @@ while getopts 'ab:c:d:e:g:t:s:r:jlpxy:z:q' option; do
  [ ! -d "${RUN_DIR}" ] && mkdir -p ${RUN_DIR}
 
  #fun_save_test_plan
- #cd /ceph/build/
+ cd /ceph/build/
 
  # if [ "$REGEN" = true ]; then
  #     fun_run_regen_fio_files
