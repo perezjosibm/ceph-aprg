@@ -308,6 +308,7 @@ monitor_osd() {
             sleep ${DELAY_SAMPLES}
         fi
     done
+}
 
 
 main() {
@@ -316,7 +317,6 @@ main() {
   create_pool_if_needed
   create_images_if_needed
   prefill_images
-  # For response curves, we need to iterate over number of IODEPTH
   run_phase1_sweep
   announce_stage "all done" "completed"
   log "Done. Logs in $LOGDIR ; jobfiles in $JOBDIR ; stage log in $STAGE_LOG"
