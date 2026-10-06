@@ -68,7 +68,8 @@ declare -a order_keys=( default bal_osd bal_socket )
 declare -A osd_be_table
 osd_be_table["cyan"]="--cyanstore"
 osd_be_table["blue"]="--bluestore --bluestore-devs " #${STORE_DEVS}
-osd_be_table["sea"]="--seastore --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=${CACHE_ALG} --seastore_main_device_type=${SEA_DEV_TYPE}\" --seastore-devs "
+#osd_be_table["sea"]="--seastore --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=${CACHE_ALG} --seastore_main_device_type=${SEA_DEV_TYPE}\" --seastore-devs "
+osd_be_table["sea"]="--seastore --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cachepin_type=${CACHE_ALG}\" --seastore-devs "
 #${STORE_DEVS}
 #osd_be_table["sea"]="--seastore --seastore-devs ${STORE_DEVS} --osd-args \"--seastore_max_concurrent_transactions=128 --seastore_cache_lru_size=2G\""
 
