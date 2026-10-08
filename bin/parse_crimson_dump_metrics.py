@@ -129,11 +129,15 @@ class CrimsonDumpMetricsParser:
     # To refactor: remove this and see if it works with the new parser classes, since they have their own METRIC_GROUPS defined.
     METRIC_GROUPS: Dict[str, Dict[str, Any]] = {
         "reactor_aio": {
-            "regex": re.compile(r"^reactor_aio_(reads|writes|retries)$"),
+            "regex": re.compile(r"^reactor_aio_(errors|outsizes|retries)$"),
+            "unit": "operations",
+        },
+        "reactor_aio_rw": {
+            "regex": re.compile(r"^reactor_aio_(writes|reads)$"),
             "unit": "operations",
         },
         "reactor_aio_bytes": {
-            "regex": re.compile(r"^reactor_aio_bytes_"),
+            "regex": re.compile(r"^reactor_aio_bytes_.*$"),
             "unit": "bytes",
         },
         "reactor_time": {
@@ -192,6 +196,14 @@ class CrimsonDumpMetricsParser:
             "regex": re.compile(r"^cache_(cached|dirty)"),
             "unit": "operations",
         },
+        "cache_read_hit": {
+            "regex": re.compile(r"^cache_read_hit_.*$"),
+            "unit": "operations",
+        },
+        "cache_write_hit": {
+            "regex": re.compile(r"^cache_write_hit_.*$"),
+            "unit": "operations",
+        },
         "cache_lru": {
             "regex": re.compile(r"^cache_lru"),
             "unit": "operations",
@@ -220,6 +232,22 @@ class CrimsonDumpMetricsParser:
             "regex": re.compile(r"^cache_(cache_|successful|version)"),
             "unit": "operations",
         },
+        "onode_tree": {
+            "regex": re.compile(r"^onode_tree_.*$"),
+            "unit": "operations",
+        },
+        "osd_mclock": {
+            "regex": re.compile(r"^osd_mclock_.*$"),
+            "unit": "operations",
+        },
+        "osd_pg": {
+            "regex": re.compile(r"^osd_pg_shard_.*$"),
+            "unit": "operations",
+        },
+        "rbm": {
+            "regex": re.compile(r"^rbm_.*$"),
+            "unit": "operations",
+        },
         "lba_alloc_extents": {
             "regex": re.compile(r"^LBA_alloc_extents"),
             "unit": "extents",
@@ -240,8 +268,56 @@ class CrimsonDumpMetricsParser:
             "regex": re.compile(r"^seastore_(concurrent|pending)_transactions$"),
             "unit": "transactions",
         },
-        "io_queue": {
-            "regex": re.compile(r"^io_queue_"),
+        "seastore_attr": {
+            "regex": re.compile(r"^seastore_attr_.*$"),
+            "unit": "transactions",
+        },
+        "seastore_cbj_latency": {
+            "regex": re.compile(r"^seastore_cbj_.*_latency_.*$"),
+            "unit": "ms",
+        },
+        "seastore_cbj_count": {
+            "regex": re.compile(r"^seastore_cbj_.*_count$"),
+            "unit": "items",
+        },
+        "seastore_cbj_size": {
+            "regex": re.compile(r"^seastore_cbj_submit_record_size.*$"),
+            "unit": "mb",
+        },
+        "seastore_cbj_wait": {
+            "regex": re.compile(r"^seastore_cbj_submit_record_wait_.*$"),
+            "unit": "mb",
+        },
+        "io_queue_activations": {
+            "regex": re.compile(r"^io_queue_(activations|shares)$"),
+            "unit": "operations",
+        },
+        "io_queue_ops": {
+            "regex": re.compile(r"^io_queue_.*_ops$"),
+            "unit": "operations",
+        },
+        "io_queue_sec": {
+            "regex": re.compile(r"^io_queue_(total_delay|total_exec|starvation_time)_sec$"),
+            "unit": "seconds",
+        },
+        "io_queue_delay": {
+            "regex": re.compile(r"^io_queue_delay$"),
+            "unit": "seconds",
+        },
+        "io_queue_bytes": {
+            "regex": re.compile(r"^io_queue_total_(write|split|read)?_bytes$"),
+            "unit": "bytes",
+        },
+        "io_queue_length": {
+            "regex": re.compile(r"^io_queue_.*_length$"),
+            "unit": "items",
+        },
+        "io_queue_ratio": {
+            "regex": re.compile(r"^io_queue_.*_ratio$"),
+            "unit": "rate",
+        },
+        "io_queue_consumption": {
+            "regex": re.compile(r"^io_queue_.*_consumption$"),
             "unit": "operations",
         },
         "network_bytes": {
@@ -249,7 +325,7 @@ class CrimsonDumpMetricsParser:
             "unit": "bytes",
         },
         "alien": {
-            "regex": re.compile(r"^alien_"),
+            "regex": re.compile(r"^alien_.*"),
             "unit": "messages",
         },
         "background_process": {
