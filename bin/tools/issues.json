@@ -2,6 +2,18 @@
   "osd":
   [
     {
+      "tracker": "80968",
+      "pattern": [ "void seastar::future_state<U>::set(U&&).*Assertion `_u.st == state::future' failed."],
+        "description": "",
+        "status": "open"
+    },
+    {
+      "tracker": "80729",
+      "pattern": [ "crimson::os::seastore::TransactionManager::move_region_ret crimson::os::seastore::TransactionManager.*abort(abort() called)"],
+        "description": "",
+        "status": "open"
+    },
+    {
       "tracker": "80681",
       "pattern": [ "crimson::os::seastore::SeaStore::get_sharded_store(crimson::store_index_t): Assertion `shard_store.get_status() == true' failed."],
         "description": "",
@@ -224,6 +236,12 @@
       "tracker": "N/A",
       "pattern": [ "No space left on device" ],
       "description": "Infrastructure issue: No space left on device",
+      "status": "open"
+    },
+    {
+      "tracker": "81515",
+      "pattern": [ "perf_monitoring.py" ],
+      "description": "",
       "status": "open"
     },
     {
