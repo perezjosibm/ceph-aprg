@@ -18,6 +18,7 @@ import glob
 import re
 import tempfile
 import pprint
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 # import gzip
 
@@ -579,13 +580,38 @@ class Scrappy:
                 if stderr:
                     logger.debug(f"Error: {stderr.decode()}")
 
+    def _get_occurences_no_escape(self, log_file: str, pattern: str) -> int:
+        """
+        Show the number of occurrences of the given pattern in the log file.
+        Use subprocess.run as a raw string to avoid escaping issues with special characters in the pattern.
+        """
+        cmd = ["grep", "-c", pattern, log_file]
+        logger.debug(f"Executing: {' '.join(cmd)}")
+        result  = subprocess.run(
+            cmd, capture_output=True, 
+            text=True
+        )
+        if result.returncode == 0:
+            return int(result.stdout) #.decode().strip())
+        else:
+            logger.debug(
+                f"No matches found for pattern {pattern} in {log_file} or error occurred: {result.stdout}"
+            )
+            if result.stderr:
+                logger.debug(f"Error: {result.stderr}")
+            return 0 
+
+
     def _get_occurences(self, log_file: str, pattern: str) -> int:
         """
         Show the number of occurrences of the given pattern in the log file.
         We need to ensure that the string is valid regex for grep, so we might need to escape some characters in the pattern.
 
         """
-        cmd = f"grep -E -c -e '{pattern}' {log_file}"
+        # Format it safely for the shell command line
+        safe_pattern = shutil.quote(pattern)
+        #cmd = f"grep -E -c -e '{safe_pattern}' {log_file}"
+        cmd = f"grep -c {safe_pattern} {log_file}"
         logger.debug(f"Executing: {cmd}")
         proc = subprocess.Popen(
             cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -623,7 +649,8 @@ class Scrappy:
         distribution = {}
         for pattern in issue["pattern"]:
             # count = self._count_occurrences(log_file, pattern)
-            count = self._get_occurences(log_file, pattern)
+            # If this does not work correctly, consider to save the set of patterns from a tracker into a file and use that instead
+            count = self._get_occurences_no_escape(log_file, pattern)
             distribution[pattern] = count
             total_count += count
 
