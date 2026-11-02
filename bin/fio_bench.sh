@@ -112,7 +112,8 @@ fmt_seconds() {
 run_fio() {
   local jobfile="$1"
   local outfile="$2"
-  local cmd="$FIO_BIN $jobfile --output-format=normal,json --output=$outfile"
+  #local cmd="$FIO_BIN $jobfile --output-format=normal,json --output=$outfile"
+  local cmd="$FIO_BIN $jobfile --output-format=json --output=$outfile"
   if [[ -n "$CLIENT_CPUSET" ]]; then
     taskset -c "$CLIENT_CPUSET" "$cmd" #"$FIO_BIN" "$jobfile"
   else
@@ -244,7 +245,7 @@ run_phase1_sweep() {
     announce_stage "sweep stage ${idx}/${total_counts}: ${tag}" "~ $(fmt_seconds $((RUNTIME + RAMP_TIME + 10)))"
     log "Running $tag"
     monitor_osd "$LOGDIR" "$OSD_TYPE" "$IODEPTH" &
-    run_fio "$jobfile" "$LOGDIR/${tag}.log"
+    run_fio "$jobfile" "$LOGDIR/${tag}.json"
     #monitor_osd "$LOGDIR" "$OSD_TYPE" "$IODEPTH" 
   done
 }

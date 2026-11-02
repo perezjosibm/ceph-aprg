@@ -346,7 +346,8 @@ function fun_mkrbd_custom() {
     local pool_name=${dict[pool_type]}
     ceph osd pool create ${pool_name} ${dict[pool_size]} && ceph status;
     ceph osd pool application enable ${pool_name} rbd
-    RBD_POOL_REPLICA=1
+    #RBD_POOL_REPLICA=1
+    RBD_POOL_REPLICA=${dict[replica_num]:-1}
     ceph osd pool set ${pool_name} size ${RBD_POOL_REPLICA} --yes-i-really-mean-it
     rbd_size=${dict[rbd_size]^^} # convert to uppercase, since rbd bench needs it in that format
     #NUM_RBD_IMAGES=32 # as it appears for nrfiles in the .fio files, but we can increase it if needed
@@ -561,7 +562,7 @@ fun_run_fixed_bal_tests() {
                         for rw in $(IFS=','; echo ${test_row[fio_workload]}); do 
                             # Invoke the fio_bench.sh over the range of iodepth
                             for io in $(IFS=','; echo ${test_row[fio_iodepth]}); do 
-                                RW=${rw} IODEPTH=${io} LOGDIR=${RUN_DIR}/${test_name} JOBDIR=${RUN_DIR}/${test_name} RUNTIME=300 RAMP_TIME=30 OSD_TYPE=seastore REPLICA_NUM=1 ${SCRIPT_DIR}/fio_bench.sh
+                                RW=${rw} IODEPTH=${io} LOGDIR=${RUN_DIR}/${test_name} JOBDIR=${RUN_DIR}/${test_name} RUNTIME=300 RAMP_TIME=30 OSD_TYPE=seastore REPLICA_NUM=${test_row[replica_num]} ${SCRIPT_DIR}/fio_bench.sh
                                 # -p ${test_row[pool_type]} -n ${test_row[rbd_num_images]} \
                                 #     -s ${test_row[rbd_size]} -j ${test_row[fio_numjobs]} -b ${test_row[fio_blocksize]} \
                                 #     -c ${test_row[fio_cpu_set]} -d ${RUN_DIR} -t $test_name 2>&1 >> ${RUN_DIR}/${test_name}_test_run.log
