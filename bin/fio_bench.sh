@@ -241,7 +241,7 @@ run_phase1_sweep() {
     fi
     local jobfile
     jobfile="$(make_phase1_jobfile "$count")"
-    local tag="phase1_${count}img_qd${IODEPTH}_${RW}_${BS}"
+    local tag="replica_${REPLICA_NUM}_${count}img_qd${IODEPTH}_${RW}_${BS}"
     announce_stage "sweep stage ${idx}/${total_counts}: ${tag}" "~ $(fmt_seconds $((RUNTIME + RAMP_TIME + 10)))"
     log "Running $tag"
     monitor_osd "$LOGDIR" "$OSD_TYPE" "$IODEPTH" &
