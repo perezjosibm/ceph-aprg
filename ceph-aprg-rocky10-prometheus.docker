@@ -60,7 +60,8 @@ RUN set -eux; \
     rm -rf /tmp/node_exporter*
 
 # The following is important, otherwise seastar SIGSEGVs on startup due to insufficient AIO resources.
-RUN echo "1420960" >> /proc/sys/fs/aio-max-nr
+# Failed! might need to do manually :-(
+#RUN echo "1420960" >> /proc/sys/fs/aio-max-nr
 # ---------------------------------------------------------------------------
 # Ceph: Setup, Dependency Installation and Build
 # Assume we have already a build done
