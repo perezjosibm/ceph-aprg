@@ -86,8 +86,8 @@ services:
         source: "${RESULTS_SRC:-/tmp}"
         target: /tmp
         read_only: false
-      # Persist OSD data between restarts
-      - ceph-data:/ceph/build
+        # Persist OSD data between restarts: note that this is a volume, not a bind-mount. The OSDs will be created on the host in a Docker-managed volume, not in your source tree.
+      #- ceph-data:/ceph/build
       #  Map the host devices into the container
     devices:
       - "/dev/nvme1n1p2:/dev/nvme1n1p2:rwm"
@@ -224,7 +224,7 @@ secrets:
 # Persistent volumes
 # =============================================================================
 volumes:
-  ceph-data:
+  #ceph-data:
   prometheus-data:
   grafana-data:
 

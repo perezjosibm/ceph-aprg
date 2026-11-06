@@ -70,6 +70,8 @@ RUN echo "1420960" >> /proc/sys/fs/aio-max-nr
 #     WITH_CRIMSON=true ./install-deps.sh && \
 #     ./do_cmake.sh -DWITH_CRIMSON=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer" -DWITH_TESTS=OFF -DWITH_MGR_DASHBOARD_FRONTEND=OFF && \
 #     ninja -C build -j 20 -l 20 -k 20 && ninja -C build install
+# Install the already build ceph:
+RUN cd /ceph && ninja -C build install
 
 VOLUME /ceph
 
@@ -88,20 +90,20 @@ RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >> /etc/sudoers
 # ---------------------------------------------------------------------------
 # Utilities on /packages volume: assume its mounted as a persistent volume for the container.
 # ---------------------------------------------------------------------------
-# RUN mkdir /packages && cd /packages && \
-    # git clone https://github.com/axboe/fio.git && cd fio && ./configure && make && make install && \
-    # cd /packages && git clone https://github.com/ceph/cbt && \
-    # git clone https://github.com/andikleen/pmu-tools.git && \
-    # git clone https://github.com/brendangregg/FlameGraph.git && \
-    # git clone https://github.com/rstudio/tinytex.git && \
-    # cd tinytex/tools/ && make all || true && \
-    # cd /packages && git clone https://github.com/ceph/teuthology && \
-    # cd /packages && git clone  https://github.com/kckecheng/fio_exporter.git && \
-    # cd fio_exporter && go build -v && \
-    # cd /packages && git clone https://github.com/sharkcz/collectl && \
-    # cd collectl && ./INSTALL && \
-    # rm -rf /packages/collectl
-    #
+RUN mkdir /packages && cd /packages && \
+    git clone https://github.com/axboe/fio.git && cd fio && ./configure && make && make install && \
+    cd /packages && git clone https://github.com/ceph/cbt && \
+    git clone https://github.com/andikleen/pmu-tools.git && \
+    git clone https://github.com/brendangregg/FlameGraph.git && \
+    #git clone https://github.com/rstudio/tinytex.git && \
+    #cd tinytex/tools/ && make all || true && \
+    #cd /packages && git clone https://github.com/ceph/teuthology && \
+    cd /packages && git clone  https://github.com/kckecheng/fio_exporter.git && \
+    cd fio_exporter && go build -v 
+    #&& \
+    #cd /packages && git clone https://github.com/sharkcz/collectl && \
+    #cd collectl && ./INSTALL && rm -rf /packages/collectl
+
 VOLUME /packages
 
 # ---------------------------------------------------------------------------
