@@ -49,6 +49,12 @@ services:
   ceph:
     build:
       context: .
+      # additional_contexts:
+      #   ceph: "${CEPH_SRC:-/ceph}"
+      args:
+        CEPH_SRC: "${CEPH_SRC:-/ceph}"
+        # PACKAGES_SRC: "${PACKAGES_SRC:-/packages}"
+        # RESULTS_SRC: "${RESULTS_SRC:-/tmp}"
       dockerfile: ceph-aprg-rocky10-prometheus.docker
     image: ceph-aprg-rocky10-prometheus:latest
     container_name: ceph-aprg
