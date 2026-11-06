@@ -245,6 +245,12 @@
       "status": "open"
     },
     {
+      "tracker": "76469",
+      "pattern": [ "Still waiting for all pgs to be scrubbed" ],
+      "description": "",
+      "status": "open"
+    },
+    {
       "tracker": "81515",
       "pattern": [ "perf_monitoring.py" ],
       "description": "",

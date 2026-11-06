@@ -33,7 +33,7 @@ RUN dnf group install -y "Development Tools" && \
     dnf install -y \
     jq jc ccache iproute hostname python3-bcrypt lldb autoconf-archive \
     targetcli wget e2fsprogs blktrace lsof sysstat ipmitool dstat iftop \
-    iperf3 chrony irqbalance smartmontools logrotate perf sudo \
+    iperf3 chrony irqbalance smartmontools logrotate perf sudo golang \
     llvm llvm-devel python3-debug python3-lxml python3-yaml vim nvme-cli
 
 # The following packages are missing atm:
@@ -59,12 +59,17 @@ RUN set -eux; \
                     /usr/local/bin/node_exporter && \
     rm -rf /tmp/node_exporter*
 
+# The following is important, otherwise seastar SIGSEGVs on startup due to insufficient AIO resources.
+RUN echo "1420960" >> /proc/sys/fs/aio-max-nr
 # ---------------------------------------------------------------------------
-# Ceph: Setup and Dependency Installation
+# Ceph: Setup, Dependency Installation and Build
+# Assume we have already a build done
 # ---------------------------------------------------------------------------
-RUN git clone --depth=1 https://github.com/ceph/ceph.git /ceph && \
-    cd /ceph && \
-    WITH_CRIMSON=true ./install-deps.sh
+# RUN git clone --depth=1 https://github.com/ceph/ceph.git /ceph && \
+#     cd /ceph && \
+#     WITH_CRIMSON=true ./install-deps.sh && \
+#     ./do_cmake.sh -DWITH_CRIMSON=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer" -DWITH_TESTS=OFF -DWITH_MGR_DASHBOARD_FRONTEND=OFF && \
+#     ninja -C build -j 20 -l 20 -k 20 && ninja -C build install
 
 VOLUME /ceph
 
@@ -74,28 +79,29 @@ VOLUME /ceph
 RUN echo "export CMAKE_EXPORT_COMPILE_COMMANDS=ON" > /etc/profile.d/cmake.sh && \
     echo "export CEPH_PORT=40000" > /etc/profile.d/ceph.sh && \
     echo '[ -f "/ceph/build/vstart_environment.sh" ] && source /ceph/build/vstart_environment.sh' \
-         >> /etc/profile.d/ceph.sh
+         >> /etc/profile.d/ceph.sh && \
+    echo "export LD_LIBRARY_PATH=/ceph/build/lib:/ceph/build/lib64:\$LD_LIBRARY_PATH" >> /etc/profile.d/ceph.sh && \
+    export CEPH_DEV=1
 
 RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >> /etc/sudoers
 
-# The following is important, otherwise seastar SIGSEGVs on startup due to insufficient AIO resources.
-RUN echo "1420960" >> /proc/sys/fs/aio-max-nr
-
 # ---------------------------------------------------------------------------
-# Utilities on /packages volume
+# Utilities on /packages volume: assume its mounted as a persistent volume for the container.
 # ---------------------------------------------------------------------------
-RUN mkdir /packages && cd /packages && \
-    git clone https://github.com/axboe/fio.git && \
-    git clone https://github.com/ceph/cbt && \
-    git clone https://github.com/andikleen/pmu-tools.git && \
-    git clone https://github.com/brendangregg/FlameGraph.git && \
-    git clone https://github.com/rstudio/tinytex.git && \
-    cd tinytex/tools/ && make all || true && \
-    cd /packages && git clone https://github.com/ceph/teuthology && \
-    cd /packages && git clone https://github.com/sharkcz/collectl && \
-    cd collectl && ./INSTALL && \
-    rm -rf /packages/collectl
-
+# RUN mkdir /packages && cd /packages && \
+    # git clone https://github.com/axboe/fio.git && cd fio && ./configure && make && make install && \
+    # cd /packages && git clone https://github.com/ceph/cbt && \
+    # git clone https://github.com/andikleen/pmu-tools.git && \
+    # git clone https://github.com/brendangregg/FlameGraph.git && \
+    # git clone https://github.com/rstudio/tinytex.git && \
+    # cd tinytex/tools/ && make all || true && \
+    # cd /packages && git clone https://github.com/ceph/teuthology && \
+    # cd /packages && git clone  https://github.com/kckecheng/fio_exporter.git && \
+    # cd fio_exporter && go build -v && \
+    # cd /packages && git clone https://github.com/sharkcz/collectl && \
+    # cd collectl && ./INSTALL && \
+    # rm -rf /packages/collectl
+    #
 VOLUME /packages
 
 # ---------------------------------------------------------------------------
@@ -122,6 +128,8 @@ ENV PATH="$PATH:/root/ceph-aprg/bin"
 # A lightweight Python HTTP server that calls `ceph tell osd.* dump_metrics`,
 # parses the JSON, and exposes it as Prometheus text-format on :9500.
 # The script is installed to /usr/local/bin/ceph_osd_exporter.py.
+# We no longer need this since Crimson has a built-in Prometheus metrics endpoint, 
+# but we keep it here for legacy reasons.
 # ---------------------------------------------------------------------------
 COPY prometheus/ceph_osd_exporter.py /usr/local/bin/ceph_osd_exporter.py
 RUN chmod 0755 /usr/local/bin/ceph_osd_exporter.py
