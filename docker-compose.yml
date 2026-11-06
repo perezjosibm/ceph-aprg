@@ -49,8 +49,8 @@ services:
   ceph:
     build:
       context: .
-      # additional_contexts:
-      #   ceph: "${CEPH_SRC:-/ceph}"
+      additional_contexts:
+        ceph: "${CEPH_SRC:-/ceph}"
       args:
         CEPH_SRC: "${CEPH_SRC:-/ceph}"
         # PACKAGES_SRC: "${PACKAGES_SRC:-/packages}"

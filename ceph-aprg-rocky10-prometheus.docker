@@ -86,6 +86,7 @@ VOLUME /packages
 # FROM [ceph]
 #ARG CEPH_BUILD_DIR=/ceph/build
 # Reusing an already build ceph source tree from the host, mounted as a volume at /ceph
+FROM ceph
 ARG CEPH_SRC
 RUN --mount=type=bind,source=$CEPH_SRC,target=/ceph \
     cd /ceph && ninja -C build install
