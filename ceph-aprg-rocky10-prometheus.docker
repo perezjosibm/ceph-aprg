@@ -83,13 +83,13 @@ VOLUME /packages
 # Failed! might need to do manually :-(
 # RUN echo "1420960" >> /proc/sys/fs/aio-max-nr
 #
-# FROM [ceph]
-#ARG CEPH_BUILD_DIR=/ceph/build
+#
 # Reusing an already build ceph source tree from the host, mounted as a volume at /ceph
-FROM ceph
-ARG CEPH_SRC
-RUN --mount=type=bind,source=$CEPH_SRC,target=/ceph \
-    cd /ceph && ninja -C build install
+# additional context did not work: skipping this step since uses the ceph-aprg (local folder) context instead
+# FROM ceph
+# ARG CEPH_SRC
+# RUN --mount=type=bind,source=$CEPH_SRC,target=/ceph \
+#     cd /ceph && ninja -C build install
 # Uncomment these if rebuilding ceph
 # RUN git clone --depth=1 https://github.com/ceph/ceph.git /ceph && \
 #     cd /ceph && \
@@ -100,16 +100,16 @@ RUN --mount=type=bind,source=$CEPH_SRC,target=/ceph \
 # ---------------------------------------------------------------------------
 # Environment profiles: commented out since we want to use an existing build to save some time
 # ---------------------------------------------------------------------------
-RUN echo "export CMAKE_EXPORT_COMPILE_COMMANDS=ON" > /etc/profile.d/cmake.sh && \
-    echo "export CEPH_PORT=40000" > /etc/profile.d/ceph.sh && \
-    echo '[ -f "/ceph/build/vstart_environment.sh" ] && source /ceph/build/vstart_environment.sh' \
-         >> /etc/profile.d/ceph.sh && \
-    echo "export LD_LIBRARY_PATH=/ceph/build/lib:/ceph/build/lib64:\$LD_LIBRARY_PATH" >> /etc/profile.d/ceph.sh && \
-    export CEPH_DEV=1
-
-RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >> /etc/sudoers
-
-VOLUME /ceph
+# RUN echo "export CMAKE_EXPORT_COMPILE_COMMANDS=ON" > /etc/profile.d/cmake.sh && \
+#     echo "export CEPH_PORT=40000" > /etc/profile.d/ceph.sh && \
+#     echo '[ -f "/ceph/build/vstart_environment.sh" ] && source /ceph/build/vstart_environment.sh' \
+#          >> /etc/profile.d/ceph.sh && \
+#     echo "export LD_LIBRARY_PATH=/ceph/build/lib:/ceph/build/lib64:\$LD_LIBRARY_PATH" >> /etc/profile.d/ceph.sh && \
+#     export CEPH_DEV=1
+#
+# RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >> /etc/sudoers
+#
+# VOLUME /ceph
 # ---------------------------------------------------------------------------
 # Local config files
 # ---------------------------------------------------------------------------
