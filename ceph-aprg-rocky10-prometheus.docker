@@ -91,12 +91,12 @@ VOLUME /packages
 # RUN --mount=type=bind,source=$CEPH_SRC,target=/ceph \
 #     cd /ceph && ninja -C build install
 # Uncomment these if rebuilding ceph: check whether a /ceph already exists, otherwise clone and build it:
-RUN if [ ! -d "/ceph" ]; then \
-      git clone --depth=1 https://github.com/ceph/ceph.git /ceph; fi
-    cd /ceph && \
-    WITH_CRIMSON=true ./install-deps.sh && \
-    ./do_cmake.sh -DWITH_CRIMSON=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer" -DWITH_TESTS=OFF -DWITH_MGR_DASHBOARD_FRONTEND=OFF && \
-    ninja -C build -j 20 -l 20 -k 20 && ninja -C build install
+# RUN if [ ! -d "/ceph" ]; then \
+#       git clone --depth=1 https://github.com/ceph/ceph.git /ceph; fi
+#     cd /ceph && \
+#     WITH_CRIMSON=true ./install-deps.sh && \
+#     ./do_cmake.sh -DWITH_CRIMSON=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer" -DWITH_TESTS=OFF -DWITH_MGR_DASHBOARD_FRONTEND=OFF && \
+#     ninja -C build -j 20 -l 20 -k 20 && ninja -C build install
 
 ---------------------------------------------------------------------------
 Environment profiles: commented out since we want to use an existing build to save some time
