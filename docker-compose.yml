@@ -79,7 +79,7 @@ services:
     environment:
       OSD_COUNT:  "${OSD_COUNT:-0}"
       OSD_MODE:   "${OSD_MODE:-auto}"
-      CEPH_BIN:   "${CEPH_BIN:-/ceph/build/bin/ceph}"
+      #CEPH_BIN:   "${CEPH_BIN:-/ceph/build/bin/ceph}"
     volumes:
       # Bind-mount your local ceph tree so you can edit/build without rebuilding
       # the image. Comment out if you prefer the image-baked clone.
