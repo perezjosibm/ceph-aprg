@@ -90,26 +90,27 @@ VOLUME /packages
 # ARG CEPH_SRC
 # RUN --mount=type=bind,source=$CEPH_SRC,target=/ceph \
 #     cd /ceph && ninja -C build install
-# Uncomment these if rebuilding ceph
-# RUN git clone --depth=1 https://github.com/ceph/ceph.git /ceph && \
-#     cd /ceph && \
-#     WITH_CRIMSON=true ./install-deps.sh && \
-#     ./do_cmake.sh -DWITH_CRIMSON=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer" -DWITH_TESTS=OFF -DWITH_MGR_DASHBOARD_FRONTEND=OFF && \
-#     ninja -C build -j 20 -l 20 -k 20 && ninja -C build install
+# Uncomment these if rebuilding ceph: check whether a /ceph already exists, otherwise clone and build it:
+RUN if [ ! -d "/ceph" ]; then \
+      git clone --depth=1 https://github.com/ceph/ceph.git /ceph; fi
+    cd /ceph && \
+    WITH_CRIMSON=true ./install-deps.sh && \
+    ./do_cmake.sh -DWITH_CRIMSON=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer" -DWITH_TESTS=OFF -DWITH_MGR_DASHBOARD_FRONTEND=OFF && \
+    ninja -C build -j 20 -l 20 -k 20 && ninja -C build install
 
-# ---------------------------------------------------------------------------
-# Environment profiles: commented out since we want to use an existing build to save some time
-# ---------------------------------------------------------------------------
-# RUN echo "export CMAKE_EXPORT_COMPILE_COMMANDS=ON" > /etc/profile.d/cmake.sh && \
-#     echo "export CEPH_PORT=40000" > /etc/profile.d/ceph.sh && \
-#     echo '[ -f "/ceph/build/vstart_environment.sh" ] && source /ceph/build/vstart_environment.sh' \
-#          >> /etc/profile.d/ceph.sh && \
-#     echo "export LD_LIBRARY_PATH=/ceph/build/lib:/ceph/build/lib64:\$LD_LIBRARY_PATH" >> /etc/profile.d/ceph.sh && \
-#     export CEPH_DEV=1
-#
-# RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >> /etc/sudoers
-#
-# VOLUME /ceph
+---------------------------------------------------------------------------
+Environment profiles: commented out since we want to use an existing build to save some time
+---------------------------------------------------------------------------
+RUN echo "export CMAKE_EXPORT_COMPILE_COMMANDS=ON" > /etc/profile.d/cmake.sh && \
+    echo "export CEPH_PORT=40000" > /etc/profile.d/ceph.sh && \
+    echo '[ -f "/ceph/build/vstart_environment.sh" ] && source /ceph/build/vstart_environment.sh' \
+         >> /etc/profile.d/ceph.sh && \
+    echo "export LD_LIBRARY_PATH=/ceph/build/lib:/ceph/build/lib64:\$LD_LIBRARY_PATH" >> /etc/profile.d/ceph.sh && \
+    export CEPH_DEV=1
+
+RUN echo "Defaults    env_keep += \"LD_LIBRARY_PATH\"" >> /etc/sudoers
+
+VOLUME /ceph
 # ---------------------------------------------------------------------------
 # Local config files
 # ---------------------------------------------------------------------------
@@ -125,7 +126,7 @@ RUN cd /root && \
     pip3 install --no-cache-dir -r /root/ceph-aprg/requirements.txt
 
 # Install the prometheus_client library used by the OSD metrics exporter
-RUN pip3 install --no-cache-dir prometheus_client>=0.21.1
+# RUN pip3 install --no-cache-dir prometheus_client>=0.21.1
 
 ENV PATH="$PATH:/root/ceph-aprg/bin"
 
@@ -134,11 +135,11 @@ ENV PATH="$PATH:/root/ceph-aprg/bin"
 # A lightweight Python HTTP server that calls `ceph tell osd.* dump_metrics`,
 # parses the JSON, and exposes it as Prometheus text-format on :9500.
 # The script is installed to /usr/local/bin/ceph_osd_exporter.py.
-# We no longer need this since Crimson has a built-in Prometheus metrics endpoint, 
-# but we keep it here for legacy reasons.
+#
+# We no longer need this since Crimson has a built-in Prometheus metrics endpoint.
 # ---------------------------------------------------------------------------
-COPY prometheus/ceph_osd_exporter.py /usr/local/bin/ceph_osd_exporter.py
-RUN chmod 0755 /usr/local/bin/ceph_osd_exporter.py
+# COPY prometheus/ceph_osd_exporter.py /usr/local/bin/ceph_osd_exporter.py
+# RUN chmod 0755 /usr/local/bin/ceph_osd_exporter.py
 
 # ---------------------------------------------------------------------------
 # Entrypoint / startup script
