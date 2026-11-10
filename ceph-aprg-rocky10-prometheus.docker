@@ -98,9 +98,9 @@ VOLUME /packages
 #     ./do_cmake.sh -DWITH_CRIMSON=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_CXX_FLAGS="-fno-omit-frame-pointer" -DWITH_TESTS=OFF -DWITH_MGR_DASHBOARD_FRONTEND=OFF && \
 #     ninja -C build -j 20 -l 20 -k 20 && ninja -C build install
 
----------------------------------------------------------------------------
-Environment profiles: commented out since we want to use an existing build to save some time
----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Environment profiles: commented out since we want to use an existing build to save some time
+# ---------------------------------------------------------------------------
 RUN echo "export CMAKE_EXPORT_COMPILE_COMMANDS=ON" > /etc/profile.d/cmake.sh && \
     echo "export CEPH_PORT=40000" > /etc/profile.d/ceph.sh && \
     echo '[ -f "/ceph/build/vstart_environment.sh" ] && source /ceph/build/vstart_environment.sh' \
