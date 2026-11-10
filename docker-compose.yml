@@ -67,6 +67,9 @@ services:
       - SYS_PTRACE      # perf / gdb
       - NET_ADMIN        # interface stats
       - SYS_NICE         # taskset / nice
+      #  Grant capabilities for low-level block manipulation
+      - SYS_ADMIN  # Often required for mounting filesystems inside the container
+      - SYS_RAWIO  # Required for raw block device manipulation/ioctls
     # Handle SELinux restrictions if enabled on your host
     security_opt:
       - label=disable
@@ -92,57 +95,54 @@ services:
         source: "${RESULTS_SRC:-/tmp}"
         target: /tmp
         read_only: false
-        # Persist OSD data between restarts: note that this is a volume, not a bind-mount. The OSDs will be created on the host in a Docker-managed volume, not in your source tree.
+        # Persist OSD data between restarts: note that this is a volume, not a bind-mount. 
+        # The OSDs will be created on the host in a Docker-managed volume, not in your source tree.
       #- ceph-data:/ceph/build
-      #  Map the host devices into the container
-    devices:
-      - "/dev/nvme1n1p2:/dev/nvme1n1p2:rwm"
-      - "/dev/nvme2n1p2:/dev/nvme2n1p2:rwm"
-      - "/dev/nvme3n1p2:/dev/nvme3n1p2:rwm"
-      - "/dev/nvme4n1p2:/dev/nvme4n1p2:rwm"
-      - "/dev/nvme6n1p2:/dev/nvme6n1p2:rwm"
-      - "/dev/nvme7n1p2:/dev/nvme7n1p2:rwm"
-      - "/dev/nvme8n1p2:/dev/nvme8n1p2:rwm"
-      - "/dev/nvme9n1p2:/dev/nvme9n1p2:rwm"
-      #  Grant capabilities for low-level block manipulation
-    cap_add:
-      - SYS_ADMIN  # Often required for mounting filesystems inside the container
-      - SYS_RAWIO  # Required for raw block device manipulation/ioctls
     
       # Block volumes from the host o05:
       # /dev/nvme1n1p2,/dev/nvme2n1p2,/dev/nvme3n1p2,/dev/nvme4n1p2,/dev/nvme6n1p2,/dev/nvme7n1p2,/dev/nvme8n1p2,/dev/nvme9n1p2
-      # - type: bind
-      #   source: /dev/nvme1n1p2
-      #   target: /dev/nvme1n1p2
-      #   read_only: false
-      # - type: bind
-      #   source: /dev/nvme2n1p2
-      #   target: /dev/nvme2n1p2
-      #   read_only: false
-      # - type: bind
-      #   source: /dev/nvme3n1p2
-      #   target: /dev/nvme3n1p2
-      #   read_only: false
-      # - type: bind
-      #   source: /dev/nvme4n1p2
-      #   target: /dev/nvme4n1p2
-      #   read_only: false
-      # - type: bind
-      #   source: /dev/nvme6n1p2
-      #   target: /dev/nvme6n1p2
-      #   read_only: false
-      # - type: bind
-      #   source: /dev/nvme7n1p2
-      #   target: /dev/nvme7n1p2
-      #   read_only: false
-      # - type: bind
-      #   source: /dev/nvme8n1p2
-      #   target: /dev/nvme8n1p2
-      #   read_only: false
-      # - type: bind
-      #   source: /dev/nvme9n1p2
-      #   target: /dev/nvme9n1p2
-      #   read_only: false
+      - type: bind
+        source: /dev/nvme1n1p2
+        target: /dev/nvme1n1p2
+        read_only: false
+      - type: bind
+        source: /dev/nvme2n1p2
+        target: /dev/nvme2n1p2
+        read_only: false
+      - type: bind
+        source: /dev/nvme3n1p2
+        target: /dev/nvme3n1p2
+        read_only: false
+      - type: bind
+        source: /dev/nvme4n1p2
+        target: /dev/nvme4n1p2
+        read_only: false
+      - type: bind
+        source: /dev/nvme6n1p2
+        target: /dev/nvme6n1p2
+        read_only: false
+      - type: bind
+        source: /dev/nvme7n1p2
+        target: /dev/nvme7n1p2
+        read_only: false
+      - type: bind
+        source: /dev/nvme8n1p2
+        target: /dev/nvme8n1p2
+        read_only: false
+      - type: bind
+        source: /dev/nvme9n1p2
+        target: /dev/nvme9n1p2
+        read_only: false
+      #  Map the host devices into the container: did not work on latest
+    # devices:
+    #   - "/dev/nvme1n1p2:/dev/nvme1n1p2:rwm"
+    #   - "/dev/nvme2n1p2:/dev/nvme2n1p2:rwm"
+    #   - "/dev/nvme3n1p2:/dev/nvme3n1p2:rwm"
+    #   - "/dev/nvme4n1p2:/dev/nvme4n1p2:rwm"
+    #   - "/dev/nvme6n1p2:/dev/nvme6n1p2:rwm"
+    #   - "/dev/nvme7n1p2:/dev/nvme7n1p2:rwm"
+    #   - "/dev/nvme8n1p2:/dev/nvme8n1p2:rwm"
+    #   - "/dev/nvme9n1p2:/dev/nvme9n1p2:rwm"
 
     ports:
       # Bind every port to 127.0.0.1 (loopback only) so they are reachable
@@ -162,7 +162,8 @@ services:
   # Binds only to localhost — not reachable from outside the host.
   # ---------------------------------------------------------------------------
   prometheus:
-    image: registry.redhat.io/openshift4/ose-prometheus:latest
+    image: quay.io/prometheus/prometheus:v3.6.0
+    #image: registry.redhat.io/openshift4/ose-prometheus:latest
     container_name: prometheus
     user: "65534"   # nobody — run as non-root
     command:
