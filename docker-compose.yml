@@ -177,7 +177,12 @@ services:
         source: ./prometheus/prometheus.yml
         target: /etc/prometheus/prometheus.yml
         read_only: true
+        bind:
+          selinux: Z
       - prometheus-data:/prometheus
+      # If version of podman-compose do not support long options, use this instead:
+      # - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z
+      # - prometheus-data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
     networks:
